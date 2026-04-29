@@ -1,0 +1,15 @@
+intent_training:
+  model_name: distilbert-base-multilingual-cased
+  num_epochs: 3
+  batch_size: 32
+  learning_rate: 2.0e-5
+  warmup_steps: 100
+  weight_decay: 0.01
+
+ner_training:
+  model_name: distilbert-base-multilingual-cased
+  num_epochs: 3
+  batch_size: 16
+  learning_rate: 2.0e-5
+  warmup_steps: 100
+  weight_decay: 0.01

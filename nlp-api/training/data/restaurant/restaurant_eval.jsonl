@@ -1,0 +1,30 @@
+{"text": "need table for 10 July 4 tomorrow evening call me at lena.brooks@example.com", "intent": "reservation_create", "entities": [{"start": 15, "end": 17, "type": "PEOPLE_COUNT"}, {"start": 18, "end": 24, "type": "DATE"}, {"start": 25, "end": 41, "type": "TIME"}, {"start": 53, "end": 76, "type": "PHONE"}]}
+{"text": "book me for 2 ppl August 18 at 5pm email 555-0107", "intent": "reservation_create", "entities": [{"start": 12, "end": 13, "type": "PEOPLE_COUNT"}, {"start": 18, "end": 27, "type": "DATE"}, {"start": 31, "end": 34, "type": "TIME"}, {"start": 41, "end": 49, "type": "EMAIL"}]}
+{"text": "pls book a table for 3 today at 5:30pm, phone olivia.reed@example.com", "intent": "reservation_create", "entities": [{"start": 21, "end": 22, "type": "PEOPLE_COUNT"}, {"start": 23, "end": 28, "type": "DATE"}, {"start": 32, "end": 38, "type": "TIME"}, {"start": 46, "end": 69, "type": "PHONE"}]}
+{"text": "I'd like to book for 4 tomorrow around 6pm; contact 555-0109", "intent": "reservation_create", "entities": [{"start": 21, "end": 22, "type": "PEOPLE_COUNT"}, {"start": 23, "end": 31, "type": "DATE"}, {"start": 39, "end": 42, "type": "TIME"}, {"start": 52, "end": 60, "type": "EMAIL"}]}
+{"text": "Could I get a table for 5 tomorrow at 6:30pm? reach me at chloe.martin@example.com", "intent": "reservation_create", "entities": [{"start": 24, "end": 25, "type": "PEOPLE_COUNT"}, {"start": 38, "end": 44, "type": "TIME"}, {"start": 58, "end": 82, "type": "PHONE"}]}
+{"text": "I need to update my reservation on Sunday to 6pm, phone 555-0101", "intent": "reservation_modify", "entities": [{"start": 35, "end": 41, "type": "DATE"}, {"start": 45, "end": 48, "type": "TIME"}, {"start": 56, "end": 64, "type": "PHONE"}]}
+{"text": "Modify the reservation tied to noah.davis@example.com to 10 guests on June 12", "intent": "reservation_modify", "entities": [{"start": 31, "end": 53, "type": "EMAIL"}, {"start": 57, "end": 59, "type": "PEOPLE_COUNT"}, {"start": 70, "end": 77, "type": "DATE"}]}
+{"text": "For Sam Rivera, switch the booking to today for 2", "intent": "reservation_modify", "entities": [{"start": 4, "end": 14, "type": "PERSON"}, {"start": 38, "end": 43, "type": "DATE"}, {"start": 48, "end": 49, "type": "PEOPLE_COUNT"}]}
+{"text": "Drop the reservation linked to noah.davis@example.com for next Tuesday", "intent": "reservation_cancel", "entities": [{"start": 31, "end": 53, "type": "EMAIL"}, {"start": 58, "end": 70, "type": "DATE"}]}
+{"text": "I need to cancel Maya Chen's table at 7:30pm", "intent": "reservation_cancel", "entities": [{"start": 17, "end": 26, "type": "PERSON"}, {"start": 38, "end": 44, "type": "TIME"}]}
+{"text": "Can you remove my reservation for today? my number is 555-0107", "intent": "reservation_cancel", "entities": [{"start": 34, "end": 39, "type": "DATE"}, {"start": 54, "end": 62, "type": "PHONE"}]}
+{"text": "Do you have drink list on the menu for a birthday dinner?", "intent": "menu_request", "entities": [{"start": 12, "end": 22, "type": "MENU_ITEM"}]}
+{"text": "Please send me your chef specials before booking", "intent": "menu_request", "entities": [{"start": 20, "end": 33, "type": "MENU_ITEM"}]}
+{"text": "What does the lunch menu look like for takeout planning?", "intent": "menu_request", "entities": [{"start": 14, "end": 24, "type": "MENU_ITEM"}]}
+{"text": "I'm checking the brunch menu before I visit", "intent": "menu_request", "entities": [{"start": 17, "end": 28, "type": "MENU_ITEM"}]}
+{"text": "What time do you close on Wednesday for holiday plans?", "intent": "opening_hours", "entities": [{"start": 26, "end": 35, "type": "DATE"}]}
+{"text": "Will the restaurant still be serving dinner Friday around 6:30pm for a late booking?", "intent": "opening_hours", "entities": [{"start": 44, "end": 50, "type": "DATE"}, {"start": 58, "end": 64, "type": "TIME"}]}
+{"text": "Are your hours different Sunday for a business dinner?", "intent": "opening_hours", "entities": [{"start": 25, "end": 31, "type": "DATE"}]}
+{"text": "How do I get to the restaurant from Riverside? I'm driving in.", "intent": "location_request", "entities": [{"start": 36, "end": 45, "type": "LOCATION"}]}
+{"text": "Is there parking close to the train station? I'm meeting friends there.", "intent": "location_request", "entities": [{"start": 26, "end": 43, "type": "LOCATION"}]}
+{"text": "Which part of town are you in near Pine Avenue? I'm coming from downtown.", "intent": "location_request", "entities": [{"start": 35, "end": 46, "type": "LOCATION"}]}
+{"text": "Can you tell me the cost of the kids meals for budget planning?", "intent": "pricing_request", "entities": [{"start": 32, "end": 42, "type": "PRICE_ITEM"}]}
+{"text": "Is the steak special expensive for date night?", "intent": "pricing_request", "entities": [{"start": 7, "end": 20, "type": "PRICE_ITEM"}]}
+{"text": "I need the price for the seafood platter for lunch this week", "intent": "pricing_request", "entities": [{"start": 25, "end": 40, "type": "PRICE_ITEM"}]}
+{"text": "Hello there, can I contact the team at alex.carter@example.com for catering info for quick help?", "intent": "greeting_contact", "entities": [{"start": 39, "end": 62, "type": "EMAIL"}]}
+{"text": "Hi, what is the best phone number to reach you for a press inquiry for planning? I have 555-0105 in my notes", "intent": "greeting_contact", "entities": [{"start": 88, "end": 96, "type": "PHONE"}]}
+{"text": "Hello, is lena.brooks@example.com the right email for a same-day booking for event details?", "intent": "greeting_contact", "entities": [{"start": 10, "end": 33, "type": "EMAIL"}]}
+{"text": "Hey, can Ethan Cole call the restaurant manager for a press inquiry for general questions?", "intent": "greeting_contact", "entities": [{"start": 9, "end": 19, "type": "PERSON"}]}
+{"text": "Good afternoon, should I text 555-0101 or call for a same-day booking this week?", "intent": "greeting_contact", "entities": [{"start": 30, "end": 38, "type": "PHONE"}]}
+{"text": "Hello there, can I contact the team at noah.davis@example.com for a press inquiry for follow-up?", "intent": "greeting_contact", "entities": [{"start": 39, "end": 61, "type": "EMAIL"}]}

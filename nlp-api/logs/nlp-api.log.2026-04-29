@@ -1,0 +1,5 @@
+2026-04-29 23:43:25,836 httpx INFO HTTP Request: POST http://testserver/analyze "HTTP/1.1 200 OK"
+2026-04-29 23:43:25,839 httpx INFO HTTP Request: GET http://testserver/health "HTTP/1.1 200 OK"
+2026-04-29 23:43:38,784 httpx INFO HTTP Request: POST http://testserver/analyze "HTTP/1.1 200 OK"
+2026-04-29 23:43:38,788 httpx INFO HTTP Request: GET http://testserver/health "HTTP/1.1 200 OK"
+2026-04-29 23:43:38,791 httpx INFO HTTP Request: POST http://testserver/analyze "HTTP/1.1 400 Bad Request"
