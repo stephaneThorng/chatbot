@@ -7,7 +7,14 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 
+artifacts/
+
+logs/
+*.log
+
 .venv/
 venv/
 env/
 ENV/
+
+.cache/

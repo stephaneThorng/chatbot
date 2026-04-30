@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 from typing import Any
 
@@ -28,16 +29,32 @@ def load_training_config() -> dict[str, Any]:
     return yaml.safe_load(Path("training/config.yaml").read_text(encoding="utf-8"))
 
 
+def resolve_warmup_steps(
+    sample_count: int,
+    batch_size: int,
+    num_epochs: int,
+    configured_warmup_steps: int,
+) -> int:
+    """Cap warmup to a sensible fraction of total optimizer steps."""
+
+    steps_per_epoch = max(1, math.ceil(sample_count / batch_size))
+    total_steps = max(1, steps_per_epoch * num_epochs)
+    capped_warmup = max(0, min(configured_warmup_steps, total_steps // 10))
+    return capped_warmup
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--train", required=True)
     parser.add_argument("--validation", required=True)
     parser.add_argument("--output", default="artifacts/ner")
+    parser.add_argument("--model-name")
     parser.add_argument("--push-to-hub", action="store_true")
     parser.add_argument("--hub-model-id")
     args = parser.parse_args()
 
     config = load_training_config()["ner_training"]
+    model_name = args.model_name or config["model_name"]
     train_rows = load_jsonl(args.train)
     valid_rows = load_jsonl(args.validation)
     entity_types = iter_entity_types(train_rows + valid_rows)
@@ -46,7 +63,7 @@ def main() -> None:
     id2label = {index: label for label, index in label2id.items()}
 
     AutoTokenizer, AutoModelForTokenClassification, DataCollatorForTokenClassification, Trainer, TrainingArguments = _import_transformers()
-    tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     def align(example: dict[str, Any]) -> dict[str, Any]:
         encoded = tokenizer(example["text"], truncation=True, max_length=256, return_offsets_mapping=True)
@@ -71,9 +88,15 @@ def main() -> None:
     valid_dataset = Dataset.from_list(
         [{"text": row.text, "entities": [{"start": entity.start, "end": entity.end, "type": entity.type} for entity in row.entities]} for row in valid_rows]
     ).map(align)
+    effective_warmup_steps = resolve_warmup_steps(
+        sample_count=len(train_rows),
+        batch_size=int(config["batch_size"]),
+        num_epochs=int(config["num_epochs"]),
+        configured_warmup_steps=int(config["warmup_steps"]),
+    )
 
     model = AutoModelForTokenClassification.from_pretrained(
-        config["model_name"],
+        model_name,
         num_labels=len(labels),
         label2id=label2id,
         id2label=id2label,
@@ -84,7 +107,7 @@ def main() -> None:
         per_device_train_batch_size=int(config["batch_size"]),
         per_device_eval_batch_size=int(config["batch_size"]),
         num_train_epochs=int(config["num_epochs"]),
-        warmup_steps=int(config["warmup_steps"]),
+        warmup_steps=effective_warmup_steps,
         weight_decay=float(config["weight_decay"]),
         evaluation_strategy="epoch",
         save_strategy="epoch",

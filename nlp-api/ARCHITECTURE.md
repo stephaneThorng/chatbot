@@ -12,6 +12,29 @@ The service is a stateless NLP component intended to sit behind a chatbot backen
 4. Each `/analyze` request runs intent classification and NER extraction concurrently in worker threads.
 5. Metrics and structured logs are recorded for each request.
 
+## Context Handling
+
+The service is stateless, but it is context-aware. The caller can send a typed `context` object to help resolve short follow-ups.
+
+Current context contract:
+
+- `previous_intent`: intent from the previous turn
+- `current_intent`: active intent already resolved upstream
+- `previous_slots`: slots already known
+- `slots_filled`: alternative slot bag from upstream
+- `required_slots`: slots still expected for the current workflow
+
+This is used in two places:
+
+- `IntentClassifier` keeps the previous intent for short slot-only follow-ups
+- `NERExtractor` filters or supplements extraction toward missing slots only
+
+Typical examples:
+
+- `For 5 people` with `previous_intent=reservation_create` and missing `people` keeps `reservation_create`
+- `Tomorrow at 9pm` with `previous_intent=reservation_modify` and missing `date` / `time` keeps `reservation_modify`
+- `events@example.com` does not define an intent alone; with `required_slots=["email"]`, it fills the email slot for the active workflow
+
 ## Components
 
 ### `src/config.py`
@@ -24,12 +47,14 @@ The service is a stateless NLP component intended to sit behind a chatbot backen
 
 - Attempts domain-specific regex classification first when enabled
 - Falls back to `AutoModelForSequenceClassification`
+- Resolves short follow-ups from context before regex or model fallback
 - Returns primary intent, alternatives, source, and timing details
 
 ### `src/models/ner_extractor.py`
 
 - Uses `AutoModelForTokenClassification` and BIO decoding when available
 - Falls back to heuristic extraction for dates, times, counts, phone, and email
+- Supplements model output with context-derived entities for short follow-ups when the caller indicates missing slots
 - Emits span-level confidence and source metadata per entity
 
 ### `src/services/nlp_service.py`

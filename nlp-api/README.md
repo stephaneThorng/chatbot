@@ -27,11 +27,11 @@ uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 The service is configured through environment variables or `.env`.
 
 ```env
-HF_MODEL_INTENT=your-org/nlp-intent-classifier
-HF_MODEL_NER=your-org/nlp-ner-model
+HF_MODEL_INTENT=artifacts/restaurant_intent
+HF_MODEL_NER=artifacts/restaurant_ner
 HF_MODEL_REVISION=main
 HF_TOKEN=
-HF_CACHE_DIR=./models
+HF_CACHE_DIR=./.cache/huggingface
 SERVICE_PORT=8000
 SERVICE_HOST=0.0.0.0
 LOG_LEVEL=INFO
@@ -58,16 +58,66 @@ DEVICE=cpu
 }
 ```
 
+### Context-aware follow-ups
+
+The `context` field is important for short follow-ups. Without it, values like `For 5 people`, `Tomorrow at 9pm`, or `events@example.com` are ambiguous. With it, the API keeps the active business intent and extracts only the missing slots.
+
+Supported context fields:
+
+- `previous_intent`
+- `current_intent`
+- `previous_slots`
+- `slots_filled`
+- `required_slots`
+
+Example multi-turn reservation workflow:
+
+```json
+{
+  "text": "For 5 people",
+  "domain": "restaurant",
+  "context": {
+    "previous_intent": "reservation_create",
+    "previous_slots": {
+      "date": "tomorrow",
+      "time": "7pm"
+    },
+    "required_slots": ["people", "date", "time", "name"]
+  }
+}
+```
+
+Expected behavior:
+
+- intent stays `reservation_create`
+- source becomes `context`
+- extracted entity is `PEOPLE_COUNT`
+
+Another example:
+
+```json
+{
+  "text": "events@example.com",
+  "domain": "restaurant",
+  "context": {
+    "previous_intent": "greeting_contact",
+    "required_slots": ["email"]
+  }
+}
+```
+
+Important: `events@example.com` does not imply `greeting_contact` by itself. The active intent comes from the previous turn. The text only provides the missing slot value.
+
 ```json
 {
   "intent": {
-    "name": "reservation",
+    "name": "reservation_create",
     "confidence": 0.93,
     "fast_path": true,
     "source": "regex",
     "alternatives": {
-      "horaires": 0.12,
-      "menu": 0.08
+      "reservation_modify": 0.12,
+      "reservation_cancel": 0.08
     }
   },
   "entities": [
@@ -103,8 +153,8 @@ DEVICE=cpu
     "total_ms": 7.4
   },
   "model_info": {
-    "intent_model": "your-org/nlp-intent-classifier",
-    "ner_model": "your-org/nlp-ner-model",
+    "intent_model": "artifacts/restaurant_intent",
+    "ner_model": "artifacts/restaurant_ner",
     "revision": "main"
   }
 }

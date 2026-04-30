@@ -3,17 +3,59 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Dict, List, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class AnalysisRequest(BaseModel):
+class SchemaModel(BaseModel):
+    """Base schema configuration shared across API models."""
+
+    model_config = ConfigDict(protected_namespaces=())
+
+
+class ContextSlots(SchemaModel):
+    """Known conversational slots from upstream orchestration."""
+
+    date: str | None = None
+    time: str | None = None
+    people: str | None = None
+    name: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    menu_item: str | None = None
+    price_item: str | None = None
+    location: str | None = None
+
+
+class AnalysisContext(SchemaModel):
+    """Typed conversation context passed by the caller."""
+
+    current_intent: str | None = None
+    previous_intent: str | None = None
+    previous_slots: ContextSlots | None = None
+    slots_filled: ContextSlots | None = None
+    required_slots: List[
+        Literal[
+            "date",
+            "time",
+            "people",
+            "name",
+            "phone",
+            "email",
+            "menu_item",
+            "price_item",
+            "location",
+        ]
+    ] = Field(default_factory=list)
+
+
+class AnalysisRequest(SchemaModel):
     """Incoming analysis request."""
 
     text: str = Field(..., min_length=1, max_length=2000)
     domain: str = Field(..., min_length=1, max_length=64)
-    context: Dict[str, Any] | None = None
+    context: AnalysisContext | None = None
 
     @field_validator("text")
     @classmethod
@@ -32,7 +74,7 @@ class AnalysisRequest(BaseModel):
         return cleaned
 
 
-class IntentResponse(BaseModel):
+class IntentResponse(SchemaModel):
     """Intent payload."""
 
     name: str
@@ -42,7 +84,7 @@ class IntentResponse(BaseModel):
     alternatives: Dict[str, float] = Field(default_factory=dict)
 
 
-class EntityResponse(BaseModel):
+class EntityResponse(SchemaModel):
     """Entity payload."""
 
     type: str
@@ -53,7 +95,7 @@ class EntityResponse(BaseModel):
     source: str
 
 
-class ProcessingDetails(BaseModel):
+class ProcessingDetails(SchemaModel):
     """Timing breakdown."""
 
     intent_ms: float = Field(..., ge=0.0)
@@ -61,7 +103,7 @@ class ProcessingDetails(BaseModel):
     total_ms: float = Field(..., ge=0.0)
 
 
-class ModelInfo(BaseModel):
+class ModelInfo(SchemaModel):
     """Model version details."""
 
     intent_model: str
@@ -69,7 +111,7 @@ class ModelInfo(BaseModel):
     revision: str
 
 
-class AnalysisResponse(BaseModel):
+class AnalysisResponse(SchemaModel):
     """Combined NLP result."""
 
     intent: IntentResponse
@@ -79,7 +121,7 @@ class AnalysisResponse(BaseModel):
     model_info: ModelInfo
 
 
-class HealthResponse(BaseModel):
+class HealthResponse(SchemaModel):
     """Health payload."""
 
     status: str
@@ -89,9 +131,9 @@ class HealthResponse(BaseModel):
     timestamp: datetime
 
 
-class ErrorResponse(BaseModel):
+class ErrorResponse(SchemaModel):
     """Error payload."""
 
     error: str
     message: str
-    details: Dict[str, Any] | None = None
+    details: Dict[str, object] | None = None

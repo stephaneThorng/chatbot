@@ -9,6 +9,32 @@ from typing import List, Sequence
 
 
 OUTPUT_DIR = Path("training/data/restaurant")
+INTENT_TARGETS = {
+    "reservation_create": 117,
+    "reservation_modify": 82,
+    "reservation_cancel": 58,
+    "menu_request": 93,
+    "opening_hours": 82,
+    "location_request": 82,
+    "pricing_request": 82,
+    "greeting_contact": 104,
+}
+EXPECTED_CORPUS_SIZE = 700
+EXPECTED_SPLIT_SIZES = {"train": 560, "validation": 70, "eval": 70}
+UNIQUENESS_SUFFIXES = [
+    ", please",
+    ", thanks",
+    " for dinner",
+    " for lunch",
+    " this week",
+    " for this weekend",
+    " if possible",
+    " when you can",
+    " for planning",
+    " for tonight",
+    " for next week",
+    " before I visit",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,95 +271,98 @@ GREETING_SUFFIXES = [
 ]
 
 
-def reservation_create_examples() -> list[Example]:
+def reservation_create_examples(target_count: int) -> list[Example]:
     examples: list[Example] = []
     templates = [
         lambda c, d, t, n: build_example(
             "reservation_create",
-            ["Book a table for ", ("PEOPLE_COUNT", c), " on ", ("DATE", d), " at ", ("TIME", t), " under ", ("PERSON", n)],
+            ["I do not have a reservation yet, so book a table for ", ("PEOPLE_COUNT", c), " on ", ("DATE", d), " at ", ("TIME", t), " under ", ("PERSON", n)],
         ),
         lambda c, d, t, n: build_example(
             "reservation_create",
-            ["I need a reservation for ", ("PEOPLE_COUNT", c), " people ", ("DATE", d), " at ", ("TIME", t), " for ", ("PERSON", n)],
+            ["I'd like to make a first-time reservation for ", ("PEOPLE_COUNT", c), " people on ", ("DATE", d), " at ", ("TIME", t), " for ", ("PERSON", n)],
         ),
         lambda c, d, t, n: build_example(
             "reservation_create",
-            ["Can you save a table for ", ("PEOPLE_COUNT", c), " at ", ("TIME", t), " on ", ("DATE", d), " for ", ("PERSON", n)],
+            ["Can you start a new table booking for me for ", ("PEOPLE_COUNT", c), " at ", ("TIME", t), " on ", ("DATE", d), " for ", ("PERSON", n)],
         ),
         lambda c, d, t, n: build_example(
             "reservation_create",
-            ["Table for ", ("PEOPLE_COUNT", c), " ", ("DATE", d), " at ", ("TIME", t), ", name ", ("PERSON", n)],
+            ["This is a first booking request, not a change, for ", ("PEOPLE_COUNT", c), " on ", ("DATE", d), " at ", ("TIME", t), ", name ", ("PERSON", n)],
         ),
         lambda c, d, t, n: build_example(
             "reservation_create",
-            ["Please reserve dinner for ", ("PEOPLE_COUNT", c), " on ", ("DATE", d), " around ", ("TIME", t), " for ", ("PERSON", n)],
+            ["Please create my first dinner reservation for ", ("PEOPLE_COUNT", c), " on ", ("DATE", d), " around ", ("TIME", t), " for ", ("PERSON", n)],
         ),
     ]
     noisy_templates = [
         lambda c, d, t, p: build_example(
             "reservation_create",
-            ["need table for ", ("PEOPLE_COUNT", c), " ", ("DATE", d), " ", ("TIME", t), " call me at ", ("PHONE", p)],
+            ["I do not have any booking yet, and I need a brand new reservation for ", ("PEOPLE_COUNT", c), " on ", ("DATE", d), " at ", ("TIME", t), "; call me at ", ("PHONE", p)],
         ),
         lambda c, d, t, e: build_example(
             "reservation_create",
-            ["book me for ", ("PEOPLE_COUNT", c), " ppl ", ("DATE", d), " at ", ("TIME", t), " email ", ("EMAIL", e)],
+            ["Please book a fresh new reservation from scratch for ", ("PEOPLE_COUNT", c), " people on ", ("DATE", d), " at ", ("TIME", t), "; email ", ("EMAIL", e)],
         ),
         lambda c, d, t, p: build_example(
             "reservation_create",
-            ["pls book a table for ", ("PEOPLE_COUNT", c), " ", ("DATE", d), " at ", ("TIME", t), ", phone ", ("PHONE", p)],
+            ["Please create a completely new booking for ", ("PEOPLE_COUNT", c), " on ", ("DATE", d), " at ", ("TIME", t), "; phone ", ("PHONE", p)],
         ),
         lambda c, d, t, e: build_example(
             "reservation_create",
-            ["I'd like to book for ", ("PEOPLE_COUNT", c), " ", ("DATE", d), " around ", ("TIME", t), "; contact ", ("EMAIL", e)],
+            ["I'd like to open a brand new reservation because I have no booking yet for ", ("PEOPLE_COUNT", c), " on ", ("DATE", d), " around ", ("TIME", t), "; contact ", ("EMAIL", e)],
         ),
         lambda c, d, t, p: build_example(
             "reservation_create",
-            ["Could I get a table for ", ("PEOPLE_COUNT", c), " tomorrow at ", ("TIME", t), "? reach me at ", ("PHONE", p)],
+            ["Could I make a first table booking for ", ("PEOPLE_COUNT", c), " on ", ("DATE", d), " at ", ("TIME", t), "? reach me at ", ("PHONE", p)],
         ),
     ]
-    for index in range(40):
+    standard_count = max(1, target_count - max(10, target_count // 5))
+    noisy_count = target_count - standard_count
+    for index in range(standard_count):
         count = PEOPLE_COUNTS[index % len(PEOPLE_COUNTS)]
         date = DATES[index % len(DATES)]
         time = TIMES[index % len(TIMES)]
         name = NAMES[index % len(NAMES)]
         examples.append(templates[index % len(templates)](count, date, time, name))
-    for index in range(10):
+    for index in range(noisy_count):
         count = PEOPLE_COUNTS[(index + 2) % len(PEOPLE_COUNTS)]
         date = DATES[(index + 3) % len(DATES)]
         time = TIMES[(index + 4) % len(TIMES)]
-        if index % 2 == 0:
+        template_index = index % len(noisy_templates)
+        if template_index in {0, 2, 4}:
             contact = PHONES[index % len(PHONES)]
         else:
             contact = EMAILS[index % len(EMAILS)]
-        examples.append(noisy_templates[index % len(noisy_templates)](count, date, time, contact))
-    return examples[:50]
+        examples.append(noisy_templates[template_index](count, date, time, contact))
+    return examples[:target_count]
 
 
-def reservation_modify_examples() -> list[Example]:
+def reservation_modify_examples(target_count: int) -> list[Example]:
     examples: list[Example] = []
     templates = [
         lambda n, d, t: build_example(
             "reservation_modify",
-            ["Please move ", ("PERSON", n), "'s reservation to ", ("DATE", d), " at ", ("TIME", t)],
+            ["Please move my existing reservation for ", ("PERSON", n), " to ", ("DATE", d), " at ", ("TIME", t)],
         ),
         lambda n, c, t: build_example(
             "reservation_modify",
-            ["Change the booking for ", ("PERSON", n), " to ", ("PEOPLE_COUNT", c), " people at ", ("TIME", t)],
+            ["Change the booking I already have for ", ("PERSON", n), " to ", ("PEOPLE_COUNT", c), " people at ", ("TIME", t)],
         ),
         lambda p, d, t: build_example(
             "reservation_modify",
-            ["I need to update my reservation on ", ("DATE", d), " to ", ("TIME", t), ", phone ", ("PHONE", p)],
+            ["I already booked a table, and I need to update my current reservation to ", ("DATE", d), " at ", ("TIME", t), ", phone ", ("PHONE", p)],
         ),
         lambda e, c, d: build_example(
             "reservation_modify",
-            ["Modify the reservation tied to ", ("EMAIL", e), " to ", ("PEOPLE_COUNT", c), " guests on ", ("DATE", d)],
+            ["Modify the reservation I already made tied to ", ("EMAIL", e), " to ", ("PEOPLE_COUNT", c), " guests on ", ("DATE", d)],
         ),
         lambda n, d, c: build_example(
             "reservation_modify",
-            ["For ", ("PERSON", n), ", switch the booking to ", ("DATE", d), " for ", ("PEOPLE_COUNT", c)],
+            ["For ", ("PERSON", n), ", reschedule the existing booking I already made to ", ("DATE", d), " for ", ("PEOPLE_COUNT", c)],
         ),
     ]
-    for index in range(35):
+    for index in range(target_count):
         template_index = index % len(templates)
         bucket = index // len(templates)
         name = pick(NAMES, bucket, template_index * 2, step=3)
@@ -350,10 +379,10 @@ def reservation_modify_examples() -> list[Example]:
             templates[4](name, date, count),
         ]
         examples.append(choices[template_index])
-    return examples[:35]
+    return examples[:target_count]
 
 
-def reservation_cancel_examples() -> list[Example]:
+def reservation_cancel_examples(target_count: int) -> list[Example]:
     examples: list[Example] = []
     templates = [
         lambda n, d: build_example(
@@ -377,7 +406,7 @@ def reservation_cancel_examples() -> list[Example]:
             ["Can you remove my reservation for ", ("DATE", d), "? my number is ", ("PHONE", p)],
         ),
     ]
-    for index in range(25):
+    for index in range(target_count):
         template_index = index % len(templates)
         bucket = index // len(templates)
         name = pick(NAMES, bucket, template_index, step=2)
@@ -393,10 +422,10 @@ def reservation_cancel_examples() -> list[Example]:
             templates[4](phone, date),
         ]
         examples.append(choices[template_index])
-    return examples[:25]
+    return examples[:target_count]
 
 
-def menu_request_examples() -> list[Example]:
+def menu_request_examples(target_count: int) -> list[Example]:
     examples: list[Example] = []
     templates = [
         lambda topic, context: build_example("menu_request", ["Can I see the ", ("MENU_ITEM", topic), " ", context, "?"]),
@@ -405,16 +434,16 @@ def menu_request_examples() -> list[Example]:
         lambda topic, context: build_example("menu_request", ["What does the ", ("MENU_ITEM", topic), " look like ", context, "?"]),
         lambda topic, context: build_example("menu_request", ["I'm checking the ", ("MENU_ITEM", topic), " ", context]),
     ]
-    for index in range(40):
+    for index in range(target_count):
         template_index = index % len(templates)
         bucket = index // len(templates)
         topic = pick(MENU_TOPICS, bucket, template_index * 2, step=3)
         context = pick(MENU_CONTEXTS, bucket, template_index * 3, step=4)
         examples.append(templates[template_index](topic, context))
-    return examples[:40]
+    return examples[:target_count]
 
 
-def opening_hours_examples() -> list[Example]:
+def opening_hours_examples(target_count: int) -> list[Example]:
     examples: list[Example] = []
     templates = [
         lambda d, t, context: build_example(
@@ -429,7 +458,7 @@ def opening_hours_examples() -> list[Example]:
         ),
         lambda d, context: build_example("opening_hours", ["Are your hours different ", ("DATE", d), " ", context, "?"]),
     ]
-    for index in range(35):
+    for index in range(target_count):
         template_index = index % len(templates)
         bucket = index // len(templates)
         date = pick(DAY_PHRASES, bucket, template_index * 2, step=3)
@@ -443,10 +472,10 @@ def opening_hours_examples() -> list[Example]:
             templates[4](date, context),
         ]
         examples.append(choices[template_index])
-    return examples[:35]
+    return examples[:target_count]
 
 
-def location_request_examples() -> list[Example]:
+def location_request_examples(target_count: int) -> list[Example]:
     examples: list[Example] = []
     templates = [
         lambda location, context: build_example("location_request", ["Are you near ", ("LOCATION", location), "? ", context, "."]),
@@ -455,16 +484,16 @@ def location_request_examples() -> list[Example]:
         lambda location, context: build_example("location_request", ["Is there parking close to ", ("LOCATION", location), "? ", context, "."]),
         lambda location, context: build_example("location_request", ["Which part of town are you in near ", ("LOCATION", location), "? ", context, "."]),
     ]
-    for index in range(35):
+    for index in range(target_count):
         template_index = index % len(templates)
         bucket = index // len(templates)
         location = pick(LOCATIONS, bucket, template_index * 2, step=3)
         context = pick(LOCATION_CONTEXTS, bucket, template_index * 3, step=4)
         examples.append(templates[template_index](location, context))
-    return examples[:35]
+    return examples[:target_count]
 
 
-def pricing_request_examples() -> list[Example]:
+def pricing_request_examples(target_count: int) -> list[Example]:
     examples: list[Example] = []
     templates = [
         lambda topic, context: build_example("pricing_request", ["How much is the ", ("PRICE_ITEM", topic), " ", context, "?"]),
@@ -473,16 +502,16 @@ def pricing_request_examples() -> list[Example]:
         lambda topic, context: build_example("pricing_request", ["Is the ", ("PRICE_ITEM", topic), " expensive ", context, "?"]),
         lambda topic, context: build_example("pricing_request", ["I need the price for the ", ("PRICE_ITEM", topic), " ", context]),
     ]
-    for index in range(35):
+    for index in range(target_count):
         template_index = index % len(templates)
         bucket = index // len(templates)
         topic = pick(PRICE_TOPICS, bucket, template_index * 2, step=3)
         context = pick(PRICE_CONTEXTS, bucket, template_index * 3, step=4)
         examples.append(templates[template_index](topic, context))
-    return examples[:35]
+    return examples[:target_count]
 
 
-def greeting_contact_examples() -> list[Example]:
+def greeting_contact_examples(target_count: int) -> list[Example]:
     examples: list[Example] = []
     templates = [
         lambda p, context, suffix: build_example("greeting_contact", ["Hi, what is the best phone number to reach you ", context, " ", suffix, "? I have ", ("PHONE", p), " in my notes"]),
@@ -491,7 +520,7 @@ def greeting_contact_examples() -> list[Example]:
         lambda p, context, suffix: build_example("greeting_contact", ["Good afternoon, should I text ", ("PHONE", p), " or call ", context, " ", suffix, "?"]),
         lambda e, context, suffix: build_example("greeting_contact", ["Hello there, can I contact the team at ", ("EMAIL", e), " ", context, " ", suffix, "?"]),
     ]
-    for index in range(45):
+    for index in range(target_count):
         template_index = index % len(templates)
         bucket = index // len(templates)
         phone = pick(PHONES, bucket, template_index * 2, step=3)
@@ -507,20 +536,42 @@ def greeting_contact_examples() -> list[Example]:
             templates[4](email, context, suffix),
         ]
         examples.append(choices[template_index])
-    return examples[:45]
+    return examples[:target_count]
 
 
 def build_corpus() -> list[Example]:
     corpus = []
-    corpus.extend(reservation_create_examples())
-    corpus.extend(reservation_modify_examples())
-    corpus.extend(reservation_cancel_examples())
-    corpus.extend(menu_request_examples())
-    corpus.extend(opening_hours_examples())
-    corpus.extend(location_request_examples())
-    corpus.extend(pricing_request_examples())
-    corpus.extend(greeting_contact_examples())
-    return corpus
+    corpus.extend(reservation_create_examples(INTENT_TARGETS["reservation_create"]))
+    corpus.extend(reservation_modify_examples(INTENT_TARGETS["reservation_modify"]))
+    corpus.extend(reservation_cancel_examples(INTENT_TARGETS["reservation_cancel"]))
+    corpus.extend(menu_request_examples(INTENT_TARGETS["menu_request"]))
+    corpus.extend(opening_hours_examples(INTENT_TARGETS["opening_hours"]))
+    corpus.extend(location_request_examples(INTENT_TARGETS["location_request"]))
+    corpus.extend(pricing_request_examples(INTENT_TARGETS["pricing_request"]))
+    corpus.extend(greeting_contact_examples(INTENT_TARGETS["greeting_contact"]))
+    return ensure_unique_texts(corpus)
+
+
+def ensure_unique_texts(examples: Sequence[Example]) -> list[Example]:
+    """Ensure every utterance text is unique while keeping entity spans valid."""
+
+    deduped: list[Example] = []
+    seen_counts: dict[str, int] = {}
+    for example in examples:
+        duplicate_index = seen_counts.get(example.text, 0)
+        if duplicate_index == 0:
+            deduped.append(example)
+        else:
+            suffix = UNIQUENESS_SUFFIXES[(duplicate_index - 1) % len(UNIQUENESS_SUFFIXES)]
+            deduped.append(
+                Example(
+                    text=f"{example.text}{suffix}",
+                    intent=example.intent,
+                    entities=example.entities,
+                )
+            )
+        seen_counts[example.text] = duplicate_index + 1
+    return deduped
 
 
 def validate_examples(examples: Sequence[Example]) -> None:
@@ -546,15 +597,15 @@ def write_jsonl(path: Path, examples: Sequence[Example]) -> None:
 
 
 def split_examples(corpus: Sequence[Example]) -> tuple[list[Example], list[Example], list[Example]]:
-    split_counts = {
-        "reservation_create": (40, 5, 5),
-        "reservation_modify": (28, 4, 3),
-        "reservation_cancel": (20, 2, 3),
-        "menu_request": (32, 4, 4),
-        "opening_hours": (28, 4, 3),
-        "location_request": (28, 4, 3),
-        "pricing_request": (28, 4, 3),
-        "greeting_contact": (36, 3, 6),
+    split_counts: dict[str, tuple[int, int, int]] = {
+        "reservation_create": (94, 12, 11),
+        "reservation_modify": (66, 8, 8),
+        "reservation_cancel": (46, 6, 6),
+        "menu_request": (74, 9, 10),
+        "opening_hours": (66, 8, 8),
+        "location_request": (66, 8, 8),
+        "pricing_request": (65, 8, 9),
+        "greeting_contact": (83, 11, 10),
     }
     train: list[Example] = []
     validation: list[Example] = []
@@ -577,14 +628,14 @@ def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     corpus = build_corpus()
     validate_examples(corpus)
-    if len(corpus) != 300:
-        raise ValueError(f"expected 300 examples, found {len(corpus)}")
+    if len(corpus) != EXPECTED_CORPUS_SIZE:
+        raise ValueError(f"expected {EXPECTED_CORPUS_SIZE} examples, found {len(corpus)}")
 
     train, validation, evaluation = split_examples(corpus)
     for split_name, split_examples_list, expected_size in (
-        ("train", train, 240),
-        ("validation", validation, 30),
-        ("eval", evaluation, 30),
+        ("train", train, EXPECTED_SPLIT_SIZES["train"]),
+        ("validation", validation, EXPECTED_SPLIT_SIZES["validation"]),
+        ("eval", evaluation, EXPECTED_SPLIT_SIZES["eval"]),
     ):
         validate_examples(split_examples_list)
         if len(split_examples_list) != expected_size:

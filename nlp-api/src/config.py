@@ -11,10 +11,59 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_REGEX_PATTERNS: Dict[str, Dict[str, List[str]]] = {
     "restaurant": {
-        "reservation": [r"\breserv", r"\btable\b", r"\bpersonnes?\b", r"\bdemain\b"],
-        "menu": [r"\bmenu\b", r"\bcarte\b", r"\bplat"],
-        "horaires": [r"\bhoraire", r"\bouvert", r"\bheure"],
-        "localisation": [r"\badresse\b", r"\bou\b", r"\bsitue"],
+        "reservation_create": [
+            r"\bbook\b",
+            r"\bnew reservation\b",
+            r"\bnew booking\b",
+            r"\btable booking\b",
+            r"\bbook a table\b",
+        ],
+        "reservation_modify": [
+            r"\bchange\b",
+            r"\bupdate\b",
+            r"\bmove\b",
+            r"\breschedule\b",
+            r"\bmodify\b",
+            r"\bexisting reservation\b",
+        ],
+        "reservation_cancel": [
+            r"\bcancel\b",
+            r"\bdrop\b",
+            r"\bremove\b",
+        ],
+        "menu_request": [
+            r"\bmenu\b",
+            r"\bvegan\b",
+            r"\bgluten free\b",
+            r"\bdessert\b",
+            r"\bdrink list\b",
+        ],
+        "opening_hours": [
+            r"\bopen\b",
+            r"\bclose\b",
+            r"\bhours\b",
+            r"\bopening hours\b",
+        ],
+        "location_request": [
+            r"\baddress\b",
+            r"\blocated\b",
+            r"\bwhere are you\b",
+            r"\bnear\b",
+            r"\bparking\b",
+        ],
+        "pricing_request": [
+            r"\bprice\b",
+            r"\bcost\b",
+            r"\bhow much\b",
+            r"\bprice range\b",
+        ],
+        "greeting_contact": [
+            r"\bhello\b",
+            r"\bhi\b",
+            r"\bphone\b",
+            r"\bemail\b",
+            r"\bcontact\b",
+        ],
     },
     "hotel": {
         "reservation": [r"\breserv", r"\bchambre\b", r"\bnight\b"],
@@ -40,11 +89,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    hf_model_intent: str = "your-org/nlp-intent-classifier"
-    hf_model_ner: str = "your-org/nlp-ner-model"
+    hf_model_intent: str = "artifacts/restaurant_intent"
+    hf_model_ner: str = "artifacts/restaurant_ner"
     hf_model_revision: str = "main"
     hf_token: str | None = None
-    hf_cache_dir: str = "./models"
+    hf_cache_dir: str = "./.cache/huggingface"
 
     service_port: int = 8000
     service_host: str = "0.0.0.0"

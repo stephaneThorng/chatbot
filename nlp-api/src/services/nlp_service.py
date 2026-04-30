@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Any, Dict
 
 from src.api.schemas import (
+    AnalysisContext,
     AnalysisResponse,
     EntityResponse,
     HealthResponse,
@@ -60,7 +60,7 @@ class NLPService:
         self,
         text: str,
         domain: str,
-        context: Dict[str, Any] | None = None,
+        context: AnalysisContext | None = None,
     ) -> AnalysisResponse:
         """Run complete analysis for a single utterance."""
 
@@ -70,7 +70,7 @@ class NLPService:
         request_metrics = metrics_collector.track_request()
         started = asyncio.get_running_loop().time()
         intent_task = asyncio.to_thread(self.intent_classifier.classify, text, domain, context)
-        ner_task = asyncio.to_thread(self.ner_extractor.extract, text)
+        ner_task = asyncio.to_thread(self.ner_extractor.extract_with_context, text, context)
 
         try:
             intent_result, ner_result = await asyncio.gather(intent_task, ner_task)
