@@ -105,6 +105,9 @@ class Settings(BaseSettings):
     intent_confidence_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     use_hybrid_intent: bool = True
     ner_confidence_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    enable_text_normalization: bool = True
+    enable_spell_correction: bool = True
+    spacy_model: str = "en_core_web_sm"
 
     device: str = "cpu"
     uvicorn_workers: int = 1

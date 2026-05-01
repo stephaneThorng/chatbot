@@ -10,17 +10,17 @@ from typing import List, Sequence
 
 OUTPUT_DIR = Path("training/data/restaurant")
 INTENT_TARGETS = {
-    "reservation_create": 117,
-    "reservation_modify": 82,
-    "reservation_cancel": 58,
-    "menu_request": 93,
-    "opening_hours": 82,
-    "location_request": 82,
-    "pricing_request": 82,
-    "greeting_contact": 104,
+    "reservation_create": 837,
+    "reservation_modify": 587,
+    "reservation_cancel": 413,
+    "menu_request": 663,
+    "opening_hours": 587,
+    "location_request": 587,
+    "pricing_request": 583,
+    "greeting_contact": 743,
 }
-EXPECTED_CORPUS_SIZE = 700
-EXPECTED_SPLIT_SIZES = {"train": 560, "validation": 70, "eval": 70}
+EXPECTED_CORPUS_SIZE = 5000
+EXPECTED_SPLIT_SIZES = {"train": 4000, "validation": 500, "eval": 500}
 UNIQUENESS_SUFFIXES = [
     ", please",
     ", thanks",
@@ -563,6 +563,9 @@ def ensure_unique_texts(examples: Sequence[Example]) -> list[Example]:
             deduped.append(example)
         else:
             suffix = UNIQUENESS_SUFFIXES[(duplicate_index - 1) % len(UNIQUENESS_SUFFIXES)]
+            cycle = duplicate_index // len(UNIQUENESS_SUFFIXES)
+            if cycle > 0:
+                suffix = f"{suffix} variation {cycle + 1}"
             deduped.append(
                 Example(
                     text=f"{example.text}{suffix}",
@@ -598,14 +601,14 @@ def write_jsonl(path: Path, examples: Sequence[Example]) -> None:
 
 def split_examples(corpus: Sequence[Example]) -> tuple[list[Example], list[Example], list[Example]]:
     split_counts: dict[str, tuple[int, int, int]] = {
-        "reservation_create": (94, 12, 11),
-        "reservation_modify": (66, 8, 8),
-        "reservation_cancel": (46, 6, 6),
-        "menu_request": (74, 9, 10),
-        "opening_hours": (66, 8, 8),
-        "location_request": (66, 8, 8),
-        "pricing_request": (65, 8, 9),
-        "greeting_contact": (83, 11, 10),
+        "reservation_create": (669, 84, 84),
+        "reservation_modify": (469, 59, 59),
+        "reservation_cancel": (331, 41, 41),
+        "menu_request": (530, 66, 67),
+        "opening_hours": (469, 59, 59),
+        "location_request": (469, 59, 59),
+        "pricing_request": (466, 58, 59),
+        "greeting_contact": (597, 74, 72),
     }
     train: list[Example] = []
     validation: list[Example] = []

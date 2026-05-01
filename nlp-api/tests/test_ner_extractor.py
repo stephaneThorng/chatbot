@@ -5,7 +5,7 @@ from src.config import Settings
 from src.models.ner_extractor import NERExtractor
 
 
-def test_heuristic_ner_extracts_expected_entities() -> None:
+def test_rule_ner_extracts_expected_entities() -> None:
     extractor = NERExtractor(Settings())
     result = extractor.extract("Book a table for 4 people tomorrow at 7pm")
     entity_types = {entity.type for entity in result.entities}
@@ -14,7 +14,7 @@ def test_heuristic_ner_extracts_expected_entities() -> None:
     assert "TIME" in entity_types
 
 
-def test_heuristic_ner_extracts_menu_price_and_location_entities() -> None:
+def test_rule_ner_extracts_menu_price_and_location_entities() -> None:
     extractor = NERExtractor(Settings())
     result = extractor.extract(
         "How much is the private dining menu and do you have vegan options near Downtown?"
@@ -57,6 +57,20 @@ def test_contextual_ner_filters_to_missing_slot_in_follow_up_workflow() -> None:
     assert len(result.entities) == 1
     assert result.entities[0].type == "PEOPLE_COUNT"
     assert result.entities[0].value == "6 people"
+
+
+def test_contextual_ner_extracts_date_and_time_from_short_follow_up() -> None:
+    extractor = NERExtractor(Settings())
+    result = extractor.extract_with_context(
+        "Tomorrow at 9pm",
+        AnalysisContext(
+            previous_intent="reservation_modify",
+            previous_slots=ContextSlots(people="4", name="Alex Carter"),
+            required_slots=["date", "time", "people", "name"],
+        ),
+    )
+    entity_types = {entity.type for entity in result.entities}
+    assert entity_types == {"DATE", "TIME"}
 
 
 def test_contextual_ner_extracts_location_from_short_follow_up() -> None:

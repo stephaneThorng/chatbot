@@ -33,10 +33,10 @@ The restaurant dataset lives in `C:\Users\Stephyu\git\chatbot\nlp-api\training\d
 - `restaurant_eval.jsonl`: held-out evaluation split
 
 Current dataset sizes:
-- corpus: `700`
-- train: `560`
-- validation: `70`
-- eval: `70`
+- corpus: `5000`
+- train: `4000`
+- validation: `500`
+- eval: `500`
 
 The dataset generator is:
 
@@ -58,12 +58,13 @@ To validate the dataset:
 
 Current lightweight backbone:
 
-- `microsoft/MiniLM-L12-H384-uncased`
+- `nreimers/MiniLM-L6-H384-uncased`
 
 It is the current best compromise for this project:
 - much lighter than `xlm-roberta-base`
-- better than the original DistilBERT baseline on the restaurant intent task
-- final intent + NER artifacts fit within the project memory target
+- lighter than `MiniLM-L12` and `distilbert-base-uncased`
+- same measured intent quality as the larger tested backbones on the `5000`-example corpus
+- final intent + NER artifacts fit comfortably within the project memory target
 
 ## 4. Intent Training
 
@@ -74,7 +75,7 @@ Train the intent model with MiniLM:
   --train training/data/restaurant/restaurant_train.jsonl `
   --validation training/data/restaurant/restaurant_validation.jsonl `
   --output artifacts/restaurant_intent `
-  --model-name microsoft/MiniLM-L12-H384-uncased
+  --model-name nreimers/MiniLM-L6-H384-uncased
 ```
 
 Notes:
@@ -90,7 +91,7 @@ Train the NER model with MiniLM:
   --train training/data/restaurant/restaurant_train.jsonl `
   --validation training/data/restaurant/restaurant_validation.jsonl `
   --output artifacts/restaurant_ner `
-  --model-name microsoft/MiniLM-L12-H384-uncased
+  --model-name nreimers/MiniLM-L6-H384-uncased
 ```
 
 ## 6. Evaluation
@@ -193,11 +194,11 @@ Current default runtime artifacts:
 - `C:\Users\Stephyu\git\chatbot\nlp-api\artifacts\restaurant_ner:1`
 
 Current final artifact sizes:
-- intent: about `128 MB`
-- NER: about `128 MB`
+- intent: about `87 MB`
+- NER: about `86 MB`
 
 Measured runtime memory with both models loaded:
-- about `508 MB` RSS in the local test process
+- about `432 MB` RSS in the local test process
 
 ## 10. Cleanup After Training
 

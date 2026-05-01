@@ -25,10 +25,10 @@ def test_restaurant_dataset_files_exist_and_parse() -> None:
     assert evaluation.exists()
     assert corpus.exists()
 
-    assert len(load_jsonl(train)) == 560
-    assert len(load_jsonl(validation)) == 70
-    assert len(load_jsonl(evaluation)) == 70
-    assert len(load_jsonl(corpus)) == 700
+    assert len(load_jsonl(train)) == 4000
+    assert len(load_jsonl(validation)) == 500
+    assert len(load_jsonl(evaluation)) == 500
+    assert len(load_jsonl(corpus)) == 5000
 
 
 def test_restaurant_dataset_entity_spans_match_text() -> None:
@@ -89,12 +89,12 @@ def test_restaurant_dataset_distribution_matches_plan() -> None:
     payloads = _read_lines(DATA_DIR / "restaurant_corpus.jsonl")
     counts = Counter(payload["intent"] for payload in payloads)
     assert counts == {
-        "reservation_create": 117,
-        "reservation_modify": 82,
-        "reservation_cancel": 58,
-        "menu_request": 93,
-        "opening_hours": 82,
-        "location_request": 82,
-        "pricing_request": 82,
-        "greeting_contact": 104,
+        "reservation_create": 837,
+        "reservation_modify": 587,
+        "reservation_cancel": 413,
+        "menu_request": 663,
+        "opening_hours": 587,
+        "location_request": 587,
+        "pricing_request": 583,
+        "greeting_contact": 743,
     }

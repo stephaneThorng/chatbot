@@ -6,7 +6,7 @@ from src.models.intent_classifier import IntentClassifier
 
 
 def test_regex_intent_classification_prefers_reservation() -> None:
-    classifier = IntentClassifier(Settings())
+    classifier = IntentClassifier(Settings(use_hybrid_intent=True))
     result = classifier.classify("I need a new reservation for 2 on Friday at 8pm", "restaurant")
     assert result.name == "reservation_create"
     assert result.fast_path is True
@@ -93,3 +93,18 @@ def test_context_classification_keeps_location_intent_for_location_follow_up() -
     assert result.name == "location_request"
     assert result.source == "context"
     assert result.fast_path is True
+
+
+def test_context_classification_keeps_previous_intent_for_slang_datetime_follow_up() -> None:
+    classifier = IntentClassifier(Settings())
+    result = classifier.classify(
+        "tomorrow at 9pm",
+        "restaurant",
+        AnalysisContext(
+            previous_intent="reservation_modify",
+            previous_slots=ContextSlots(people="4", name="Alex Carter"),
+            required_slots=["date", "time", "people", "name"],
+        ),
+    )
+    assert result.name == "reservation_modify"
+    assert result.source == "context"

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import pytest
 
+from src.config import Settings
 from src.main import create_app
 from src.services.nlp_service import NLPService
 
 
 class FakeService(NLPService):
     def __init__(self) -> None:
-        super().__init__()
+        super().__init__(config=Settings(use_hybrid_intent=True))
 
 
 @pytest.fixture
