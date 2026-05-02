@@ -13,6 +13,8 @@ DEFAULT_REGEX_PATTERNS: Dict[str, Dict[str, List[str]]] = {
     "restaurant": {
         "reservation_create": [
             r"\bbook\b",
+            r"\breserve\b",
+            r"\bmake a reservation\b",
             r"\bnew reservation\b",
             r"\bnew booking\b",
             r"\btable booking\b",
@@ -31,11 +33,26 @@ DEFAULT_REGEX_PATTERNS: Dict[str, Dict[str, List[str]]] = {
             r"\bdrop\b",
             r"\bremove\b",
         ],
+        "reservation_status": [
+            r"\bcheck (my|the) reservation\b",
+            r"\brecheck (my|the) reservation\b",
+            r"\breservation status\b",
+            r"\bshow (my|the) reservation\b",
+            r"\bview (my|the) reservation\b",
+            r"\balready booked\b",
+        ],
         "menu_request": [
             r"\bmenu\b",
             r"\bvegan\b",
+            r"\bdishes\b",
+            r"\bdish\b",
+            r"\bseafood\b",
+            r"\bfish\b",
+            r"\bdinner\b",
+            r"\boptions\b",
             r"\bgluten free\b",
             r"\bdessert\b",
+            r"\bdesert\b",
             r"\bdrink list\b",
         ],
         "opening_hours": [
@@ -57,24 +74,26 @@ DEFAULT_REGEX_PATTERNS: Dict[str, Dict[str, List[str]]] = {
             r"\bhow much\b",
             r"\bprice range\b",
         ],
-        "greeting_contact": [
-            r"\bhello\b",
-            r"\bhi\b",
+        "contact_request": [
             r"\bphone\b",
             r"\bemail\b",
             r"\bcontact\b",
+            r"\bcall\b",
+            r"\breach you\b",
+            r"\bphone number\b",
+            r"\bemail address\b",
         ],
     },
     "hotel": {
-        "reservation": [r"\breserv", r"\bchambre\b", r"\bnight\b"],
-        "check_in": [r"\barrivee\b", r"\bcheck[\s-]?in\b"],
-        "check_out": [r"\bdepart\b", r"\bcheck[\s-]?out\b"],
-        "services": [r"\bspa\b", r"\bpetit dejeuner\b", r"\bparking\b"],
+        "reservation": [r"\breserv", r"\broom\b", r"\bnight\b"],
+        "check_in": [r"\barrival\b", r"\bcheck[\s-]?in\b"],
+        "check_out": [r"\bdeparture\b", r"\bcheck[\s-]?out\b"],
+        "services": [r"\bspa\b", r"\bbreakfast\b", r"\bparking\b"],
     },
     "spa": {
-        "reservation": [r"\brdv\b", r"\breserv", r"\bappointment\b"],
-        "services": [r"\bmassage\b", r"\bsoin\b", r"\bsauna\b"],
-        "pricing": [r"\bprix\b", r"\btarif\b", r"\bcombien\b"],
+        "reservation": [r"\bbooking\b", r"\breserv", r"\bappointment\b"],
+        "services": [r"\bmassage\b", r"\btreatment\b", r"\bsauna\b"],
+        "pricing": [r"\bprice\b", r"\brate\b", r"\bcost\b"],
     },
 }
 

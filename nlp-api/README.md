@@ -15,11 +15,30 @@
 ## Quick Start
 
 ```bash
-python -m venv .venv
+py -3.11 -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+python -m spacy download en_core_web_sm
 copy .env.example .env
-uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+python -m src.main
+```
+
+One-line alternatives:
+
+```bash
+python -m src.main
+```
+
+After `pip install -e .`, you can also use:
+
+```bash
+nlp-api
+```
+
+For local hot reload:
+
+```bash
+set UVICORN_RELOAD=true && python -m src.main
 ```
 
 ## Configuration
@@ -100,13 +119,13 @@ Another example:
   "text": "events@example.com",
   "domain": "restaurant",
   "context": {
-    "previous_intent": "greeting_contact",
+    "previous_intent": "contact_request",
     "required_slots": ["email"]
   }
 }
 ```
 
-Important: `events@example.com` does not imply `greeting_contact` by itself. The active intent comes from the previous turn. The text only provides the missing slot value.
+Important: `events@example.com` does not imply `contact_request` by itself. The active intent comes from the previous turn. The text only provides the missing slot value.
 
 ```json
 {

@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict
 
-from src.api.schemas import AnalysisContext
+from src.api.schemas import AnalysisContext, IntentName
 from src.config import Settings, settings
 from src.services.context_resolver import ContextResolver
 
@@ -16,11 +16,11 @@ from src.services.context_resolver import ContextResolver
 class IntentResult:
     """Classifier output."""
 
-    name: str
+    name: IntentName
     confidence: float
     fast_path: bool
     source: str
-    alternatives: Dict[str, float]
+    alternatives: Dict[IntentName, float]
     processing_time_ms: float
 
 
@@ -36,14 +36,14 @@ class IntentClassifier:
         self.context_resolver = context_resolver or ContextResolver()
         self.model: Any | None = None
         self.tokenizer: Any | None = None
-        self.label_map: Dict[int, str] = {}
+        self.label_map: Dict[int, IntentName] = {}
         self.regex_patterns = self._compile_patterns()
 
-    def _compile_patterns(self) -> Dict[str, Dict[str, re.Pattern[str]]]:
-        compiled: Dict[str, Dict[str, re.Pattern[str]]] = {}
+    def _compile_patterns(self) -> Dict[str, Dict[IntentName, re.Pattern[str]]]:
+        compiled: Dict[str, Dict[IntentName, re.Pattern[str]]] = {}
         for domain, intents in self.config.regex_patterns.items():
             compiled[domain] = {
-                intent: re.compile("|".join(patterns), re.IGNORECASE)
+                self._to_intent_name(intent): re.compile("|".join(patterns), re.IGNORECASE)
                 for intent, patterns in intents.items()
             }
         return compiled
@@ -54,7 +54,7 @@ class IntentClassifier:
         self.tokenizer = tokenizer
         self.model = model
         raw_labels = getattr(model.config, "id2label", {}) or {}
-        self.label_map = {int(key): value for key, value in raw_labels.items()}
+        self.label_map = {int(key): self._to_intent_name(value) for key, value in raw_labels.items()}
 
     def classify(
         self,
@@ -86,7 +86,7 @@ class IntentClassifier:
 
         if self.model is None or self.tokenizer is None:
             fallback = regex_result or IntentResult(
-                name="unknown",
+                name=IntentName.UNKNOWN,
                 confidence=0.0,
                 fast_path=False,
                 source="unavailable",
@@ -112,7 +112,10 @@ class IntentClassifier:
 
         probabilities = torch.softmax(logits, dim=-1)
         top_values, top_indices = torch.topk(probabilities, k=min(5, probabilities.shape[0]))
-        top_pairs = [(self.label_map.get(int(idx), f"label_{int(idx)}"), float(value)) for idx, value in zip(top_indices, top_values)]
+        top_pairs = [
+            (self.label_map.get(int(idx), IntentName.UNKNOWN), float(value))
+            for idx, value in zip(top_indices, top_values)
+        ]
         primary_label, primary_score = top_pairs[0]
         alternatives = {label: round(score, 6) for label, score in top_pairs[1:]}
         return IntentResult(
@@ -126,7 +129,7 @@ class IntentClassifier:
 
     def _classify_with_regex(self, text: str, domain: str) -> IntentResult | None:
         patterns = self.regex_patterns.get(domain) or self.regex_patterns.get("restaurant", {})
-        scored: list[tuple[str, float]] = []
+        scored: list[tuple[IntentName, float]] = []
         normalized = text.lower()
         for intent, pattern in patterns.items():
             matches = list(pattern.finditer(normalized))
@@ -150,7 +153,15 @@ class IntentClassifier:
         )
 
     def _available_intents(self, domain: str) -> set[str]:
-        return set(self.regex_patterns.get(domain, {}).keys()) | set(self.label_map.values())
+        return {intent.value for intent in self.regex_patterns.get(domain, {}).keys()} | {
+            intent.value for intent in self.label_map.values()
+        }
+
+    def _to_intent_name(self, raw_value: str) -> IntentName:
+        try:
+            return IntentName(raw_value)
+        except ValueError:
+            return IntentName.UNKNOWN
 
     @property
     def is_loaded(self) -> bool:

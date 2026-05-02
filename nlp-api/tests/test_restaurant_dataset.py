@@ -53,11 +53,12 @@ def test_restaurant_dataset_splits_cover_all_intents() -> None:
         "reservation_create",
         "reservation_modify",
         "reservation_cancel",
+        "reservation_status",
         "menu_request",
         "opening_hours",
         "location_request",
         "pricing_request",
-        "greeting_contact",
+        "contact_request",
     }
     for name in ("restaurant_train.jsonl", "restaurant_validation.jsonl", "restaurant_eval.jsonl"):
         payloads = _read_lines(DATA_DIR / name)
@@ -85,16 +86,27 @@ def test_restaurant_dataset_contains_all_entity_types() -> None:
     }
 
 
+def test_restaurant_dataset_every_intent_example_has_context_entities() -> None:
+    payloads = _read_lines(DATA_DIR / "restaurant_corpus.jsonl")
+    missing_entities = [
+        payload
+        for payload in payloads
+        if not payload["entities"]
+    ]
+    assert missing_entities == []
+
+
 def test_restaurant_dataset_distribution_matches_plan() -> None:
     payloads = _read_lines(DATA_DIR / "restaurant_corpus.jsonl")
     counts = Counter(payload["intent"] for payload in payloads)
     assert counts == {
-        "reservation_create": 837,
-        "reservation_modify": 587,
-        "reservation_cancel": 413,
-        "menu_request": 663,
-        "opening_hours": 587,
-        "location_request": 587,
-        "pricing_request": 583,
-        "greeting_contact": 743,
+        "reservation_create": 760,
+        "reservation_modify": 540,
+        "reservation_cancel": 380,
+        "reservation_status": 260,
+        "menu_request": 640,
+        "opening_hours": 560,
+        "location_request": 540,
+        "pricing_request": 540,
+        "contact_request": 780,
     }

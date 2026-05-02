@@ -26,6 +26,13 @@ setup(
         "datasets==2.14.0",
         "aiofiles==23.2.1",
         "python-json-logger==2.0.7",
+        "symspellpy==6.9.0",
+        "spacy==3.7.5",
         "PyYAML==6.0.1",
     ],
+    entry_points={
+        "console_scripts": [
+            "nlp-api=src.main:run",
+        ]
+    },
 )

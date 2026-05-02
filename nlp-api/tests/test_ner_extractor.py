@@ -30,7 +30,7 @@ def test_contextual_ner_extracts_missing_people_slot_from_short_reply() -> None:
     result = extractor.extract_with_context(
         "4",
         AnalysisContext(
-            previous_intent="reservation",
+            previous_intent="reservation_create",
             previous_slots=ContextSlots(date="tomorrow"),
             required_slots=["people", "date", "time"],
         ),
@@ -92,7 +92,7 @@ def test_contextual_ner_extracts_email_from_short_follow_up() -> None:
     result = extractor.extract_with_context(
         "events@example.com",
         AnalysisContext(
-            previous_intent="greeting_contact",
+            previous_intent="contact_request",
             required_slots=["email"],
         ),
     )

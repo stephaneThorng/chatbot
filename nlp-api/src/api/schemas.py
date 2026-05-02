@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Dict, List, Literal
+from enum import StrEnum
+from typing import Dict, List
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -12,6 +13,49 @@ class SchemaModel(BaseModel):
     """Base schema configuration shared across API models."""
 
     model_config = ConfigDict(protected_namespaces=())
+
+
+class IntentName(StrEnum):
+    """Supported intent labels."""
+
+    RESERVATION_CREATE = "reservation_create"
+    RESERVATION_MODIFY = "reservation_modify"
+    RESERVATION_CANCEL = "reservation_cancel"
+    RESERVATION_STATUS = "reservation_status"
+    MENU_REQUEST = "menu_request"
+    OPENING_HOURS = "opening_hours"
+    LOCATION_REQUEST = "location_request"
+    PRICING_REQUEST = "pricing_request"
+    CONTACT_REQUEST = "contact_request"
+    UNKNOWN = "unknown"
+
+
+class EntityType(StrEnum):
+    """Supported entity labels."""
+
+    DATE = "DATE"
+    TIME = "TIME"
+    PEOPLE_COUNT = "PEOPLE_COUNT"
+    PERSON = "PERSON"
+    PHONE = "PHONE"
+    EMAIL = "EMAIL"
+    MENU_ITEM = "MENU_ITEM"
+    PRICE_ITEM = "PRICE_ITEM"
+    LOCATION = "LOCATION"
+
+
+class SlotName(StrEnum):
+    """Supported conversational slot names."""
+
+    DATE = "date"
+    TIME = "time"
+    PEOPLE = "people"
+    NAME = "name"
+    PHONE = "phone"
+    EMAIL = "email"
+    MENU_ITEM = "menu_item"
+    PRICE_ITEM = "price_item"
+    LOCATION = "location"
 
 
 class ContextSlots(SchemaModel):
@@ -31,23 +75,11 @@ class ContextSlots(SchemaModel):
 class AnalysisContext(SchemaModel):
     """Typed conversation context passed by the caller."""
 
-    current_intent: str | None = None
-    previous_intent: str | None = None
+    current_intent: IntentName | None = None
+    previous_intent: IntentName | None = None
     previous_slots: ContextSlots | None = None
     slots_filled: ContextSlots | None = None
-    required_slots: List[
-        Literal[
-            "date",
-            "time",
-            "people",
-            "name",
-            "phone",
-            "email",
-            "menu_item",
-            "price_item",
-            "location",
-        ]
-    ] = Field(default_factory=list)
+    required_slots: List[SlotName] = Field(default_factory=list)
 
 
 class AnalysisRequest(SchemaModel):
@@ -77,7 +109,7 @@ class AnalysisRequest(SchemaModel):
 class IntentResponse(SchemaModel):
     """Intent payload."""
 
-    name: str
+    name: IntentName
     confidence: float = Field(..., ge=0.0, le=1.0)
     fast_path: bool = False
     source: str
@@ -87,7 +119,7 @@ class IntentResponse(SchemaModel):
 class EntityResponse(SchemaModel):
     """Entity payload."""
 
-    type: str
+    type: EntityType
     value: str
     start: int = Field(..., ge=0)
     end: int = Field(..., ge=0)

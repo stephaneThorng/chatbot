@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import re
 
+from src.api.schemas import EntityType
 from src.config import Settings, settings
 
 if TYPE_CHECKING:
@@ -82,7 +83,7 @@ class SpacyEntityExtractor:
         doc = self._nlp(text)
         entities = [
             entity_cls(
-                type=span.label_,
+                type=EntityType(span.label_),
                 value=span.text,
                 start=span.start_char,
                 end=span.end_char,
@@ -139,13 +140,13 @@ class SpacyEntityExtractor:
         entities: list["Entity"] = []
         for pattern in self._phone_patterns:
             for match in pattern.finditer(text):
-                entities.append(entity_cls("PHONE", match.group(0), match.start(), match.end(), 0.91, "spacy_rule"))
+                entities.append(entity_cls(EntityType.PHONE, match.group(0), match.start(), match.end(), 0.91, "spacy_rule"))
         for pattern in self._date_patterns:
             for match in pattern.finditer(text):
-                entities.append(entity_cls("DATE", match.group(0), match.start(), match.end(), 0.94, "spacy_rule"))
+                entities.append(entity_cls(EntityType.DATE, match.group(0), match.start(), match.end(), 0.94, "spacy_rule"))
         for pattern in self._time_patterns:
             for match in pattern.finditer(text):
-                entities.append(entity_cls("TIME", match.group(0), match.start(), match.end(), 0.95, "spacy_rule"))
+                entities.append(entity_cls(EntityType.TIME, match.group(0), match.start(), match.end(), 0.95, "spacy_rule"))
         return entities
 
     def _confidence_for_label(self, label: str) -> float:

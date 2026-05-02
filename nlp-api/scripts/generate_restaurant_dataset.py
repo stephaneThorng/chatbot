@@ -10,20 +10,20 @@ from typing import List, Sequence
 
 OUTPUT_DIR = Path("training/data/restaurant")
 INTENT_TARGETS = {
-    "reservation_create": 837,
-    "reservation_modify": 587,
-    "reservation_cancel": 413,
-    "menu_request": 663,
-    "opening_hours": 587,
-    "location_request": 587,
-    "pricing_request": 583,
-    "greeting_contact": 743,
+    "reservation_create": 760,
+    "reservation_modify": 540,
+    "reservation_cancel": 380,
+    "reservation_status": 260,
+    "menu_request": 640,
+    "opening_hours": 560,
+    "location_request": 540,
+    "pricing_request": 540,
+    "contact_request": 780,
 }
 EXPECTED_CORPUS_SIZE = 5000
 EXPECTED_SPLIT_SIZES = {"train": 4000, "validation": 500, "eval": 500}
 UNIQUENESS_SUFFIXES = [
     ", please",
-    ", thanks",
     " for dinner",
     " for lunch",
     " this week",
@@ -246,7 +246,7 @@ PRICE_CONTEXTS = [
     "for weekend plans",
     "for a special occasion",
 ]
-GREETING_CONTEXTS = [
+CONTACT_CONTEXTS = [
     "for reservation help",
     "for event questions",
     "for catering info",
@@ -258,7 +258,7 @@ GREETING_CONTEXTS = [
     "for a press inquiry",
     "for a delivery issue",
 ]
-GREETING_SUFFIXES = [
+CONTACT_SUFFIXES = [
     "today",
     "this week",
     "for reservations",
@@ -269,8 +269,18 @@ GREETING_SUFFIXES = [
     "for planning",
     "for follow-up",
 ]
-
-
+RESERVATION_STATUS_CONTEXTS = [
+    "before I invite my guests",
+    "before I leave home",
+    "for planning",
+    "for tonight",
+    "before I call",
+    "for my calendar",
+    "before dinner",
+    "for the group",
+    "for my records",
+    "before I arrive",
+]
 def reservation_create_examples(target_count: int) -> list[Example]:
     examples: list[Example] = []
     templates = [
@@ -425,6 +435,35 @@ def reservation_cancel_examples(target_count: int) -> list[Example]:
     return examples[:target_count]
 
 
+def reservation_status_examples(target_count: int) -> list[Example]:
+    examples: list[Example] = []
+    templates = [
+        lambda n, context: build_example("reservation_status", ["Can you check my reservation under ", ("PERSON", n), " ", context, "?"]),
+        lambda d, context: build_example("reservation_status", ["Please show my reservation for ", ("DATE", d), " ", context]),
+        lambda t, context: build_example("reservation_status", ["I want to recheck my reservation at ", ("TIME", t), " ", context]),
+        lambda p, context: build_example("reservation_status", ["Can you view the reservation linked to ", ("PHONE", p), " ", context, "?"]),
+        lambda e, context: build_example("reservation_status", ["What is the status of my reservation for ", ("EMAIL", e), " ", context, "?"]),
+    ]
+    for index in range(target_count):
+        template_index = index % len(templates)
+        bucket = index // len(templates)
+        name = pick(NAMES, bucket, template_index * 2, step=3)
+        date = pick(DATES, bucket, template_index * 3, step=4)
+        time = pick(TIMES, bucket, template_index * 4, step=5)
+        phone = pick(PHONES, bucket, template_index * 5, step=6)
+        email = pick(EMAILS, bucket, template_index * 6, step=7)
+        context = pick(RESERVATION_STATUS_CONTEXTS, bucket, template_index * 7, step=2)
+        choices = [
+            templates[0](name, context),
+            templates[1](date, context),
+            templates[2](time, context),
+            templates[3](phone, context),
+            templates[4](email, context),
+        ]
+        examples.append(choices[template_index])
+    return examples[:target_count]
+
+
 def menu_request_examples(target_count: int) -> list[Example]:
     examples: list[Example] = []
     templates = [
@@ -511,14 +550,14 @@ def pricing_request_examples(target_count: int) -> list[Example]:
     return examples[:target_count]
 
 
-def greeting_contact_examples(target_count: int) -> list[Example]:
+def contact_request_examples(target_count: int) -> list[Example]:
     examples: list[Example] = []
     templates = [
-        lambda p, context, suffix: build_example("greeting_contact", ["Hi, what is the best phone number to reach you ", context, " ", suffix, "? I have ", ("PHONE", p), " in my notes"]),
-        lambda e, context, suffix: build_example("greeting_contact", ["Hello, is ", ("EMAIL", e), " the right email ", context, " ", suffix, "?"]),
-        lambda n, context, suffix: build_example("greeting_contact", ["Hey, can ", ("PERSON", n), " call the restaurant manager ", context, " ", suffix, "?"]),
-        lambda p, context, suffix: build_example("greeting_contact", ["Good afternoon, should I text ", ("PHONE", p), " or call ", context, " ", suffix, "?"]),
-        lambda e, context, suffix: build_example("greeting_contact", ["Hello there, can I contact the team at ", ("EMAIL", e), " ", context, " ", suffix, "?"]),
+        lambda p, context, suffix: build_example("contact_request", ["What is the best phone number to reach you ", context, " ", suffix, "? I have ", ("PHONE", p), " in my notes"]),
+        lambda e, context, suffix: build_example("contact_request", ["Is ", ("EMAIL", e), " the right email ", context, " ", suffix, "?"]),
+        lambda n, context, suffix: build_example("contact_request", ["Can ", ("PERSON", n), " call the restaurant manager ", context, " ", suffix, "?"]),
+        lambda p, context, suffix: build_example("contact_request", ["Should I text ", ("PHONE", p), " or call ", context, " ", suffix, "?"]),
+        lambda e, context, suffix: build_example("contact_request", ["Can I contact the team at ", ("EMAIL", e), " ", context, " ", suffix, "?"]),
     ]
     for index in range(target_count):
         template_index = index % len(templates)
@@ -526,8 +565,8 @@ def greeting_contact_examples(target_count: int) -> list[Example]:
         phone = pick(PHONES, bucket, template_index * 2, step=3)
         email = pick(EMAILS, bucket, template_index * 3, step=4)
         name = pick(NAMES, bucket, template_index * 4, step=5)
-        context = pick(GREETING_CONTEXTS, bucket, template_index * 5, step=6)
-        suffix = pick(GREETING_SUFFIXES, bucket, template_index * 7, step=2)
+        context = pick(CONTACT_CONTEXTS, bucket, template_index * 5, step=6)
+        suffix = pick(CONTACT_SUFFIXES, bucket, template_index * 7, step=2)
         choices = [
             templates[0](phone, context, suffix),
             templates[1](email, context, suffix),
@@ -544,11 +583,12 @@ def build_corpus() -> list[Example]:
     corpus.extend(reservation_create_examples(INTENT_TARGETS["reservation_create"]))
     corpus.extend(reservation_modify_examples(INTENT_TARGETS["reservation_modify"]))
     corpus.extend(reservation_cancel_examples(INTENT_TARGETS["reservation_cancel"]))
+    corpus.extend(reservation_status_examples(INTENT_TARGETS["reservation_status"]))
     corpus.extend(menu_request_examples(INTENT_TARGETS["menu_request"]))
     corpus.extend(opening_hours_examples(INTENT_TARGETS["opening_hours"]))
     corpus.extend(location_request_examples(INTENT_TARGETS["location_request"]))
     corpus.extend(pricing_request_examples(INTENT_TARGETS["pricing_request"]))
-    corpus.extend(greeting_contact_examples(INTENT_TARGETS["greeting_contact"]))
+    corpus.extend(contact_request_examples(INTENT_TARGETS["contact_request"]))
     return ensure_unique_texts(corpus)
 
 
@@ -601,14 +641,15 @@ def write_jsonl(path: Path, examples: Sequence[Example]) -> None:
 
 def split_examples(corpus: Sequence[Example]) -> tuple[list[Example], list[Example], list[Example]]:
     split_counts: dict[str, tuple[int, int, int]] = {
-        "reservation_create": (669, 84, 84),
-        "reservation_modify": (469, 59, 59),
-        "reservation_cancel": (331, 41, 41),
-        "menu_request": (530, 66, 67),
-        "opening_hours": (469, 59, 59),
-        "location_request": (469, 59, 59),
-        "pricing_request": (466, 58, 59),
-        "greeting_contact": (597, 74, 72),
+        "reservation_create": (608, 76, 76),
+        "reservation_modify": (432, 54, 54),
+        "reservation_cancel": (304, 38, 38),
+        "reservation_status": (208, 26, 26),
+        "menu_request": (512, 64, 64),
+        "opening_hours": (448, 56, 56),
+        "location_request": (432, 54, 54),
+        "pricing_request": (432, 54, 54),
+        "contact_request": (624, 78, 78),
     }
     train: list[Example] = []
     validation: list[Example] = []

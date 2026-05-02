@@ -14,6 +14,34 @@ def test_regex_intent_classification_prefers_reservation() -> None:
     assert result.confidence >= 0.6
 
 
+def test_regex_intent_classification_detects_status() -> None:
+    classifier = IntentClassifier(Settings(use_hybrid_intent=True))
+    result = classifier.classify("Can you check my reservation?", "restaurant")
+    assert result.name == "reservation_status"
+    assert result.fast_path is True
+    assert result.source == "regex"
+
+
+def test_regex_intent_classification_leaves_farewell_to_backend() -> None:
+    classifier = IntentClassifier(Settings(use_hybrid_intent=True))
+    result = classifier.classify("good bye", "restaurant")
+    assert result.name == "unknown"
+
+
+def test_regex_intent_classification_leaves_thanks_to_backend() -> None:
+    classifier = IntentClassifier(Settings(use_hybrid_intent=True))
+    result = classifier.classify("thank you", "restaurant")
+    assert result.name == "unknown"
+
+
+def test_regex_intent_classification_detects_seafood_menu() -> None:
+    classifier = IntentClassifier(Settings(use_hybrid_intent=True))
+    result = classifier.classify("Can I see the seafood options for weekend dinner?", "restaurant")
+    assert result.name == "menu_request"
+    assert result.fast_path is True
+    assert result.source == "regex"
+
+
 def test_context_classification_recovers_partial_follow_up() -> None:
     classifier = IntentClassifier(Settings())
     result = classifier.classify(
@@ -71,13 +99,21 @@ def test_context_classification_keeps_contact_intent_for_email_follow_up() -> No
         "events@example.com",
         "restaurant",
         AnalysisContext(
-            previous_intent="greeting_contact",
+            previous_intent="contact_request",
             required_slots=["email"],
         ),
     )
-    assert result.name == "greeting_contact"
+    assert result.name == "contact_request"
     assert result.source == "context"
     assert result.fast_path is True
+
+
+def test_regex_intent_classification_detects_contact_request() -> None:
+    classifier = IntentClassifier(Settings(use_hybrid_intent=True))
+    result = classifier.classify("What is your phone number?", "restaurant")
+    assert result.name == "contact_request"
+    assert result.fast_path is True
+    assert result.source == "regex"
 
 
 def test_context_classification_keeps_location_intent_for_location_follow_up() -> None:

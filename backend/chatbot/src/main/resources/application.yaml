@@ -1,0 +1,12 @@
+ktor:
+  deployment:
+    port: 8080
+  application:
+    modules:
+      - dev.stephyu.HttpKt.configureHttp
+      - dev.stephyu.SerializationKt.configureSerialization
+      - dev.stephyu.KoinKt.configureKoin
+      - dev.stephyu.RoutingKt.configureRouting
+
+nlp:
+  apiUrl: "http://localhost:8000"

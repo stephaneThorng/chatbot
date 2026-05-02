@@ -1,0 +1,85 @@
+package dev.stephyu.core.chat.adapter.out.nlp
+
+import dev.stephyu.core.chat.adapter.out.nlp.dto.NlpAnalysisContextDto
+import dev.stephyu.core.chat.adapter.out.nlp.dto.NlpAnalysisRequestDto
+import dev.stephyu.core.chat.adapter.out.nlp.dto.NlpAnalysisResponseDto
+import dev.stephyu.core.chat.adapter.out.nlp.dto.NlpContextSlotsDto
+import dev.stephyu.core.chat.application.port.out.NlpAnalyzer
+import dev.stephyu.core.chat.domain.EntityType
+import dev.stephyu.core.chat.domain.IntentName
+import dev.stephyu.core.chat.domain.NlpAnalysis
+import dev.stephyu.core.chat.domain.NlpAnalysisContext
+import dev.stephyu.core.chat.domain.NlpEntity
+import dev.stephyu.core.chat.domain.NlpIntent
+import dev.stephyu.core.chat.domain.SlotName
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+
+class HttpNlpAnalyzer(
+    private val config: NlpClientConfig,
+    private val httpClient: HttpClient = HttpClient.newHttpClient(),
+    private val json: Json = Json { ignoreUnknownKeys = true },
+) : NlpAnalyzer {
+    override suspend fun analyze(text: String, domain: String, context: NlpAnalysisContext?): NlpAnalysis =
+        withContext(Dispatchers.IO) {
+            val payload = NlpAnalysisRequestDto(
+                text = text,
+                domain = domain,
+                context = context?.toDto(),
+            )
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("${config.baseUrl.trimEnd('/')}/analyze"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(json.encodeToString(payload)))
+                .build()
+
+            runCatching {
+                val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+                if (response.statusCode() !in 200..299) {
+                    return@runCatching NlpAnalysis.unavailable
+                }
+                json.decodeFromString<NlpAnalysisResponseDto>(response.body()).toDomain()
+            }.getOrDefault(NlpAnalysis.unavailable)
+        }
+
+    private fun NlpAnalysisContext.toDto(): NlpAnalysisContextDto =
+        NlpAnalysisContextDto(
+            currentIntent = currentIntent?.wireName,
+            previousIntent = previousIntent?.wireName,
+            slotsFilled = NlpContextSlotsDto(
+                date = slotsFilled[SlotName.DATE],
+                time = slotsFilled[SlotName.TIME],
+                people = slotsFilled[SlotName.PEOPLE],
+                name = slotsFilled[SlotName.NAME],
+                phone = slotsFilled[SlotName.PHONE],
+                email = slotsFilled[SlotName.EMAIL],
+                menuItem = slotsFilled[SlotName.MENU_ITEM],
+                priceItem = slotsFilled[SlotName.PRICE_ITEM],
+                location = slotsFilled[SlotName.LOCATION],
+            ),
+            requiredSlots = requiredSlots.map { it.wireName },
+        )
+
+    private fun NlpAnalysisResponseDto.toDomain(): NlpAnalysis =
+        NlpAnalysis(
+            intent = NlpIntent(
+                name = IntentName.fromWireName(intent.name),
+                confidence = intent.confidence,
+                source = intent.source,
+            ),
+            entities = entities.map {
+                NlpEntity(
+                    type = EntityType.fromWireName(it.type),
+                    value = it.value,
+                    confidence = it.confidence,
+                    source = it.source,
+                )
+            },
+        )
+}

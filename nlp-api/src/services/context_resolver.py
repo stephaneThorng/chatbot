@@ -6,16 +6,16 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
-from src.api.schemas import AnalysisContext, ContextSlots
+from src.api.schemas import AnalysisContext, ContextSlots, EntityType, IntentName, SlotName
 
 
 @dataclass(frozen=True, slots=True)
 class ContextIntentDecision:
     """Resolved intent from conversational context."""
 
-    name: str
+    name: IntentName
     confidence: float
-    alternatives: dict[str, float]
+    alternatives: dict[IntentName, float]
     source: str = "context"
     fast_path: bool = True
 
@@ -24,7 +24,7 @@ class ContextIntentDecision:
 class ContextEntityHint:
     """Context-derived entity candidate."""
 
-    type: str
+    type: EntityType
     value: str
     start: int
     end: int
@@ -42,19 +42,12 @@ class ContextResolver:
         "update",
         "move",
         "rather",
-        "non",
-        "plutot",
-        "en fait",
-        "changez",
-        "attendez",
     )
 
     CONTEXT_CANCELLATION_MARKERS = (
         "cancel",
         "drop",
         "remove",
-        "annule",
-        "supprime",
     )
 
     SLOT_PATTERNS: dict[str, tuple[str, ...]] = {
@@ -94,9 +87,9 @@ class ContextResolver:
         ),
     }
 
-    DEFAULT_RESERVATION_SLOTS = {"people", "date", "time", "name"}
+    DEFAULT_RESERVATION_SLOTS = {SlotName.PEOPLE, SlotName.DATE, SlotName.TIME, SlotName.NAME}
 
-    def infer_missing_slots(self, context: AnalysisContext | None) -> set[str]:
+    def infer_missing_slots(self, context: AnalysisContext | None) -> set[SlotName]:
         """Compute which conversational slots are still expected."""
 
         if not context:
@@ -105,17 +98,17 @@ class ContextResolver:
         previous_slot_values = previous_slots.model_dump(exclude_none=True)
         required_slots = context.required_slots or []
         missing_slots = {
-            str(slot).lower()
+            SlotName(str(slot).lower())
             for slot in required_slots
             if str(slot).lower() not in {str(key).lower() for key in previous_slot_values}
         }
         previous_intent = self.get_previous_intent(context).lower()
         if previous_intent.startswith("reservation") and not required_slots:
-            provided = {str(key).lower() for key in previous_slot_values}
+            provided = {SlotName(str(key).lower()) for key in previous_slot_values}
             missing_slots |= self.DEFAULT_RESERVATION_SLOTS - provided
         return missing_slots
 
-    def get_previous_intent(self, context: AnalysisContext | None) -> str:
+    def get_previous_intent(self, context: AnalysisContext | None) -> IntentName | str:
         """Return active prior intent from context."""
 
         if not context:
@@ -184,29 +177,29 @@ class ContextResolver:
         generic_patterns = (
             r"^\d{1,2}$",
             r"^for\s+\d{1,2}$",
-            r"^\d{1,2}\s*(people|persons|guests?|personnes?)$",
+            r"^\d{1,2}\s*(people|persons|guests?)$",
             r"^\d{1,2}(?::\d{2})?\s?(am|pm)$",
             r"^(today|tomorrow|tonight|this weekend|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$",
             r"^[a-z]+(?:\s+[a-z]+){0,2}$",
         )
         return any(re.fullmatch(pattern, normalized_text) for pattern in generic_patterns)
 
-    def matches_slot_value_shape(self, normalized_text: str, slot: str) -> bool:
+    def matches_slot_value_shape(self, normalized_text: str, slot: SlotName) -> bool:
         """Check whether text looks like a value for the given slot."""
 
         return any(re.fullmatch(pattern, normalized_text) for pattern in self.SLOT_PATTERNS.get(slot, ()))
 
-    def matches_multi_slot_follow_up(self, normalized_text: str, missing_slots: set[str]) -> bool:
+    def matches_multi_slot_follow_up(self, normalized_text: str, missing_slots: set[SlotName]) -> bool:
         """Detect short follow-ups with multiple slot values."""
 
-        has_date = "date" in missing_slots and any(
+        has_date = SlotName.DATE in missing_slots and any(
             re.search(pattern, normalized_text)
             for pattern in (
                 r"\b(today|tomorrow|tonight|this weekend|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
                 r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}\b",
             )
         )
-        has_time = "time" in missing_slots and any(
+        has_time = SlotName.TIME in missing_slots and any(
             re.search(pattern, normalized_text)
             for pattern in (
                 r"\b\d{1,2}(?::\d{2})?\s?(am|pm)\b",
@@ -230,7 +223,7 @@ class ContextResolver:
         hints.extend(self._match_phrase_hints(normalized_text, missing_slots))
         return hints
 
-    def filter_entity_types(self, entity_types: Sequence[str], context: AnalysisContext | None) -> set[str]:
+    def filter_entity_types(self, entity_types: Sequence[EntityType], context: AnalysisContext | None) -> set[EntityType]:
         """Return entity types that are preferred given the current context."""
 
         if not context:
@@ -244,19 +237,19 @@ class ContextResolver:
             if self.entity_type_to_slot(entity_type) in missing_slots
         }
 
-    def entity_type_to_slot(self, entity_type: str) -> str:
+    def entity_type_to_slot(self, entity_type: EntityType | str) -> SlotName | str:
         """Map entity types to slot keys."""
 
         mapping = {
-            "DATE": "date",
-            "TIME": "time",
-            "PEOPLE_COUNT": "people",
-            "PERSON": "name",
-            "PHONE": "phone",
-            "EMAIL": "email",
-            "MENU_ITEM": "menu_item",
-            "PRICE_ITEM": "price_item",
-            "LOCATION": "location",
+            EntityType.DATE: SlotName.DATE,
+            EntityType.TIME: SlotName.TIME,
+            EntityType.PEOPLE_COUNT: SlotName.PEOPLE,
+            EntityType.PERSON: SlotName.NAME,
+            EntityType.PHONE: SlotName.PHONE,
+            EntityType.EMAIL: SlotName.EMAIL,
+            EntityType.MENU_ITEM: SlotName.MENU_ITEM,
+            EntityType.PRICE_ITEM: SlotName.PRICE_ITEM,
+            EntityType.LOCATION: SlotName.LOCATION,
         }
         return mapping.get(entity_type, entity_type.lower())
 
@@ -275,7 +268,7 @@ class ContextResolver:
         confidence: float,
         available_intents: set[str],
     ) -> ContextIntentDecision:
-        resolved_name = name if name in available_intents or not available_intents else fallback
+        resolved_name = IntentName(name) if name in available_intents or not available_intents else fallback
         alternatives = {fallback: round(1.0 - confidence, 6)} if fallback != resolved_name else {}
         return ContextIntentDecision(
             name=resolved_name,
@@ -283,47 +276,47 @@ class ContextResolver:
             alternatives=alternatives,
         )
 
-    def _match_single_value_hints(self, normalized_text: str, missing_slots: set[str]) -> list[ContextEntityHint]:
+    def _match_single_value_hints(self, normalized_text: str, missing_slots: set[SlotName]) -> list[ContextEntityHint]:
         hints: list[ContextEntityHint] = []
-        if "people" in missing_slots:
+        if SlotName.PEOPLE in missing_slots:
             match = re.fullmatch(r"\s*(\d{1,2}|for\s+\d{1,2}(?:\s+\w+)?)\s*", normalized_text, flags=re.IGNORECASE)
             if match:
-                hints.append(ContextEntityHint("PEOPLE_COUNT", match.group(1), match.start(1), match.end(1), 0.86))
-        if "time" in missing_slots:
+                hints.append(ContextEntityHint(EntityType.PEOPLE_COUNT, match.group(1), match.start(1), match.end(1), 0.86))
+        if SlotName.TIME in missing_slots:
             match = re.search(r"\b(\d{1,2}(?::\d{2})?\s?(?:am|pm)|noon|midnight)\b", normalized_text, flags=re.IGNORECASE)
             if match:
-                hints.append(ContextEntityHint("TIME", match.group(1), match.start(1), match.end(1), 0.86))
-        if "date" in missing_slots:
+                hints.append(ContextEntityHint(EntityType.TIME, match.group(1), match.start(1), match.end(1), 0.86))
+        if SlotName.DATE in missing_slots:
             match = re.search(
                 r"\b(today|tomorrow|tonight|this weekend|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
                 normalized_text,
                 flags=re.IGNORECASE,
             )
             if match:
-                hints.append(ContextEntityHint("DATE", match.group(1), match.start(1), match.end(1), 0.86))
-        if "name" in missing_slots:
+                hints.append(ContextEntityHint(EntityType.DATE, match.group(1), match.start(1), match.end(1), 0.86))
+        if SlotName.NAME in missing_slots:
             match = re.fullmatch(r"\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s*", normalized_text)
             if match:
-                hints.append(ContextEntityHint("PERSON", match.group(1), match.start(1), match.end(1), 0.8))
-        if "phone" in missing_slots:
+                hints.append(ContextEntityHint(EntityType.PERSON, match.group(1), match.start(1), match.end(1), 0.8))
+        if SlotName.PHONE in missing_slots:
             match = re.fullmatch(
                 r"\s*((?:(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}|\d{3}[\s.-]?\d{4}))\s*",
                 normalized_text,
             )
             if match:
-                hints.append(ContextEntityHint("PHONE", match.group(1), match.start(1), match.end(1), 0.86))
-        if "email" in missing_slots:
+                hints.append(ContextEntityHint(EntityType.PHONE, match.group(1), match.start(1), match.end(1), 0.86))
+        if SlotName.EMAIL in missing_slots:
             match = re.fullmatch(r"\s*([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\s*", normalized_text, flags=re.IGNORECASE)
             if match:
-                hints.append(ContextEntityHint("EMAIL", match.group(1), match.start(1), match.end(1), 0.86))
+                hints.append(ContextEntityHint(EntityType.EMAIL, match.group(1), match.start(1), match.end(1), 0.86))
         return hints
 
-    def _match_phrase_hints(self, normalized_text: str, missing_slots: set[str]) -> list[ContextEntityHint]:
+    def _match_phrase_hints(self, normalized_text: str, missing_slots: set[SlotName]) -> list[ContextEntityHint]:
         hints: list[ContextEntityHint] = []
         phrase_specs = (
-            ("menu_item", "MENU_ITEM"),
-            ("price_item", "PRICE_ITEM"),
-            ("location", "LOCATION"),
+            (SlotName.MENU_ITEM, EntityType.MENU_ITEM),
+            (SlotName.PRICE_ITEM, EntityType.PRICE_ITEM),
+            (SlotName.LOCATION, EntityType.LOCATION),
         )
         for slot_name, entity_type in phrase_specs:
             if slot_name not in missing_slots:

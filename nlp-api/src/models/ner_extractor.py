@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Iterable, List, Sequence
 
-from src.api.schemas import AnalysisContext
+from src.api.schemas import AnalysisContext, EntityType
 from src.config import Settings, settings
 from src.services.context_resolver import ContextEntityHint, ContextResolver
 from src.services.spacy_entity_extractor import SpacyEntityExtractor
@@ -16,7 +16,7 @@ from src.services.spacy_entity_extractor import SpacyEntityExtractor
 class Entity:
     """Resolved entity span."""
 
-    type: str
+    type: EntityType
     value: str
     start: int
     end: int
@@ -183,7 +183,7 @@ class NERExtractor:
                 if active is not None:
                     entities.append(active)
                 active = Entity(
-                    type=entity_type,
+                    type=EntityType(entity_type),
                     value=text[start:end],
                     start=start,
                     end=end,

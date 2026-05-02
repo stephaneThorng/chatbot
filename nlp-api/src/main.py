@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import os
 
+import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
@@ -11,6 +13,7 @@ from fastapi.responses import JSONResponse
 
 from src.api.routes import router
 from src.api.schemas import ErrorResponse
+from src.config import settings
 from src.services.nlp_service import NLPService
 from src.utils.logger import configure_logging, get_logger
 
@@ -58,3 +61,19 @@ def create_app(service: NLPService | None = None) -> FastAPI:
 
 
 app = create_app()
+
+
+def run() -> None:
+    """Run the API server with settings-backed defaults."""
+
+    uvicorn.run(
+        "src.main:app",
+        host=settings.service_host,
+        port=settings.service_port,
+        reload=os.getenv("UVICORN_RELOAD", "false").lower() == "true",
+        workers=settings.uvicorn_workers,
+    )
+
+
+if __name__ == "__main__":
+    run()
