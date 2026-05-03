@@ -19,10 +19,11 @@ data class NlpIntent(
     val name: IntentName,
     val confidence: Double,
     val source: String,
+    val alternatives: Map<IntentName, Double> = emptyMap(),
 )
 
 data class NlpEntity(
-    val type: EntityType,
+    val type: SlotName,
     val value: String,
     val confidence: Double,
     val source: String,

@@ -19,9 +19,10 @@ INTENT_TARGETS = {
     "location_request": 540,
     "pricing_request": 540,
     "contact_request": 780,
+    "unknown": 500,
 }
-EXPECTED_CORPUS_SIZE = 5000
-EXPECTED_SPLIT_SIZES = {"train": 4000, "validation": 500, "eval": 500}
+EXPECTED_CORPUS_SIZE = 5500
+EXPECTED_SPLIT_SIZES = {"train": 4400, "validation": 550, "eval": 550}
 UNIQUENESS_SUFFIXES = [
     ", please",
     " for dinner",
@@ -280,6 +281,38 @@ RESERVATION_STATUS_CONTEXTS = [
     "for the group",
     "for my records",
     "before I arrive",
+]
+UNKNOWN_SINGLE_TOKENS = [
+    "carrot",
+    "banana",
+    "pillow",
+    "notebook",
+    "lantern",
+    "cactus",
+    "penguin",
+    "bicycle",
+    "sunset",
+    "marble",
+]
+UNKNOWN_SMALL_TALK = [
+    "How am I doing today?",
+    "I am feeling great right now.",
+    "I am very very good at eating.",
+    "Tell me something random.",
+    "That is not what I meant.",
+    "I just wanted to say something odd.",
+    "This is unrelated to dinner planning.",
+    "I am testing random conversation here.",
+    "That feels a bit off topic.",
+    "I am chatting without a restaurant question.",
+]
+UNKNOWN_VAGUE_FOLLOW_UPS = [
+    "what else?",
+    "anything more?",
+    "other options?",
+    "what about the rest?",
+    "and then?",
+    "go on?",
 ]
 def reservation_create_examples(target_count: int) -> list[Example]:
     examples: list[Example] = []
@@ -578,6 +611,31 @@ def contact_request_examples(target_count: int) -> list[Example]:
     return examples[:target_count]
 
 
+def unknown_examples(target_count: int) -> list[Example]:
+    examples: list[Example] = []
+    templates = [
+        lambda token, _: Example(text=token, intent="unknown", entities=tuple()),
+        lambda phrase, _: Example(text=phrase, intent="unknown", entities=tuple()),
+        lambda phrase, suffix: Example(text=f"{phrase} {suffix}", intent="unknown", entities=tuple()),
+        lambda phrase, _: Example(text=f"{phrase} please", intent="unknown", entities=tuple()),
+    ]
+    for index in range(target_count):
+        template_index = index % len(templates)
+        bucket = index // len(templates)
+        token = pick(UNKNOWN_SINGLE_TOKENS, bucket, template_index * 2, step=3)
+        phrase = pick(UNKNOWN_SMALL_TALK, bucket, template_index * 3, step=4)
+        vague = pick(UNKNOWN_VAGUE_FOLLOW_UPS, bucket, template_index * 4, step=5)
+        suffix = pick(UNKNOWN_SINGLE_TOKENS, bucket, template_index * 5, step=2)
+        choices = [
+            templates[0](token, suffix),
+            templates[1](phrase, suffix),
+            templates[2](vague, suffix),
+            templates[3](phrase, suffix),
+        ]
+        examples.append(choices[template_index])
+    return examples[:target_count]
+
+
 def build_corpus() -> list[Example]:
     corpus = []
     corpus.extend(reservation_create_examples(INTENT_TARGETS["reservation_create"]))
@@ -589,6 +647,7 @@ def build_corpus() -> list[Example]:
     corpus.extend(location_request_examples(INTENT_TARGETS["location_request"]))
     corpus.extend(pricing_request_examples(INTENT_TARGETS["pricing_request"]))
     corpus.extend(contact_request_examples(INTENT_TARGETS["contact_request"]))
+    corpus.extend(unknown_examples(INTENT_TARGETS["unknown"]))
     return ensure_unique_texts(corpus)
 
 
@@ -650,6 +709,7 @@ def split_examples(corpus: Sequence[Example]) -> tuple[list[Example], list[Examp
         "location_request": (432, 54, 54),
         "pricing_request": (432, 54, 54),
         "contact_request": (624, 78, 78),
+        "unknown": (400, 50, 50),
     }
     train: list[Example] = []
     validation: list[Example] = []

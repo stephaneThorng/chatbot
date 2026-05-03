@@ -1,28 +1,22 @@
 package dev.stephyu.core.chat.domain
 
-enum class SlotName(val wireName: String) {
-    DATE("date"),
-    TIME("time"),
-    PEOPLE("people"),
-    NAME("name"),
-    PHONE("phone"),
-    EMAIL("email"),
-    MENU_ITEM("menu_item"),
-    PRICE_ITEM("price_item"),
-    LOCATION("location");
+enum class SlotName(
+    val wireName: String,
+    private val nlpWireNames: Set<String>,
+) {
+    DATE("date", setOf("DATE")),
+    TIME("time", setOf("TIME")),
+    PEOPLE("people", setOf("PEOPLE_COUNT")),
+    NAME("name", setOf("PERSON")),
+    PHONE("phone", setOf("PHONE")),
+    EMAIL("email", setOf("EMAIL")),
+    MENU_ITEM("menu_item", setOf("MENU_ITEM")),
+    PRICE_ITEM("price_item", setOf("PRICE_ITEM")),
+    LOCATION("location", setOf("LOCATION")),
+    UNKNOWN("unknown", setOf("UNKNOWN"));
 
     companion object {
-        fun fromEntityType(entityType: EntityType): SlotName? = when (entityType) {
-            EntityType.DATE -> DATE
-            EntityType.TIME -> TIME
-            EntityType.PEOPLE_COUNT -> PEOPLE
-            EntityType.PERSON -> NAME
-            EntityType.PHONE -> PHONE
-            EntityType.EMAIL -> EMAIL
-            EntityType.MENU_ITEM -> MENU_ITEM
-            EntityType.PRICE_ITEM -> PRICE_ITEM
-            EntityType.LOCATION -> LOCATION
-            EntityType.UNKNOWN -> null
-        }
+        fun fromNlpWireName(value: String?): SlotName =
+            entries.firstOrNull { value in it.nlpWireNames } ?: UNKNOWN
     }
 }

@@ -1,6 +1,6 @@
 package dev.stephyu.core.chat.domain.workflow
 
-import dev.stephyu.core.chat.domain.EntityType
+import dev.stephyu.core.chat.domain.SlotName
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
@@ -12,6 +12,8 @@ data class RequirementParsingContext(
     val today: LocalDate,
     val minPartySize: Int = 1,
     val maxPartySize: Int = 12,
+    val earliestReservationTime: LocalTime = LocalTime.of(11, 30),
+    val latestReservationTime: LocalTime = LocalTime.of(23, 30),
 )
 
 sealed interface RequirementParsingResult {
@@ -21,7 +23,7 @@ sealed interface RequirementParsingResult {
 }
 
 sealed interface RequirementValueType {
-    val acceptedEntities: Set<EntityType>
+    val acceptedEntities: Set<SlotName>
 
     fun parse(raw: String, context: RequirementParsingContext): RequirementParsingResult
 }
@@ -30,13 +32,19 @@ data class PersonNameRequirementType(
     private val minLength: Int = 2,
     private val maxLength: Int = 60,
 ) : RequirementValueType {
-    override val acceptedEntities: Set<EntityType> = setOf(EntityType.PERSON)
+    override val acceptedEntities: Set<SlotName> = setOf(SlotName.NAME)
 
     override fun parse(raw: String, context: RequirementParsingContext): RequirementParsingResult {
         val candidate = extractName(raw).trim()
         if (candidate.isBlank()) return RequirementParsingResult.NotMatched
         if (candidate.length !in minLength..maxLength) {
             return RequirementParsingResult.Invalid("Please provide a name between $minLength and $maxLength characters.")
+        }
+        if (candidate.split(Regex("""\s+""")).size > 3) {
+            return RequirementParsingResult.NotMatched
+        }
+        if (Regex("""(?i)\b(reservation|book|booking|cancel|modify|change|opening|hours|menu|price|pricing|contact|phone|email|location|address|need|want|would|like|make|new|please)\b""").containsMatchIn(candidate)) {
+            return RequirementParsingResult.NotMatched
         }
         if (!NAME_PATTERN.matches(candidate)) {
             return RequirementParsingResult.Invalid("Please provide a valid reservation name.")
@@ -59,7 +67,7 @@ data class PersonNameRequirementType(
 }
 
 data object DateRequirementType : RequirementValueType {
-    override val acceptedEntities: Set<EntityType> = setOf(EntityType.DATE)
+    override val acceptedEntities: Set<SlotName> = setOf(SlotName.DATE)
 
     override fun parse(raw: String, context: RequirementParsingContext): RequirementParsingResult {
         val normalized = raw.lowercase(Locale.ROOT)
@@ -171,7 +179,7 @@ data object DateRequirementType : RequirementValueType {
 }
 
 data object TimeRequirementType : RequirementValueType {
-    override val acceptedEntities: Set<EntityType> = setOf(EntityType.TIME)
+    override val acceptedEntities: Set<SlotName> = setOf(SlotName.TIME)
 
     override fun parse(raw: String, context: RequirementParsingContext): RequirementParsingResult {
         val meridiemMatch = MERIDIEM_TIME_PATTERN.find(raw)
@@ -186,6 +194,11 @@ data object TimeRequirementType : RequirementValueType {
             }
             val parsed = runCatching { LocalTime.of(hour, minute) }.getOrNull()
                 ?: return RequirementParsingResult.Invalid("Please provide a valid reservation time.")
+            if (parsed.isBefore(context.earliestReservationTime) || parsed.isAfter(context.latestReservationTime)) {
+                return RequirementParsingResult.Invalid(
+                    "Please choose a reservation time between ${formatTime(context.earliestReservationTime)} and ${formatTime(context.latestReservationTime)}."
+                )
+            }
             return RequirementParsingResult.Valid(TimeRequirementValue(raw = raw, value = parsed, displayValue = formatTime(parsed)))
         }
 
@@ -194,6 +207,11 @@ data object TimeRequirementType : RequirementValueType {
         val minute = twentyFourHourMatch.groups[2]?.value?.toIntOrNull() ?: 0
         val parsed = runCatching { LocalTime.of(hour, minute) }.getOrNull()
             ?: return RequirementParsingResult.Invalid("Please provide a valid reservation time.")
+        if (parsed.isBefore(context.earliestReservationTime) || parsed.isAfter(context.latestReservationTime)) {
+            return RequirementParsingResult.Invalid(
+                "Please choose a reservation time between ${formatTime(context.earliestReservationTime)} and ${formatTime(context.latestReservationTime)}."
+            )
+        }
         return RequirementParsingResult.Valid(TimeRequirementValue(raw = raw, value = parsed, displayValue = formatTime(parsed)))
     }
 
@@ -205,7 +223,7 @@ data object TimeRequirementType : RequirementValueType {
 }
 
 data object PartySizeRequirementType : RequirementValueType {
-    override val acceptedEntities: Set<EntityType> = setOf(EntityType.PEOPLE_COUNT)
+    override val acceptedEntities: Set<SlotName> = setOf(SlotName.PEOPLE)
 
     override fun parse(raw: String, context: RequirementParsingContext): RequirementParsingResult {
         val candidate = PEOPLE_PATTERN.find(raw)?.groups?.drop(1)?.firstNotNullOfOrNull { it?.value }
@@ -225,7 +243,7 @@ data object PartySizeRequirementType : RequirementValueType {
 }
 
 data object ConfirmationRequirementType : RequirementValueType {
-    override val acceptedEntities: Set<EntityType> = emptySet()
+    override val acceptedEntities: Set<SlotName> = emptySet()
 
     override fun parse(raw: String, context: RequirementParsingContext): RequirementParsingResult {
         val normalized = raw.trim().lowercase(Locale.ROOT)
@@ -245,6 +263,6 @@ data object ConfirmationRequirementType : RequirementValueType {
             "you can confirm" in normalized
 
     private fun isNo(normalized: String): Boolean =
-        normalized in setOf("no", "n", "nope", "cancel", "change", "non") ||
+        normalized in setOf("no", "n", "nope", "change", "non") ||
             normalized.startsWith("no ")
 }

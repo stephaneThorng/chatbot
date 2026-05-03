@@ -48,6 +48,7 @@ data class NlpIntentDto(
     val name: String,
     val confidence: Double,
     val source: String,
+    val alternatives: Map<String, Double> = emptyMap(),
 )
 
 @Serializable

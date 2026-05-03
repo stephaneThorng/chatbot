@@ -498,3 +498,53 @@
 {"text": "Can Priya Singh call the restaurant manager for reservation help today?, please", "intent": "contact_request", "entities": [{"start": 4, "end": 15, "type": "PERSON"}]}
 {"text": "Should I text 555-0102 or call for feedback for planning?, please", "intent": "contact_request", "entities": [{"start": 14, "end": 22, "type": "PHONE"}]}
 {"text": "Can I contact the team at jordan.lee@example.com for reservation help for event details? for lunch", "intent": "contact_request", "entities": [{"start": 26, "end": 48, "type": "EMAIL"}]}
+{"text": "and then? lantern for lunch", "intent": "unknown", "entities": []}
+{"text": "I am testing random conversation here. please before I visit variation 3", "intent": "unknown", "entities": []}
+{"text": "marble before I visit variation 2", "intent": "unknown", "entities": []}
+{"text": "I just wanted to say something odd. before I visit variation 3", "intent": "unknown", "entities": []}
+{"text": "what about the rest? penguin for lunch", "intent": "unknown", "entities": []}
+{"text": "I am feeling great right now. please before I visit variation 3", "intent": "unknown", "entities": []}
+{"text": "pillow before I visit variation 2", "intent": "unknown", "entities": []}
+{"text": "I am chatting without a restaurant question. before I visit variation 3", "intent": "unknown", "entities": []}
+{"text": "other options? sunset for lunch", "intent": "unknown", "entities": []}
+{"text": "I just wanted to say something odd. please before I visit variation 3", "intent": "unknown", "entities": []}
+{"text": "cactus before I visit variation 2", "intent": "unknown", "entities": []}
+{"text": "Tell me something random., please variation 3", "intent": "unknown", "entities": []}
+{"text": "anything more? carrot for lunch", "intent": "unknown", "entities": []}
+{"text": "I am chatting without a restaurant question. please, please variation 3", "intent": "unknown", "entities": []}
+{"text": "sunset before I visit variation 2", "intent": "unknown", "entities": []}
+{"text": "I am testing random conversation here., please variation 3", "intent": "unknown", "entities": []}
+{"text": "what else? pillow for lunch", "intent": "unknown", "entities": []}
+{"text": "Tell me something random. please, please variation 3", "intent": "unknown", "entities": []}
+{"text": "banana before I visit variation 2", "intent": "unknown", "entities": []}
+{"text": "I am feeling great right now., please variation 3", "intent": "unknown", "entities": []}
+{"text": "go on? lantern for lunch", "intent": "unknown", "entities": []}
+{"text": "I am testing random conversation here. please, please variation 3", "intent": "unknown", "entities": []}
+{"text": "lantern before I visit variation 2", "intent": "unknown", "entities": []}
+{"text": "I just wanted to say something odd., please variation 3", "intent": "unknown", "entities": []}
+{"text": "and then? penguin for lunch", "intent": "unknown", "entities": []}
+{"text": "I am feeling great right now. please, please variation 3", "intent": "unknown", "entities": []}
+{"text": "bicycle before I visit variation 2", "intent": "unknown", "entities": []}
+{"text": "I am chatting without a restaurant question., please variation 3", "intent": "unknown", "entities": []}
+{"text": "what about the rest? sunset for lunch", "intent": "unknown", "entities": []}
+{"text": "I just wanted to say something odd. please, please variation 3", "intent": "unknown", "entities": []}
+{"text": "carrot, please variation 2", "intent": "unknown", "entities": []}
+{"text": "Tell me something random. for dinner variation 3", "intent": "unknown", "entities": []}
+{"text": "other options? carrot this week", "intent": "unknown", "entities": []}
+{"text": "I am chatting without a restaurant question. please for dinner variation 3", "intent": "unknown", "entities": []}
+{"text": "notebook, please variation 2", "intent": "unknown", "entities": []}
+{"text": "I am testing random conversation here. for dinner variation 3", "intent": "unknown", "entities": []}
+{"text": "anything more? pillow this week", "intent": "unknown", "entities": []}
+{"text": "Tell me something random. please for dinner variation 3", "intent": "unknown", "entities": []}
+{"text": "penguin, please variation 2", "intent": "unknown", "entities": []}
+{"text": "I am feeling great right now. for dinner variation 3", "intent": "unknown", "entities": []}
+{"text": "what else? lantern this week", "intent": "unknown", "entities": []}
+{"text": "I am testing random conversation here. please for dinner variation 3", "intent": "unknown", "entities": []}
+{"text": "marble, please variation 2", "intent": "unknown", "entities": []}
+{"text": "I just wanted to say something odd. for dinner variation 3", "intent": "unknown", "entities": []}
+{"text": "go on? penguin this week", "intent": "unknown", "entities": []}
+{"text": "I am feeling great right now. please for dinner variation 3", "intent": "unknown", "entities": []}
+{"text": "pillow, please variation 2", "intent": "unknown", "entities": []}
+{"text": "I am chatting without a restaurant question. for dinner variation 3", "intent": "unknown", "entities": []}
+{"text": "and then? sunset this week", "intent": "unknown", "entities": []}
+{"text": "I just wanted to say something odd. please for dinner variation 3", "intent": "unknown", "entities": []}

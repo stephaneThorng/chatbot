@@ -5,7 +5,7 @@ import dev.stephyu.core.chat.domain.ConversationAct
 import dev.stephyu.core.chat.domain.IntentName
 import dev.stephyu.core.chat.domain.SlotName
 
-data class ChatMessageResult(
+data class ConversationResult(
     val sessionId: String,
     val reply: String,
     val intent: IntentName,

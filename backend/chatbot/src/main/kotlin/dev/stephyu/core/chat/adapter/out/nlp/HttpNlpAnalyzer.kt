@@ -5,7 +5,6 @@ import dev.stephyu.core.chat.adapter.out.nlp.dto.NlpAnalysisRequestDto
 import dev.stephyu.core.chat.adapter.out.nlp.dto.NlpAnalysisResponseDto
 import dev.stephyu.core.chat.adapter.out.nlp.dto.NlpContextSlotsDto
 import dev.stephyu.core.chat.application.port.out.NlpAnalyzer
-import dev.stephyu.core.chat.domain.EntityType
 import dev.stephyu.core.chat.domain.IntentName
 import dev.stephyu.core.chat.domain.NlpAnalysis
 import dev.stephyu.core.chat.domain.NlpAnalysisContext
@@ -72,10 +71,11 @@ class HttpNlpAnalyzer(
                 name = IntentName.fromWireName(intent.name),
                 confidence = intent.confidence,
                 source = intent.source,
+                alternatives = intent.alternatives.mapKeys { (wireName, _) -> IntentName.fromWireName(wireName) },
             ),
             entities = entities.map {
                 NlpEntity(
-                    type = EntityType.fromWireName(it.type),
+                    type = SlotName.fromNlpWireName(it.type),
                     value = it.value,
                     confidence = it.confidence,
                     source = it.source,

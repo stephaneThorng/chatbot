@@ -25,10 +25,10 @@ def test_restaurant_dataset_files_exist_and_parse() -> None:
     assert evaluation.exists()
     assert corpus.exists()
 
-    assert len(load_jsonl(train)) == 4000
-    assert len(load_jsonl(validation)) == 500
-    assert len(load_jsonl(evaluation)) == 500
-    assert len(load_jsonl(corpus)) == 5000
+    assert len(load_jsonl(train)) == 4400
+    assert len(load_jsonl(validation)) == 550
+    assert len(load_jsonl(evaluation)) == 550
+    assert len(load_jsonl(corpus)) == 5500
 
 
 def test_restaurant_dataset_entity_spans_match_text() -> None:
@@ -59,6 +59,7 @@ def test_restaurant_dataset_splits_cover_all_intents() -> None:
         "location_request",
         "pricing_request",
         "contact_request",
+        "unknown",
     }
     for name in ("restaurant_train.jsonl", "restaurant_validation.jsonl", "restaurant_eval.jsonl"):
         payloads = _read_lines(DATA_DIR / name)
@@ -86,12 +87,12 @@ def test_restaurant_dataset_contains_all_entity_types() -> None:
     }
 
 
-def test_restaurant_dataset_every_intent_example_has_context_entities() -> None:
+def test_restaurant_dataset_known_business_examples_have_context_entities() -> None:
     payloads = _read_lines(DATA_DIR / "restaurant_corpus.jsonl")
     missing_entities = [
         payload
         for payload in payloads
-        if not payload["entities"]
+        if payload["intent"] != "unknown" and not payload["entities"]
     ]
     assert missing_entities == []
 
@@ -109,4 +110,5 @@ def test_restaurant_dataset_distribution_matches_plan() -> None:
         "location_request": 540,
         "pricing_request": 540,
         "contact_request": 780,
+        "unknown": 500,
     }

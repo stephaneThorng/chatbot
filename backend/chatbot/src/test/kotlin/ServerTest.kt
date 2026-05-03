@@ -31,4 +31,20 @@ class ServerTest {
         assertEquals("unknown", body.intent)
         assertEquals("IDLE", body.state)
     }
+
+    @Test
+    fun `chat endpoint starts reservation workflow`() = testApplication {
+        configure()
+
+        val response = client.post("/api/v1/chat/messages") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"message":"I want book a reservation"}""")
+        }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = json.decodeFromString<ChatMessageResponse>(response.bodyAsText())
+        assertEquals("reservation_create", body.intent)
+        assertEquals("WORKFLOW", body.state)
+        assertTrue(body.reply.contains("name", ignoreCase = true))
+    }
 }
