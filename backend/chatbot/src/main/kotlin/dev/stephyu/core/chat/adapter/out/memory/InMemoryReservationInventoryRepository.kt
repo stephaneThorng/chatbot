@@ -1,8 +1,8 @@
 package dev.stephyu.core.chat.adapter.out.memory
 
 import dev.stephyu.core.chat.application.port.out.ReservationInventoryRepository
-import dev.stephyu.core.chat.domain.AvailabilityPolicy
-import dev.stephyu.core.chat.domain.AvailabilityResult
+import dev.stephyu.core.chat.domain.reservation.AvailabilityPolicy
+import dev.stephyu.core.chat.domain.reservation.AvailabilityResult
 
 class InMemoryReservationInventoryRepository : ReservationInventoryRepository {
     private val policy = AvailabilityPolicy(
@@ -36,3 +36,5 @@ class InMemoryReservationInventoryRepository : ReservationInventoryRepository {
         return AvailabilityResult(true, "Available")
     }
 }
+
+

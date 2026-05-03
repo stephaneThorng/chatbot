@@ -1,6 +1,6 @@
 package dev.stephyu.core.chat.domain.workflow
 
-import dev.stephyu.core.chat.domain.SlotName
+import dev.stephyu.core.chat.domain.nlp.SlotName
 
 enum class RequirementName {
     NAME,
@@ -17,3 +17,5 @@ enum class RequirementName {
         CONFIRMATION -> null
     }
 }
+
+

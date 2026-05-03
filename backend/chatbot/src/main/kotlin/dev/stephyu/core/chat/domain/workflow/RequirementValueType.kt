@@ -1,6 +1,6 @@
 package dev.stephyu.core.chat.domain.workflow
 
-import dev.stephyu.core.chat.domain.SlotName
+import dev.stephyu.core.chat.domain.nlp.SlotName
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
@@ -266,3 +266,5 @@ data object ConfirmationRequirementType : RequirementValueType {
         normalized in setOf("no", "n", "nope", "change", "non") ||
             normalized.startsWith("no ")
 }
+
+

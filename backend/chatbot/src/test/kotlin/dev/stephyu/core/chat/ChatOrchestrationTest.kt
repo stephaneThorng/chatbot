@@ -4,21 +4,21 @@ import dev.stephyu.core.chat.adapter.out.memory.InMemoryConversationSessionRepos
 import dev.stephyu.core.chat.adapter.out.memory.InMemoryReservationInventoryRepository
 import dev.stephyu.core.chat.adapter.out.memory.InMemoryRestaurantKnowledgeRepository
 import dev.stephyu.core.chat.application.command.HandleConversationCommand
-import dev.stephyu.core.chat.application.intent.ContactRequestIntentService
-import dev.stephyu.core.chat.application.intent.IntentService
-import dev.stephyu.core.chat.application.intent.LocationRequestIntentService
-import dev.stephyu.core.chat.application.intent.MenuRequestIntentService
-import dev.stephyu.core.chat.application.intent.OpeningHoursIntentService
-import dev.stephyu.core.chat.application.intent.PricingRequestIntentService
-import dev.stephyu.core.chat.application.intent.ReservationCancelIntentService
-import dev.stephyu.core.chat.application.intent.ReservationCreateIntentService
-import dev.stephyu.core.chat.application.intent.ReservationModifyIntentService
-import dev.stephyu.core.chat.application.intent.ReservationStatusIntentService
-import dev.stephyu.core.chat.application.orchestration.ConversationOrchestrator
+import dev.stephyu.core.chat.application.intent.handler.knowledge.ContactRequestIntentHandler
+import dev.stephyu.core.chat.application.intent.handler.IntentHandler
+import dev.stephyu.core.chat.application.intent.handler.knowledge.LocationRequestIntentHandler
+import dev.stephyu.core.chat.application.intent.handler.knowledge.MenuRequestIntentHandler
+import dev.stephyu.core.chat.application.intent.handler.knowledge.OpeningHoursIntentHandler
+import dev.stephyu.core.chat.application.intent.handler.knowledge.PricingRequestIntentHandler
+import dev.stephyu.core.chat.application.intent.handler.reservation.ReservationCancelIntentHandler
+import dev.stephyu.core.chat.application.intent.handler.reservation.ReservationCreateIntentHandler
+import dev.stephyu.core.chat.application.intent.handler.reservation.ReservationModifyIntentHandler
+import dev.stephyu.core.chat.application.intent.handler.reservation.ReservationStatusIntentHandler
+import dev.stephyu.core.chat.application.coordinator.ConversationCoordinator
 import dev.stephyu.core.chat.application.port.out.NlpAnalyzer
-import dev.stephyu.core.chat.application.service.ConversationActPreprocessor
-import dev.stephyu.core.chat.application.service.IntentResolver
-import dev.stephyu.core.chat.application.state.ConversationStateMachine
+import dev.stephyu.core.chat.application.signal.ConversationSignalExtractor
+import dev.stephyu.core.chat.application.intent.decision.IntentDecisionEngine
+import dev.stephyu.core.chat.application.state.ConversationStateDispatcher
 import dev.stephyu.core.chat.application.state.IdleStateHandler
 import dev.stephyu.core.chat.application.state.WorkflowStateHandler
 import dev.stephyu.core.chat.application.usecase.HandleConversationUseCase
@@ -28,14 +28,14 @@ import dev.stephyu.core.chat.application.workflow.FillRequirementsRule
 import dev.stephyu.core.chat.application.workflow.ResolveConfirmationRule
 import dev.stephyu.core.chat.application.workflow.WorkflowEngine
 import dev.stephyu.core.chat.application.workflow.WorkflowStateRule
-import dev.stephyu.core.chat.config.ConversationConfig
-import dev.stephyu.core.chat.domain.ConversationAct
-import dev.stephyu.core.chat.domain.IntentName
-import dev.stephyu.core.chat.domain.NlpAnalysis
-import dev.stephyu.core.chat.domain.NlpAnalysisContext
-import dev.stephyu.core.chat.domain.NlpEntity
-import dev.stephyu.core.chat.domain.NlpIntent
-import dev.stephyu.core.chat.domain.SlotName
+import dev.stephyu.core.chat.application.intent.catalog.IntentCatalog
+import dev.stephyu.core.chat.domain.conversation.ConversationAct
+import dev.stephyu.core.chat.domain.intent.IntentName
+import dev.stephyu.core.chat.domain.nlp.NlpAnalysis
+import dev.stephyu.core.chat.domain.nlp.NlpAnalysisContext
+import dev.stephyu.core.chat.domain.nlp.NlpEntity
+import dev.stephyu.core.chat.domain.nlp.NlpIntent
+import dev.stephyu.core.chat.domain.nlp.SlotName
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -675,33 +675,33 @@ class ChatOrchestrationTest {
             ResolveConfirmationRule(),
         )
         val workflowEngine = WorkflowEngine(workflowRules, clock)
-        val intentServices: List<IntentService> = listOf(
-            ReservationCreateIntentService(workflowEngine, inventory, clock),
-            ReservationModifyIntentService(workflowEngine, inventory, clock),
-            ReservationCancelIntentService(workflowEngine),
-            ReservationStatusIntentService(),
-            MenuRequestIntentService(knowledge),
-            OpeningHoursIntentService(knowledge),
-            LocationRequestIntentService(knowledge),
-            PricingRequestIntentService(knowledge),
-            ContactRequestIntentService(knowledge),
+        val intentServices: List<IntentHandler> = listOf(
+            ReservationCreateIntentHandler(workflowEngine, inventory, clock),
+            ReservationModifyIntentHandler(workflowEngine, inventory, clock),
+            ReservationCancelIntentHandler(workflowEngine),
+            ReservationStatusIntentHandler(),
+            MenuRequestIntentHandler(knowledge),
+            OpeningHoursIntentHandler(knowledge),
+            LocationRequestIntentHandler(knowledge),
+            PricingRequestIntentHandler(knowledge),
+            ContactRequestIntentHandler(knowledge),
         )
-        val conversationConfig = ConversationConfig(
+        val conversationConfig = IntentCatalog(
             intentServices = intentServices,
         )
-        val stateMachine = ConversationStateMachine(
+        val stateMachine = ConversationStateDispatcher(
             idleStateHandler = IdleStateHandler(conversationConfig),
             workflowStateHandler = WorkflowStateHandler(conversationConfig),
         )
-        val orchestrator = ConversationOrchestrator(
+        val orchestrator = ConversationCoordinator(
             nlpAnalyzer = nlpAnalyzer,
-            conversationActPreprocessor = ConversationActPreprocessor(),
-            intentResolver = IntentResolver(conversationConfig),
-            stateMachine = stateMachine,
+            signalExtractor = ConversationSignalExtractor(),
+            intentDecisionEngine = IntentDecisionEngine(conversationConfig),
+            stateDispatcher = stateMachine,
         )
         return HandleConversationUseCase(
             conversationSessionRepository = InMemoryConversationSessionRepository(),
-            orchestrator = orchestrator,
+            coordinator = orchestrator,
             clock = clock,
         )
     }
@@ -743,3 +743,4 @@ class ChatOrchestrationTest {
             source = "test",
         )
 }
+

@@ -10,3 +10,4 @@ fun Application.configureSerialization() {
         json()
     }
 }
+

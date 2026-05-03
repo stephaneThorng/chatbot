@@ -16,3 +16,4 @@ fun Application.configureRouting() {
         chatRoutes()
     }
 }
+

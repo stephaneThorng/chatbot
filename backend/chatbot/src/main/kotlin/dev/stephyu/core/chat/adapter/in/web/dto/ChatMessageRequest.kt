@@ -7,3 +7,5 @@ data class ChatMessageRequest(
     val message: String,
     val sessionId: String? = null,
 )
+
+

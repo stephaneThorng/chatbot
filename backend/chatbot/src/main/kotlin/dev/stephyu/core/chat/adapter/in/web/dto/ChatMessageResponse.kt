@@ -13,3 +13,5 @@ data class ChatMessageResponse(
     val missingSlots: List<String>,
     val completed: Boolean,
 )
+
+

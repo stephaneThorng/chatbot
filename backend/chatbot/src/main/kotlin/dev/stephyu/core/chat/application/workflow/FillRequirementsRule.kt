@@ -1,11 +1,15 @@
 package dev.stephyu.core.chat.application.workflow
 
-import dev.stephyu.core.chat.domain.NlpEntity
+import dev.stephyu.core.chat.domain.nlp.NlpEntity
+import dev.stephyu.core.chat.application.state.ProcessingMode
 import dev.stephyu.core.chat.domain.workflow.RequirementName
 import dev.stephyu.core.chat.domain.workflow.RequirementParsingResult
 import dev.stephyu.core.chat.domain.workflow.WorkflowPhase
 import dev.stephyu.core.chat.domain.workflow.WorkflowRequirementSession
 
+/**
+ * Binds NLP entities and raw text to the currently active workflow requirements.
+ */
 class FillRequirementsRule : WorkflowStateRule {
     override fun apply(input: WorkflowEngineInput, context: WorkflowRuleContext): WorkflowRuleResult {
         if (context.workflow.phase != WorkflowPhase.COLLECTING) {
@@ -16,7 +20,7 @@ class FillRequirementsRule : WorkflowStateRule {
         var invalidMessage = context.invalidMessage
 
         val pendingRequirements = nextWorkflow.activeRequirements().filterNot { it.isSatisfied() }
-        val requirementsToEvaluate = if (input.backgroundEnrichment) {
+        val requirementsToEvaluate = if (input.processingMode == ProcessingMode.BACKGROUND_ENRICHMENT) {
             pendingRequirements.take(1)
         } else {
             pendingRequirements
@@ -80,3 +84,5 @@ class FillRequirementsRule : WorkflowStateRule {
         private val NAME_HINT_PATTERN = Regex("""(?i)\b(under|name is|my name is|au nom de|nom de)\b""")
     }
 }
+
+

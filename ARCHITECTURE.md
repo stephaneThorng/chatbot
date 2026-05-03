@@ -2,29 +2,46 @@
 
 ## Overview
 
-The backend is a Kotlin/Ktor service that orchestrates restaurant chat conversations. It receives messages over HTTP, resolves or creates a session, calls the Python NLP API when available, updates conversation state, and returns a deterministic bot reply.
+The backend is a Kotlin/Ktor service that orchestrates restaurant chat conversations. It receives messages over HTTP, resolves or creates an in-memory session, calls the Python NLP API when available, updates conversation state, and returns a deterministic bot reply.
 
-The v1 architecture is intentionally single-instance and in-memory. Ports are still defined so session storage, restaurant knowledge, inventory, and NLP integration can be replaced later without rewriting the orchestration logic.
+The v1 architecture is intentionally single-instance and in-memory. Ports are defined so session storage, restaurant knowledge, reservation inventory, and NLP integration can be replaced later without rewriting the conversation flow.
+
+## Package Structure
+
+The chat feature follows a hexagonal layout under `core/chat`:
+
+- `domain`: pure conversation, intent, NLP, workflow, session, knowledge, and reservation models.
+- `application`: use cases, conversation coordination, intent routing, state dispatch, workflow engine, and outbound ports.
+- `adapter/in/web`: Ktor routes, HTTP DTOs, and web mappers.
+- `adapter/out`: in-memory repositories and the HTTP NLP client.
+
+Application packages may be grouped by concept. For example:
+
+- `application.intent.catalog`
+- `application.intent.decision`
+- `application.intent.handler`
+- `application.workflow`
+- `domain.intent`
+- `domain.workflow`
 
 ## Main Flow
 
 1. Client sends `POST /api/v1/chat/messages` with `message` and optional `sessionId`.
-2. Ktor maps the request DTO to `HandleChatMessageCommand`.
-3. `HandleChatMessageUseCase` loads or creates a `ConversationSession`.
-4. `HandleChatMessageUseCase` delegates message handling to `ChatMessageOrchestrator`.
-5. The orchestrator detects simple conversation acts and strips them from mixed business messages.
-6. The orchestrator calls `NlpAnalyzer` with business message text, restaurant domain, and conversation context.
-7. `IntentResolver` resolves the business intent from NLP output.
-8. `ChatStateMachine` dispatches by `ConversationSession.state`.
-9. The selected state handler treats the resolved intent as an input event.
-10. Informational intents read from the restaurant dataset through `ReplyComposer`.
-11. Workflow states advance generic requirements through `ReservationWorkflowService`.
-12. The updated session is saved with a refreshed sliding TTL.
-13. Ktor returns session metadata, reply text, business intent, conversation act, state, slots, and completion status.
+2. Ktor maps the request DTO to `HandleConversationCommand`.
+3. `HandleConversationUseCase` loads or creates a `ConversationSession`.
+4. `ConversationCoordinator` extracts backend-owned conversation signals.
+5. Standalone greetings, thanks, or farewells are handled without NLP.
+6. Business text is sent to `NlpAnalyzer` with the restaurant domain and session context.
+7. `IntentDecisionEngine` combines NLP evidence, intent policies, session state, and topic memory.
+8. `ConversationStateDispatcher` delegates to either `IdleStateHandler` or `WorkflowStateHandler`.
+9. The selected `IntentHandler` owns the deterministic reply for its business intent.
+10. Workflow intents advance through `WorkflowEngine` and generic workflow rules.
+11. The updated session is saved with a refreshed sliding TTL.
+12. Ktor returns session metadata, reply text, handled business intent, conversation act, state, slots, and completion status.
 
 ## Intent Handling
 
-The backend mirrors the NLP API business intent names:
+The Python NLP API owns restaurant business intent classification:
 
 - `reservation_create`
 - `reservation_modify`
@@ -37,51 +54,52 @@ The backend mirrors the NLP API business intent names:
 - `contact_request`
 - `unknown`
 
-The backend separately detects these conversation acts:
+The Kotlin backend owns simple conversation acts:
 
 - `greeting`
 - `thanks`
 - `farewell`
 
-Conversation acts are API metadata, not workflow state. Standalone acts bypass NLP. Mixed messages such as `Hello, I want a reservation` are stripped before NLP and the reply is adjusted deterministically.
+Conversation acts are API metadata, not workflow state. Standalone acts bypass NLP. Mixed messages such as `Hello, I want a reservation` are stripped before NLP and the reply is prefixed deterministically.
 
-Reservation intents use an explicit finite state machine. Informational intents are lightweight handlers that can run during an active reservation flow without losing the reservation state.
+Each business intent is handled by an `IntentHandler`. Intent metadata such as category, clarification support, workflow allowance, and topic continuation support lives in `IntentPolicy` and is exposed through `IntentCatalog`.
 
-## Application Services
+## Intent Decision
 
-The chat use case stays thin and delegates specialized behavior:
+The backend treats NLP as evidence, not as an unconditional routing decision. `IntentDecisionEngine` can:
 
-- `ChatMessageOrchestrator` routes one message across preprocessing, NLP, informational replies, and workflows.
-- `ChatStateMachine` dispatches processing by the current `ConversationState`.
-- `IdleStateHandler` handles non-workflow messages and workflow starts.
-- `WorkflowStateHandler` handles active workflows while still allowing informational intent switches.
-- `ConversationActPreprocessor` owns greeting, thanks, and farewell stripping.
-- `IntentResolver` owns NLP confidence handling and active workflow fallback.
-- `ReservationWorkflowService` owns reservation workflow definitions, requirement filling, confirmation, cancellation, and availability checks.
-- `ReplyComposer` owns deterministic response text.
+- accept a business intent
+- ask a deterministic clarification question
+- return `unknown`
 
-## Workflow FSM
+The decision uses confidence, alternative intent margin, entity support, session topic memory, pending clarification state, and active workflow ownership. The backend does not classify business intents with local keyword rules.
 
-`ConversationSession.currentWorkflow` stores the active workflow separately from generic conversation metadata. The session state is intentionally coarse:
+## Workflow Model
+
+Conversation state is coarse:
 
 - `IDLE`
-- `RESERVATION_CREATION`
-- `RESERVATION_MODIFICATION`
-- `RESERVATION_CANCELLATION`
+- `WORKFLOW`
 
-Detailed progress is represented by generic workflow requirements rather than by additional states. Reservation creation and modification use `name`, `date`, `time`, `people`, and `confirmation` requirements. Reservation cancellation uses a `confirmation` requirement.
+Detailed workflow progress is stored in `ConversationSession.currentWorkflow`. A workflow is owned by an `IntentName` and contains ordered generic requirements.
 
-Each requirement has a value type that owns validation and transformation. Examples:
+Reservation creation and modification use these requirements:
 
-- `PersonNameRequirementType` validates length and name shape.
-- `DateRequirementType` resolves values such as `tomorrow`, `Friday`, or `July 7` against the current date.
-- `TimeRequirementType` normalizes values such as `7pm` or `19h00`.
-- `PartySizeRequirementType` validates party size against v1 inventory constraints.
-- `ConfirmationRequirementType` validates yes/no answers.
+- `name`
+- `date`
+- `time`
+- `people`
+- `confirmation`
 
-The state machine dispatches by `ConversationSession.state`, then the active workflow requirements decide what is missing. If no requirement is missing, the workflow can complete and the session returns to `IDLE`.
+Reservation cancellation uses a `confirmation` requirement.
 
-Active workflows can be cancelled explicitly. For example, `reservation_cancel` during `RESERVATION_CREATION` aborts the in-progress workflow. From `IDLE`, `reservation_cancel` starts a cancellation workflow for the confirmed reservation snapshot.
+Each requirement owns its validation and transformation through a value type. Examples include person name parsing, relative date normalization, reservation time validation, party size validation, and yes/no confirmation parsing.
+
+## Workflow Interruption
+
+Informational intents can be answered during an active workflow. The informational `IntentHandler` produces the primary reply, then the active workflow can be enriched in the background using `ProcessingMode.BACKGROUND_ENRICHMENT`.
+
+Workflow cancellation is a backend-owned workflow command, not a business intent shortcut. A standalone `cancel`, `stop`, `abort`, or `never mind` aborts the current workflow only when a cancellable workflow is active. From `IDLE`, `reservation_cancel` remains a normal business intent for cancelling a confirmed reservation snapshot.
 
 ## In-Memory Data
 
@@ -103,7 +121,9 @@ The backend calls the Python NLP API at `POST /analyze` with:
 - `context.slots_filled`
 - `context.required_slots`
 
-If the NLP API fails, returns an unusable result, or is unavailable, the backend keeps the session alive and falls back to clarification. The backend does not classify business intents with local keywords.
+The NLP adapter is an anti-corruption layer. It maps Python wire names into Kotlin domain types such as `IntentName`, `SlotName`, `NlpAnalysis`, and intent alternatives.
+
+If the NLP API fails or returns unusable output, the backend keeps the session alive and falls back to deterministic clarification or unknown/help replies.
 
 ## Future WhatsApp Adapter
 

@@ -1,10 +1,10 @@
 package dev.stephyu.core.chat.adapter.out.memory
 
 import dev.stephyu.core.chat.application.port.out.RestaurantKnowledgeRepository
-import dev.stephyu.core.chat.domain.MenuItem
-import dev.stephyu.core.chat.domain.OpeningHour
-import dev.stephyu.core.chat.domain.PriceInfo
-import dev.stephyu.core.chat.domain.RestaurantProfile
+import dev.stephyu.core.chat.domain.knowledge.MenuItem
+import dev.stephyu.core.chat.domain.knowledge.OpeningHour
+import dev.stephyu.core.chat.domain.knowledge.PriceInfo
+import dev.stephyu.core.chat.domain.knowledge.RestaurantProfile
 
 class InMemoryRestaurantKnowledgeRepository : RestaurantKnowledgeRepository {
     override fun profile(): RestaurantProfile =
@@ -49,3 +49,5 @@ class InMemoryRestaurantKnowledgeRepository : RestaurantKnowledgeRepository {
             PriceInfo("Average dinner", "35-45 EUR per person without wine pairing"),
         )
 }
+
+

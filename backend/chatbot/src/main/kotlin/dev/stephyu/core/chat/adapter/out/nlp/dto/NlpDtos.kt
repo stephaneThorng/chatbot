@@ -58,3 +58,5 @@ data class NlpEntityDto(
     val confidence: Double,
     val source: String,
 )
+
+

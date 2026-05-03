@@ -5,12 +5,12 @@ import dev.stephyu.core.chat.adapter.out.nlp.dto.NlpAnalysisRequestDto
 import dev.stephyu.core.chat.adapter.out.nlp.dto.NlpAnalysisResponseDto
 import dev.stephyu.core.chat.adapter.out.nlp.dto.NlpContextSlotsDto
 import dev.stephyu.core.chat.application.port.out.NlpAnalyzer
-import dev.stephyu.core.chat.domain.IntentName
-import dev.stephyu.core.chat.domain.NlpAnalysis
-import dev.stephyu.core.chat.domain.NlpAnalysisContext
-import dev.stephyu.core.chat.domain.NlpEntity
-import dev.stephyu.core.chat.domain.NlpIntent
-import dev.stephyu.core.chat.domain.SlotName
+import dev.stephyu.core.chat.domain.intent.IntentName
+import dev.stephyu.core.chat.domain.nlp.NlpAnalysis
+import dev.stephyu.core.chat.domain.nlp.NlpAnalysisContext
+import dev.stephyu.core.chat.domain.nlp.NlpEntity
+import dev.stephyu.core.chat.domain.nlp.NlpIntent
+import dev.stephyu.core.chat.domain.nlp.SlotName
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -83,3 +83,5 @@ class HttpNlpAnalyzer(
             },
         )
 }
+
+

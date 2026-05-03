@@ -1,7 +1,7 @@
 package dev.stephyu.core.chat.domain.workflow
 
-import dev.stephyu.core.chat.domain.IntentName
-import dev.stephyu.core.chat.domain.SlotName
+import dev.stephyu.core.chat.domain.intent.IntentName
+import dev.stephyu.core.chat.domain.nlp.SlotName
 import java.time.Instant
 
 data class WorkflowDefinition(
@@ -112,3 +112,5 @@ data class WorkflowSnapshot(
             name.toSlotName()?.let { it to value }
         }.toMap()
 }
+
+

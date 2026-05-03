@@ -1,7 +1,7 @@
 package dev.stephyu.core.chat.adapter.out.memory
 
 import dev.stephyu.core.chat.application.port.out.ConversationSessionRepository
-import dev.stephyu.core.chat.domain.ConversationSession
+import dev.stephyu.core.chat.domain.session.ConversationSession
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -24,3 +24,5 @@ class InMemoryConversationSessionRepository : ConversationSessionRepository {
         sessions[session.id] = session
     }
 }
+
+

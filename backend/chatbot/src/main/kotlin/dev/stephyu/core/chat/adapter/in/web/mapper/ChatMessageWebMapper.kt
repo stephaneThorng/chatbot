@@ -24,3 +24,5 @@ object ChatMessageWebMapper {
             completed = result.completed,
         )
 }
+
+

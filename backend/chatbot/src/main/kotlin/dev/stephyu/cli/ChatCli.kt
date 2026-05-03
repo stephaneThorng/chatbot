@@ -82,3 +82,4 @@ private class TerminalChatClient(
         println("     intent=${body.intent}, conversationAct=${body.conversationAct}, state=${body.state}, missing=${body.missingSlots}")
     }
 }
+

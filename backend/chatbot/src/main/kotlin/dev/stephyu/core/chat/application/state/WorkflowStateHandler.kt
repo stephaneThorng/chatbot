@@ -1,16 +1,17 @@
 package dev.stephyu.core.chat.application.state
 
-import dev.stephyu.core.chat.config.ConversationConfig
-import dev.stephyu.core.chat.domain.ConversationState
-import dev.stephyu.core.chat.domain.IntentName
+import dev.stephyu.core.chat.application.intent.catalog.IntentCatalog
+import dev.stephyu.core.chat.application.intent.policy.IntentCategory
+import dev.stephyu.core.chat.domain.conversation.ConversationState
+import dev.stephyu.core.chat.domain.intent.IntentName
 import dev.stephyu.core.chat.domain.workflow.WorkflowPhase
 
 class WorkflowStateHandler(
-    private val conversationConfig: ConversationConfig,
+    private val intentCatalog: IntentCatalog,
 ) : StateHandler {
-    override fun process(input: ConversationStateInput): ConversationStateResult =
+    override fun process(input: ConversationTurnContext): ConversationTurnResult =
         resolveIntentForState(input)
-            ?.let(conversationConfig::findIntentService)
+            ?.let(intentCatalog::findIntentHandler)
             ?.let { primaryService ->
                 val primaryResult = primaryService.process(input).copy(
                     handledIntent = primaryService.intent,
@@ -21,38 +22,32 @@ class WorkflowStateHandler(
                     enrichWorkflow(primaryResult, input)
                 }
             }
-            ?: ConversationStateResult(
+            ?: ConversationTurnResult(
                 session = input.session.copy(state = ConversationState.IDLE),
                 reply = "I can help with reservations, opening hours, location, menu, prices, and contact details.",
             )
 
-    private fun resolveIntentForState(input: ConversationStateInput): IntentName? =
+    private fun resolveIntentForState(input: ConversationTurnContext): IntentName? =
         when {
-            input.intent in setOf(
-                IntentName.MENU_REQUEST,
-                IntentName.OPENING_HOURS,
-                IntentName.LOCATION_REQUEST,
-                IntentName.PRICING_REQUEST,
-                IntentName.CONTACT_REQUEST,
-            ) -> input.intent
+            intentCatalog.findIntentPolicy(input.intent).allowDuringWorkflow -> input.intent
             else -> input.session.currentWorkflow?.ownerIntent
         }
 
-    private fun shouldEnrichWorkflow(input: ConversationStateInput, primaryIntent: IntentName): Boolean =
+    private fun shouldEnrichWorkflow(input: ConversationTurnContext, primaryIntent: IntentName): Boolean =
         input.session.hasCurrentWorkflow() &&
-            primaryIntent in INFORMATIONAL_INTENTS &&
+            intentCatalog.findIntentPolicy(primaryIntent).category == IntentCategory.INFORMATIONAL &&
             input.session.currentWorkflow?.ownerIntent != null
 
     private fun enrichWorkflow(
-        primaryResult: ConversationStateResult,
-        originalInput: ConversationStateInput,
-    ): ConversationStateResult {
+        primaryResult: ConversationTurnResult,
+        originalInput: ConversationTurnContext,
+    ): ConversationTurnResult {
         val workflowIntent = originalInput.session.currentWorkflow?.ownerIntent ?: return primaryResult
-        val workflowService = conversationConfig.findIntentService(workflowIntent) ?: return primaryResult
+        val workflowService = intentCatalog.findIntentHandler(workflowIntent) ?: return primaryResult
         val workflowInput = originalInput.copy(
             session = primaryResult.session,
             intent = workflowIntent,
-            backgroundEnrichment = true,
+            processingMode = ProcessingMode.BACKGROUND_ENRICHMENT,
         )
         val workflowResult = workflowService.process(workflowInput)
         val resumePrompt = workflowResumePrompt(workflowResult)
@@ -65,7 +60,7 @@ class WorkflowStateHandler(
         )
     }
 
-    private fun workflowResumePrompt(workflowResult: ConversationStateResult): String? {
+    private fun workflowResumePrompt(workflowResult: ConversationTurnResult): String? {
         val workflow = workflowResult.session.currentWorkflow ?: return null
         return when (workflow.phase) {
             WorkflowPhase.COLLECTING ->
@@ -74,13 +69,6 @@ class WorkflowStateHandler(
         }
     }
 
-    companion object {
-        private val INFORMATIONAL_INTENTS = setOf(
-            IntentName.MENU_REQUEST,
-            IntentName.OPENING_HOURS,
-            IntentName.LOCATION_REQUEST,
-            IntentName.PRICING_REQUEST,
-            IntentName.CONTACT_REQUEST,
-        )
-    }
 }
+
+

@@ -26,6 +26,12 @@ The Kotlin backend owns conversation acts such as `greeting`, `thanks`, and `far
 
 Reservation intents are handled with an explicit finite state machine. Informational intents are handled through deterministic dataset-backed handlers.
 
+The backend uses a feature-level hexagonal structure under `core/chat`:
+
+- `domain` for pure conversation, intent, workflow, NLP, session, restaurant knowledge, and reservation models.
+- `application` for use cases, intent decisions, state handling, workflow progression, and outbound ports.
+- `adapter` for Ktor HTTP, in-memory repositories, and the HTTP NLP client.
+
 ## Chat API
 
 `POST /api/v1/chat/messages`
@@ -47,7 +53,7 @@ Response:
   "reply": "What name should I use for the reservation?",
   "intent": "reservation_create",
   "conversationAct": null,
-  "state": "RESERVATION_CREATION",
+  "state": "WORKFLOW",
   "slots": {},
   "missingSlots": ["name", "date", "time", "people"],
   "completed": false
