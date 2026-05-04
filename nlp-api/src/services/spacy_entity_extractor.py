@@ -62,6 +62,9 @@ class SpacyEntityExtractor:
         self._phone_patterns = (
             re.compile(r"\b(?:(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}|\d{3}[\s.-]?\d{4})\b", re.IGNORECASE),
         )
+        self._email_patterns = (
+            re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE),
+        )
         self._date_patterns = (
             re.compile(r"\b(today|tomorrow|tonight|this weekend|next week)\b", re.IGNORECASE),
             re.compile(r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", re.IGNORECASE),
@@ -76,28 +79,37 @@ class SpacyEntityExtractor:
             re.compile(r"\b\d{1,2}:\d{2}\b", re.IGNORECASE),
             re.compile(r"\b(?:noon|midnight|this evening|tomorrow evening)\b", re.IGNORECASE),
         )
+        self._people_patterns = (
+            re.compile(r"\b\d{1,2}\s*(?:people|persons|guests?|adults?|kids?)\b", re.IGNORECASE),
+            re.compile(r"\bfor\s+\d{1,2}\s*(?:people|persons|guests?|adults?|kids?)?\b", re.IGNORECASE),
+        )
 
     def extract(self, text: str, entity_cls: type["Entity"]) -> list["Entity"]:
         """Extract entities from text using spaCy rules."""
 
-        doc = self._nlp(text)
-        entities = [
-            entity_cls(
-                type=EntityType(span.label_),
-                value=span.text,
-                start=span.start_char,
-                end=span.end_char,
-                confidence=self._confidence_for_label(span.label_),
-                source="spacy_rule",
+        entities: list["Entity"] = []
+        if self._nlp is not None:
+            doc = self._nlp(text)
+            entities.extend(
+                entity_cls(
+                    type=EntityType(span.label_),
+                    value=span.text,
+                    start=span.start_char,
+                    end=span.end_char,
+                    confidence=self._confidence_for_label(span.label_),
+                    source="spacy_rule",
+                )
+                for span in doc.ents
             )
-            for span in doc.ents
-        ]
         entities.extend(self._extract_pattern_entities(text=text, entity_cls=entity_cls))
         return self._dedupe_entities(entities)
 
     def _build_pipeline(self):
-        import spacy
-        from spacy.pipeline import EntityRuler
+        try:
+            import spacy
+            from spacy.pipeline import EntityRuler
+        except ModuleNotFoundError:
+            return None
 
         try:
             nlp = spacy.load(self.config.spacy_model, disable=["parser", "tagger", "lemmatizer", "attribute_ruler"])
@@ -138,6 +150,12 @@ class SpacyEntityExtractor:
 
     def _extract_pattern_entities(self, text: str, entity_cls: type["Entity"]) -> list["Entity"]:
         entities: list["Entity"] = []
+        entities.extend(self._extract_phrase_entities(text, entity_cls, EntityType.MENU_ITEM, self.MENU_ITEM_TERMS))
+        entities.extend(self._extract_phrase_entities(text, entity_cls, EntityType.PRICE_ITEM, self.PRICE_ITEM_TERMS))
+        entities.extend(self._extract_phrase_entities(text, entity_cls, EntityType.LOCATION, self.LOCATION_TERMS))
+        for pattern in self._email_patterns:
+            for match in pattern.finditer(text):
+                entities.append(entity_cls(EntityType.EMAIL, match.group(0), match.start(), match.end(), 0.98, "spacy_rule"))
         for pattern in self._phone_patterns:
             for match in pattern.finditer(text):
                 entities.append(entity_cls(EntityType.PHONE, match.group(0), match.start(), match.end(), 0.91, "spacy_rule"))
@@ -147,6 +165,32 @@ class SpacyEntityExtractor:
         for pattern in self._time_patterns:
             for match in pattern.finditer(text):
                 entities.append(entity_cls(EntityType.TIME, match.group(0), match.start(), match.end(), 0.95, "spacy_rule"))
+        for pattern in self._people_patterns:
+            for match in pattern.finditer(text):
+                entities.append(entity_cls(EntityType.PEOPLE_COUNT, match.group(0), match.start(), match.end(), 0.9, "spacy_rule"))
+        return entities
+
+    def _extract_phrase_entities(
+        self,
+        text: str,
+        entity_cls: type["Entity"],
+        entity_type: EntityType,
+        phrases: Sequence[str],
+    ) -> list["Entity"]:
+        entities: list["Entity"] = []
+        for phrase in phrases:
+            pattern = re.compile(rf"\b{re.escape(phrase)}\b", re.IGNORECASE)
+            for match in pattern.finditer(text):
+                entities.append(
+                    entity_cls(
+                        entity_type,
+                        match.group(0),
+                        match.start(),
+                        match.end(),
+                        self._confidence_for_label(entity_type.value),
+                        "spacy_rule",
+                    )
+                )
         return entities
 
     def _confidence_for_label(self, label: str) -> float:

@@ -1,8 +1,8 @@
 package dev.stephyu.core.chat.application.intent.handler.knowledge
 
 import dev.stephyu.core.chat.application.port.out.RestaurantKnowledgeRepository
-import dev.stephyu.core.chat.application.state.ConversationTurnContext
-import dev.stephyu.core.chat.application.state.ConversationTurnResult
+import dev.stephyu.core.chat.application.state.StateHandlerInput
+import dev.stephyu.core.chat.application.state.StateHandlerResult
 import dev.stephyu.core.chat.application.intent.handler.IntentHandler
 import dev.stephyu.core.chat.application.intent.policy.IntentCategory
 import dev.stephyu.core.chat.application.intent.policy.IntentPolicy
@@ -23,7 +23,7 @@ class OpeningHoursIntentHandler(
         disambiguationLabels = listOf("hours", "opening hours", "open"),
     )
 
-    override fun process(input: ConversationTurnContext): ConversationTurnResult {
+    override fun process(input: StateHandlerInput): StateHandlerResult {
         val hours = knowledge.openingHours()
         val requestedDay = requestedOpeningDay(input, hours)
         val reply = if (requestedDay != null) {
@@ -50,14 +50,14 @@ class OpeningHoursIntentHandler(
             "Our opening hours are $formattedHours."
         }
 
-        return ConversationTurnResult(
-            session = input.session.withInformationalIntent(intent),
+        return StateHandlerResult(
+            updatedSession = input.session.withInformationalIntent(intent),
             reply = reply,
         )
     }
 
-    private fun requestedOpeningDay(input: ConversationTurnContext, hours: List<OpeningHour>): OpeningHour? {
-        val normalized = input.message.lowercase()
+    private fun requestedOpeningDay(input: StateHandlerInput, hours: List<OpeningHour>): OpeningHour? {
+        val normalized = input.processedText.lowercase()
         val dateEntities = input.analysis.entities
             .filter { it.type == SlotName.DATE }
             .map { it.value.lowercase() }
@@ -68,8 +68,8 @@ class OpeningHoursIntentHandler(
         }
     }
 
-    private fun requestedOpeningTime(input: ConversationTurnContext): LocalTime? {
-        val candidates = input.analysis.entities.filter { it.type == SlotName.TIME }.map { it.value } + input.message
+    private fun requestedOpeningTime(input: StateHandlerInput): LocalTime? {
+        val candidates = input.analysis.entities.filter { it.type == SlotName.TIME }.map { it.value } + input.processedText
         candidates.forEach { candidate ->
             parseTime(candidate)?.let { return it }
         }

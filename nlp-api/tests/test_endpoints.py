@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 from fastapi.testclient import TestClient
 
 
@@ -79,7 +81,10 @@ def test_analyze_uses_previous_turn_context_in_reservation_workflow(app) -> None
     payload = response.json()
     assert payload["intent"]["source"] == "context"
     assert payload["intent"]["name"] == "reservation_modify"
-    assert any(entity["type"] == "PEOPLE_COUNT" and entity["value"] == "6 people" for entity in payload["entities"])
+    assert any(
+        entity["type"] == "PEOPLE_COUNT" and entity["raw_value"] == "6 people" and entity["value"] == "6"
+        for entity in payload["entities"]
+    )
 
 
 def test_analyze_normalizes_follow_up_slang_in_context(app) -> None:
@@ -100,8 +105,11 @@ def test_analyze_normalizes_follow_up_slang_in_context(app) -> None:
     payload = response.json()
     assert payload["intent"]["source"] == "context"
     assert payload["intent"]["name"] == "reservation_modify"
-    assert any(entity["type"] == "DATE" and entity["value"] == "tmrw" for entity in payload["entities"])
-    assert any(entity["type"] == "TIME" and entity["value"] == "9pm" for entity in payload["entities"])
+    assert any(
+        entity["type"] == "DATE" and entity["raw_value"] == "tmrw" and entity["normalization_status"] == "normalized"
+        for entity in payload["entities"]
+    )
+    assert any(entity["type"] == "TIME" and entity["raw_value"] == "9pm" and entity["value"] == "21:00" for entity in payload["entities"])
 
 
 def test_analyze_normalizes_compact_people_follow_up(app) -> None:
@@ -122,7 +130,10 @@ def test_analyze_normalizes_compact_people_follow_up(app) -> None:
     payload = response.json()
     assert payload["intent"]["source"] == "context"
     assert payload["intent"]["name"] == "reservation_create"
-    assert any(entity["type"] == "PEOPLE_COUNT" and entity["value"] == "5 ppl" for entity in payload["entities"])
+    assert any(
+        entity["type"] == "PEOPLE_COUNT" and entity["raw_value"] == "5 ppl" and entity["value"] == "5"
+        for entity in payload["entities"]
+    )
 
 
 def test_analyze_returns_entity_offsets_against_original_text(app) -> None:
@@ -138,6 +149,55 @@ def test_analyze_returns_entity_offsets_against_original_text(app) -> None:
     payload = response.json()
     date_entity = next(entity for entity in payload["entities"] if entity["type"] == "DATE")
     people_entity = next(entity for entity in payload["entities"] if entity["type"] == "PEOPLE_COUNT")
-    assert date_entity["value"] == "tmrw"
-    assert people_entity["value"] == "2 ppl"
+    assert date_entity["raw_value"] == "tmrw"
+    assert date_entity["value"] == (date.today() + timedelta(days=1)).isoformat()
+    assert people_entity["raw_value"] == "for 2 ppl"
+    assert people_entity["value"] == "2"
     assert payload["intent"]["name"] == "reservation_create"
+
+
+def test_analyze_returns_ranked_intents_and_utterance(app) -> None:
+    client = TestClient(app)
+    response = client.post("/analyze", json={"text": "what else?", "domain": "restaurant"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    confidences = [intent["confidence"] for intent in payload["intents"]]
+    assert confidences == sorted(confidences, reverse=True)
+    assert payload["utterance"]["kind"] == "vague_follow_up"
+    assert "warnings" in payload
+
+
+def test_analyze_classifies_non_business_utterances(app) -> None:
+    client = TestClient(app)
+    examples = {
+        "carrot": "out_of_domain",
+        "how are you?": "small_talk",
+        "wtf?": "frustration",
+    }
+
+    for text, expected_kind in examples.items():
+        response = client.post("/analyze", json={"text": text, "domain": "restaurant"})
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["utterance"]["kind"] == expected_kind
+
+
+def test_analyze_returns_canonical_reservation_entities(app) -> None:
+    client = TestClient(app)
+    response = client.post(
+        "/analyze",
+        json={"text": "tomorrow at 7pm for 5 ppl", "domain": "restaurant"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    date_entity = next(entity for entity in payload["entities"] if entity["type"] == "DATE")
+    time_entity = next(entity for entity in payload["entities"] if entity["type"] == "TIME")
+    people_entity = next(entity for entity in payload["entities"] if entity["type"] == "PEOPLE_COUNT")
+    assert date_entity["raw_value"] == "tomorrow"
+    assert date_entity["value"] == (date.today() + timedelta(days=1)).isoformat()
+    assert time_entity["raw_value"] == "7pm"
+    assert time_entity["value"] == "19:00"
+    assert people_entity["raw_value"] == "for 5 ppl"
+    assert people_entity["value"] == "5"

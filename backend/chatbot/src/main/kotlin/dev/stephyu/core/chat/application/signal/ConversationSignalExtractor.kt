@@ -39,7 +39,8 @@ class ConversationSignalExtractor {
         }
 
         return ConversationSignal(
-            businessText = businessText.trim(' ', ',', '.', '!', '?', ':', ';', '-'),
+            rawText = message.trim(),
+            processedText = businessText.trim(' ', ',', '.', '!', '?', ':', ';', '-'),
             conversationAct = conversationAct,
             hasLeadingGreeting = hasLeadingGreeting,
             workflowCommand = workflowCommand,
@@ -68,7 +69,8 @@ class ConversationSignalExtractor {
  * Normalized signals extracted from a raw chat message before NLP analysis.
  */
 data class ConversationSignal(
-    val businessText: String,
+    val rawText: String,
+    val processedText: String,
     val conversationAct: ConversationAct?,
     val hasLeadingGreeting: Boolean,
     val workflowCommand: WorkflowCommand?,

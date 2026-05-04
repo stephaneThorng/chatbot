@@ -40,7 +40,14 @@ data class NlpContextSlotsDto(
 @Serializable
 data class NlpAnalysisResponseDto(
     val intent: NlpIntentDto,
+    val intents: List<NlpIntentCandidateDto> = emptyList(),
+    val utterance: NlpUtteranceDto = NlpUtteranceDto(
+        kind = "unknown",
+        confidence = 0.0,
+        source = "missing",
+    ),
     val entities: List<NlpEntityDto> = emptyList(),
+    val warnings: List<String> = emptyList(),
 )
 
 @Serializable
@@ -52,11 +59,31 @@ data class NlpIntentDto(
 )
 
 @Serializable
+data class NlpIntentCandidateDto(
+    val name: String,
+    val confidence: Double,
+    val source: String,
+    val reason: String? = null,
+)
+
+@Serializable
+data class NlpUtteranceDto(
+    val kind: String,
+    val confidence: Double,
+    val source: String,
+)
+
+@Serializable
 data class NlpEntityDto(
     val type: String,
+    @SerialName("raw_value")
+    val rawValue: String? = null,
     val value: String,
     val confidence: Double,
     val source: String,
+    val resolution: String? = null,
+    @SerialName("normalization_status")
+    val normalizationStatus: String = "raw_only",
 )
 
 

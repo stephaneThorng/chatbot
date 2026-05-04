@@ -1,7 +1,7 @@
 package dev.stephyu.core.chat.application.intent.handler
 
-import dev.stephyu.core.chat.application.state.ConversationTurnContext
-import dev.stephyu.core.chat.application.state.ConversationTurnResult
+import dev.stephyu.core.chat.application.state.StateHandlerInput
+import dev.stephyu.core.chat.application.state.StateHandlerResult
 import dev.stephyu.core.chat.application.intent.policy.IntentPolicy
 import dev.stephyu.core.chat.domain.session.ConversationSession
 import dev.stephyu.core.chat.domain.intent.IntentName
@@ -23,7 +23,7 @@ interface IntentHandler {
     /**
      * Processes the current turn and returns the updated session plus reply payload.
      */
-    fun process(input: ConversationTurnContext): ConversationTurnResult
+    fun process(input: StateHandlerInput): StateHandlerResult
 }
 
 

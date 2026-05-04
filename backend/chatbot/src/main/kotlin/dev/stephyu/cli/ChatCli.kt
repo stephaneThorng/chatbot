@@ -2,12 +2,11 @@ package dev.stephyu.cli
 
 import dev.stephyu.core.chat.adapter.`in`.web.dto.ChatMessageRequest
 import dev.stephyu.core.chat.adapter.`in`.web.dto.ChatMessageResponse
+import kotlinx.serialization.json.Json
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 fun main(args: Array<String>) {
     val endpoint = args.firstOrNull()
@@ -41,6 +40,7 @@ private class TerminalChatClient(
                     sessionId = null
                     println("Session reset.")
                 }
+
                 input.isBlank() -> println("Please type a message.")
                 else -> send(input)
             }
@@ -79,7 +79,6 @@ private class TerminalChatClient(
 
         sessionId = body.sessionId
         println("Bot: ${body.reply}")
-        println("     intent=${body.intent}, conversationAct=${body.conversationAct}, state=${body.state}, missing=${body.missingSlots}")
     }
 }
 

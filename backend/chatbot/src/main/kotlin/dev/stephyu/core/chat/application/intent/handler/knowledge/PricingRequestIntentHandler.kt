@@ -1,8 +1,8 @@
 package dev.stephyu.core.chat.application.intent.handler.knowledge
 
 import dev.stephyu.core.chat.application.port.out.RestaurantKnowledgeRepository
-import dev.stephyu.core.chat.application.state.ConversationTurnContext
-import dev.stephyu.core.chat.application.state.ConversationTurnResult
+import dev.stephyu.core.chat.application.state.StateHandlerInput
+import dev.stephyu.core.chat.application.state.StateHandlerResult
 import dev.stephyu.core.chat.application.intent.handler.IntentHandler
 import dev.stephyu.core.chat.application.intent.policy.IntentCategory
 import dev.stephyu.core.chat.application.intent.policy.IntentPolicy
@@ -22,8 +22,8 @@ class PricingRequestIntentHandler(
         disambiguationLabels = listOf("price", "pricing", "cost"),
     )
 
-    override fun process(input: ConversationTurnContext): ConversationTurnResult {
-        val normalized = input.message.lowercase()
+    override fun process(input: StateHandlerInput): StateHandlerResult {
+        val normalized = input.processedText.lowercase()
         val requestedPriceItem = input.analysis.entities
             .firstOrNull { it.type == SlotName.PRICE_ITEM }
             ?.value
@@ -39,8 +39,8 @@ class PricingRequestIntentHandler(
             "Price guide: " + knowledge.priceInfo().joinToString("; ") { "${it.label}: ${it.value}" }
         }
 
-        return ConversationTurnResult(
-            session = input.session.withInformationalIntent(intent),
+        return StateHandlerResult(
+            updatedSession = input.session.withInformationalIntent(intent),
             reply = reply,
         )
     }

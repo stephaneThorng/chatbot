@@ -12,7 +12,7 @@ class ConversationStateDispatcher(
     /**
      * Routes the current turn to the handler selected by the session state.
      */
-    fun process(input: ConversationTurnContext): ConversationTurnResult {
+    fun process(input: StateHandlerInput): StateHandlerResult {
         val handler = when (input.session.state) {
             ConversationState.IDLE -> idleStateHandler
             ConversationState.WORKFLOW -> workflowStateHandler

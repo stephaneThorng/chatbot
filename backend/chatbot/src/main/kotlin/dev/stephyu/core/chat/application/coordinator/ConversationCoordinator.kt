@@ -6,15 +6,14 @@ import dev.stephyu.core.chat.domain.intent.IntentDecision
 import dev.stephyu.core.chat.application.intent.decision.IntentDecisionEngine
 import dev.stephyu.core.chat.application.signal.ConversationSignal
 import dev.stephyu.core.chat.application.state.ProcessingMode
-import dev.stephyu.core.chat.application.state.ConversationTurnContext
-import dev.stephyu.core.chat.application.state.ConversationTurnResult
+import dev.stephyu.core.chat.application.state.StateHandlerInput
+import dev.stephyu.core.chat.application.state.StateHandlerResult
 import dev.stephyu.core.chat.application.state.ConversationStateDispatcher
 import dev.stephyu.core.chat.domain.conversation.ConversationAct
 import dev.stephyu.core.chat.domain.session.ConversationSession
 import dev.stephyu.core.chat.domain.intent.IntentName
 import dev.stephyu.core.chat.domain.nlp.NlpAnalysis
 import dev.stephyu.core.chat.domain.nlp.NlpAnalysisContext
-import dev.stephyu.core.chat.domain.nlp.SlotName
 import org.slf4j.LoggerFactory
 
 /**
@@ -26,132 +25,130 @@ class ConversationCoordinator(
     private val intentDecisionEngine: IntentDecisionEngine,
     private val stateDispatcher: ConversationStateDispatcher,
 ) {
+
+    companion object {
+        private const val RESTAURANT_DOMAIN = "restaurant"
+    }
+
     private val logger = LoggerFactory.getLogger(ConversationCoordinator::class.java)
 
     /**
      * Processes one user message against the current in-memory session.
      */
-    suspend fun handle(session: ConversationSession, message: String): ConversationTurnOutcome {
-        logger.info(
-            "Chat message received: sessionId={}, state={}, workflowIntent={}, message={}",
-            session.id,
-            session.state,
-            session.currentWorkflow?.ownerIntent,
-            message,
-        )
+    suspend fun handle(session: ConversationSession, message: String): StateHandlerResult {
+
         if (message.isBlank()) {
             return emptyMessageResult(session)
         }
 
-        val preprocessed = signalExtractor.preprocess(message)
-        logger.info(
-            "Chat message preprocessed: sessionId={}, conversationAct={}, workflowCommand={}, businessText={}",
-            session.id,
-            preprocessed.conversationAct,
-            preprocessed.workflowCommand,
-            preprocessed.businessText,
-        )
+        val conversationSignal = signalExtractor.preprocess(message)
+
         return when {
-            session.hasCurrentWorkflow() && preprocessed.workflowCommand != null ->
-                handleWorkflowCommand(session, message.trim(), preprocessed)
+            session.hasCurrentWorkflow() && conversationSignal.workflowCommand != null ->
+                handleWorkflowCommand(session, conversationSignal)
 
-            preprocessed.businessText.isBlank() && preprocessed.conversationAct != null ->
-                conversationActResult(session, preprocessed.conversationAct)
+            conversationSignal.processedText.isBlank() && conversationSignal.conversationAct != null ->
+                conversationActResult(session, conversationSignal.conversationAct)
 
-            preprocessed.businessText.isBlank() ->
+            conversationSignal.processedText.isBlank() ->
                 emptyMessageResult(session)
 
-            else -> handleBusinessMessage(session, preprocessed)
+            else -> handleBusinessMessage(session, conversationSignal)
         }
     }
 
     private suspend fun handleBusinessMessage(
         session: ConversationSession,
-        preprocessed: ConversationSignal,
-    ): ConversationTurnOutcome {
-        val analysis = analyze(preprocessed.businessText, session)
-        val decision = intentDecisionEngine.resolve(analysis, session, preprocessed.businessText)
-        logger.info(
-            "Intent routing decision: sessionId={}, primaryIntent={}, alternatives={}, decision={}",
-            session.id,
-            analysis.intent.name,
-            analysis.intent.alternatives,
-            decision,
-        )
-        return when (decision) {
-            is IntentDecision.Accept -> handleAcceptedIntent(
-                session = session,
-                preprocessed = preprocessed,
-                analysis = analysis,
-                resolvedIntent = decision.intent,
-            )
+        conversationSignal: ConversationSignal,
+    ): StateHandlerResult {
+        val analysis = analyze(conversationSignal.processedText, session.id, session.toNlpContext())
+        return when (val decision = intentDecisionEngine.resolve(analysis, session, conversationSignal.processedText)) {
+            is IntentDecision.Accept -> {
+                logger.debug(
+                    "Intent accepted: sessionId={}, intent={}, utteranceKind={}",
+                    session.id,
+                    decision.intent,
+                    analysis.utterance.kind,
+                )
+                val stateHandlerResult = stateDispatcher.process(
+                    StateHandlerInput(
+                        session = session.clearPendingDisambiguation(),
+                        intent = decision.intent,
+                        processedText = conversationSignal.processedText,
+                        analysis = analysis,
+                        workflowCommand = conversationSignal.workflowCommand,
+                        processingMode = ProcessingMode.PRIMARY,
+                    )
+                )
+                resultFromState(conversationSignal, stateHandlerResult, decision.intent)
+            }
 
-            is IntentDecision.Clarify -> clarificationResult(
-                session = session.withPendingDisambiguation(decision.primary, decision.secondary),
-                preprocessed = preprocessed,
-                primary = decision.primary,
-                secondary = decision.secondary,
-            )
+            is IntentDecision.Clarify -> {
+                logger.debug(
+                    "Intent clarification required: sessionId={}, primary={}, secondary={}, utteranceKind={}",
+                    session.id,
+                    decision.primary,
+                    decision.secondary,
+                    analysis.utterance.kind,
+                )
+                StateHandlerResult(
+                    updatedSession = session.withPendingDisambiguation(decision.primary, decision.secondary),
+                    reply = applyConversationActPrefix(conversationSignal.hasLeadingGreeting, clarificationReply(decision.primary, decision.secondary)),
+                    conversationAct = conversationSignal.conversationAct,
+                    handledIntentOverride = IntentName.UNKNOWN,
+                )
+            }
 
-            IntentDecision.Unknown -> unknownResult(
-                session = session.clearPendingDisambiguation(),
-                preprocessed = preprocessed,
-            )
+            IntentDecision.Unknown -> {
+                logger.debug(
+                    "Intent resolved to unknown: sessionId={}, utteranceKind={}, topIntent={}, topConfidence={}",
+                    session.id,
+                    analysis.utterance.kind,
+                    analysis.intent.name,
+                    analysis.intent.confidence,
+                )
+                StateHandlerResult(
+                    updatedSession = session.clearPendingDisambiguation(),
+                    reply = applyConversationActPrefix(conversationSignal.hasLeadingGreeting, unknownReply()),
+                    conversationAct = conversationSignal.conversationAct,
+                    handledIntentOverride = IntentName.UNKNOWN,
+                )
+            }
         }
-    }
-
-    private fun handleAcceptedIntent(
-        session: ConversationSession,
-        preprocessed: ConversationSignal,
-        analysis: NlpAnalysis,
-        resolvedIntent: IntentName,
-    ): ConversationTurnOutcome {
-        val handled = stateDispatcher.process(
-            ConversationTurnContext(
-                session = session.clearPendingDisambiguation(),
-                intent = resolvedIntent,
-                message = preprocessed.businessText,
-                analysis = analysis,
-                workflowCommand = preprocessed.workflowCommand,
-                processingMode = ProcessingMode.PRIMARY,
-            )
-        )
-        return resultFromState(preprocessed, handled, resolvedIntent)
     }
 
     private fun handleWorkflowCommand(
         session: ConversationSession,
-        message: String,
-        preprocessed: ConversationSignal,
-    ): ConversationTurnOutcome {
+        conversationSignal: ConversationSignal,
+    ): StateHandlerResult {
         val workflowIntent = session.currentWorkflow?.ownerIntent ?: IntentName.UNKNOWN
         val handled = stateDispatcher.process(
-            ConversationTurnContext(
+            StateHandlerInput(
                 session = session,
                 intent = workflowIntent,
-                message = message,
+                processedText = conversationSignal.rawText,
                 analysis = NlpAnalysis.unavailable,
-                workflowCommand = preprocessed.workflowCommand,
+                workflowCommand = conversationSignal.workflowCommand,
                 processingMode = ProcessingMode.PRIMARY,
             )
         )
-        return resultFromState(preprocessed, handled, workflowIntent)
+        return resultFromState(conversationSignal, handled, workflowIntent)
     }
 
-    private suspend fun analyze(message: String, session: ConversationSession): NlpAnalysis =
+    private suspend fun analyze(processedText: String, sessionId: String, nlpContext: NlpAnalysisContext): NlpAnalysis =
         runCatching {
             nlpAnalyzer.analyze(
-                text = message,
+                text = processedText,
                 domain = RESTAURANT_DOMAIN,
-                context = session.toNlpContext(),
+                context = nlpContext,
             )
         }.onFailure { error ->
-            logger.warn("NLP analyze failed: sessionId={}, message={}", session.id, message, error)
+            logger.warn("NLP analyze failed: sessionId={}, message={}", sessionId, processedText, error)
         }.getOrDefault(NlpAnalysis.unavailable)
             .also { analysis ->
                 logger.info(
                     "NLP analysis: sessionId={}, intent={}, confidence={}, alternatives={}, entities={}",
-                    session.id,
+                    sessionId,
                     analysis.intent.name,
                     analysis.intent.confidence,
                     analysis.intent.alternatives,
@@ -160,83 +157,47 @@ class ConversationCoordinator(
             }
 
     private fun resultFromState(
-        preprocessed: ConversationSignal,
-        handled: ConversationTurnResult,
+        conversationSignal: ConversationSignal,
+        handled: StateHandlerResult,
         intent: IntentName,
-    ): ConversationTurnOutcome =
-        ConversationTurnOutcome(
-            session = handled.session,
-            intent = handled.handledIntent ?: intent,
-            conversationAct = preprocessed.conversationAct,
-            reply = applyConversationActPrefix(preprocessed, handled.reply),
-            slots = handled.slots,
-            missingSlots = handled.missingSlots,
+    ): StateHandlerResult =
+        handled.copy(
+            updatedSession = handled.updatedSession,
+            conversationAct = conversationSignal.conversationAct,
+            reply = applyConversationActPrefix(conversationSignal.hasLeadingGreeting, handled.reply),
             completed = handled.completed,
+            handledIntentOverride = handled.handledIntent ?: intent,
+            slotSnapshot = handled.slotSnapshot,
+            missingSlotSnapshot = handled.missingSlotSnapshot,
         ).also { result ->
             logger.info(
-                "Chat message handled: sessionId={}, resolvedIntent={}, handledIntent={}, nextState={}, missingSlots={}, completed={}",
-                result.session.id,
+                "Chat message handled: sessionId={}, resolvedIntent={}, handledIntent={}, nextState={}, workflowOwner={}, missingSlots={}, completed={}",
+                result.updatedSession.id,
                 intent,
-                result.intent,
-                result.session.state,
+                result.handledIntent,
+                result.updatedSession.state,
+                result.updatedSession.currentWorkflow?.ownerIntent,
                 result.missingSlots,
                 result.completed,
             )
         }
 
-    private fun emptyMessageResult(session: ConversationSession): ConversationTurnOutcome =
-        ConversationTurnOutcome(
-            session = session,
-            intent = IntentName.UNKNOWN,
-            conversationAct = null,
+    private fun emptyMessageResult(session: ConversationSession): StateHandlerResult =
+        StateHandlerResult(
+            updatedSession = session,
             reply = emptyMessageReply(),
-            slots = session.filledSlots(),
-            missingSlots = session.missingSlots(),
-            completed = false,
+            handledIntentOverride = IntentName.UNKNOWN,
         )
 
     private fun conversationActResult(
         session: ConversationSession,
         conversationAct: ConversationAct,
-    ): ConversationTurnOutcome =
-        ConversationTurnOutcome(
-            session = session,
-            intent = IntentName.UNKNOWN,
-            conversationAct = conversationAct,
+    ): StateHandlerResult =
+        StateHandlerResult(
+            updatedSession = session,
             reply = conversationActReply(conversationAct),
-            slots = session.filledSlots(),
-            missingSlots = session.missingSlots(),
-            completed = false,
-        )
-
-    private fun clarificationResult(
-        session: ConversationSession,
-        preprocessed: ConversationSignal,
-        primary: IntentName,
-        secondary: IntentName,
-    ): ConversationTurnOutcome =
-        ConversationTurnOutcome(
-            session = session,
-            intent = IntentName.UNKNOWN,
-            conversationAct = preprocessed.conversationAct,
-            reply = applyConversationActPrefix(preprocessed, clarificationReply(primary, secondary)),
-            slots = session.filledSlots(),
-            missingSlots = session.missingSlots(),
-            completed = false,
-        )
-
-    private fun unknownResult(
-        session: ConversationSession,
-        preprocessed: ConversationSignal,
-    ): ConversationTurnOutcome =
-        ConversationTurnOutcome(
-            session = session,
-            intent = IntentName.UNKNOWN,
-            conversationAct = preprocessed.conversationAct,
-            reply = applyConversationActPrefix(preprocessed, unknownReply()),
-            slots = session.filledSlots(),
-            missingSlots = session.missingSlots(),
-            completed = false,
+            conversationAct = conversationAct,
+            handledIntentOverride = IntentName.UNKNOWN,
         )
 
     private fun ConversationSession.toNlpContext(): NlpAnalysisContext =
@@ -271,22 +232,8 @@ class ConversationCoordinator(
     private fun unknownReply(): String =
         "I did not understand that. I can help with reservations, opening hours, location, menu, prices, and contact details."
 
-    private fun applyConversationActPrefix(preprocessed: ConversationSignal, reply: String): String =
-        if (preprocessed.hasLeadingGreeting && !reply.startsWith("Hello.")) "Hello. $reply" else reply
-
-    companion object {
-        private const val RESTAURANT_DOMAIN = "restaurant"
-    }
+    private fun applyConversationActPrefix(hasLeadingGreeting: Boolean, reply: String): String =
+        if (hasLeadingGreeting && !reply.startsWith("Hello.")) "Hello. $reply" else reply
 }
-
-data class ConversationTurnOutcome(
-    val session: ConversationSession,
-    val intent: IntentName,
-    val conversationAct: ConversationAct?,
-    val reply: String,
-    val slots: Map<SlotName, String>,
-    val missingSlots: List<SlotName>,
-    val completed: Boolean,
-)
 
 

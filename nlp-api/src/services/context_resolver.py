@@ -58,10 +58,10 @@ class ContextResolver:
             r"^\d{1,2}\s*(people|persons|guests?|adults?|kids?)$",
         ),
         "date": (
-            r"^(today|tomorrow|tonight|this weekend|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$",
+            r"^(today|tomorrow|tmrw|tmr|tonight|this weekend|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$",
             r"^(this\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$",
             r"^(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}$",
-            r"^(today|tomorrow|tonight)\s+at\s+\d{1,2}(?::\d{2})?\s?(am|pm)$",
+            r"^(today|tomorrow|tmrw|tmr|tonight)\s+at\s+\d{1,2}(?::\d{2})?\s?(am|pm)$",
         ),
         "time": (
             r"^\d{1,2}(?::\d{2})?\s?(am|pm)$",
@@ -179,7 +179,7 @@ class ContextResolver:
             r"^for\s+\d{1,2}$",
             r"^\d{1,2}\s*(people|persons|guests?)$",
             r"^\d{1,2}(?::\d{2})?\s?(am|pm)$",
-            r"^(today|tomorrow|tonight|this weekend|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$",
+            r"^(today|tomorrow|tmrw|tmr|tonight|this weekend|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$",
             r"^[a-z]+(?:\s+[a-z]+){0,2}$",
         )
         return any(re.fullmatch(pattern, normalized_text) for pattern in generic_patterns)
@@ -195,7 +195,7 @@ class ContextResolver:
         has_date = SlotName.DATE in missing_slots and any(
             re.search(pattern, normalized_text)
             for pattern in (
-                r"\b(today|tomorrow|tonight|this weekend|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+                r"\b(today|tomorrow|tmrw|tmr|tonight|this weekend|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
                 r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}\b",
             )
         )
@@ -288,7 +288,7 @@ class ContextResolver:
                 hints.append(ContextEntityHint(EntityType.TIME, match.group(1), match.start(1), match.end(1), 0.86))
         if SlotName.DATE in missing_slots:
             match = re.search(
-                r"\b(today|tomorrow|tonight|this weekend|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+                r"\b(today|tomorrow|tmrw|tmr|tonight|this weekend|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
                 normalized_text,
                 flags=re.IGNORECASE,
             )

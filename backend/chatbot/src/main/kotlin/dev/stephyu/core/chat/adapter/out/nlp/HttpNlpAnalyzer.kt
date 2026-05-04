@@ -6,19 +6,14 @@ import dev.stephyu.core.chat.adapter.out.nlp.dto.NlpAnalysisResponseDto
 import dev.stephyu.core.chat.adapter.out.nlp.dto.NlpContextSlotsDto
 import dev.stephyu.core.chat.application.port.out.NlpAnalyzer
 import dev.stephyu.core.chat.domain.intent.IntentName
-import dev.stephyu.core.chat.domain.nlp.NlpAnalysis
-import dev.stephyu.core.chat.domain.nlp.NlpAnalysisContext
-import dev.stephyu.core.chat.domain.nlp.NlpEntity
-import dev.stephyu.core.chat.domain.nlp.NlpIntent
-import dev.stephyu.core.chat.domain.nlp.SlotName
+import dev.stephyu.core.chat.domain.nlp.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 class HttpNlpAnalyzer(
     private val config: NlpClientConfig,
@@ -73,14 +68,39 @@ class HttpNlpAnalyzer(
                 source = intent.source,
                 alternatives = intent.alternatives.mapKeys { (wireName, _) -> IntentName.fromWireName(wireName) },
             ),
+            intents = intents.ifEmpty {
+                listOf(intent.toCandidate())
+            }.map {
+                NlpIntent(
+                    name = IntentName.fromWireName(it.name),
+                    confidence = it.confidence,
+                    source = it.source,
+                )
+            },
+            utterance = NlpUtterance(
+                kind = NlpUtteranceKind.fromWireName(utterance.kind),
+                confidence = utterance.confidence,
+                source = utterance.source,
+            ),
             entities = entities.map {
                 NlpEntity(
                     type = SlotName.fromNlpWireName(it.type),
                     value = it.value,
                     confidence = it.confidence,
                     source = it.source,
+                    rawValue = it.rawValue ?: it.value,
+                    resolution = it.resolution,
+                    normalizationStatus = NlpEntityNormalizationStatus.fromWireName(it.normalizationStatus),
                 )
             },
+            warnings = warnings,
+        )
+
+    private fun dev.stephyu.core.chat.adapter.out.nlp.dto.NlpIntentDto.toCandidate() =
+        dev.stephyu.core.chat.adapter.out.nlp.dto.NlpIntentCandidateDto(
+            name = name,
+            confidence = confidence,
+            source = source,
         )
 }
 

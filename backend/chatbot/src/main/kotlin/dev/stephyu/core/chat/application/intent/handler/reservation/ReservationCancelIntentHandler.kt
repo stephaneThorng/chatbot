@@ -1,8 +1,7 @@
 package dev.stephyu.core.chat.application.intent.handler.reservation
 
-import dev.stephyu.core.chat.application.state.ConversationTurnContext
-import dev.stephyu.core.chat.application.state.ConversationTurnResult
-import dev.stephyu.core.chat.application.state.ProcessingMode
+import dev.stephyu.core.chat.application.state.StateHandlerInput
+import dev.stephyu.core.chat.application.state.StateHandlerResult
 import dev.stephyu.core.chat.application.intent.handler.IntentHandler
 import dev.stephyu.core.chat.application.intent.policy.IntentCategory
 import dev.stephyu.core.chat.application.intent.policy.IntentPolicy
@@ -43,17 +42,17 @@ class ReservationCancelIntentHandler(
         )
     }
 
-    override fun process(input: ConversationTurnContext): ConversationTurnResult {
+    override fun process(input: StateHandlerInput): StateHandlerResult {
         val reservation = input.session.completedWorkflows[IntentName.RESERVATION_MODIFY]
             ?: input.session.completedWorkflows[IntentName.RESERVATION_CREATE]
-            ?: return ConversationTurnResult(
-                session = input.session.withoutWorkflow(nextIntent = intent),
+            ?: return StateHandlerResult(
+                updatedSession = input.session.withoutWorkflow(nextIntent = intent),
                 reply = "I do not have a confirmed reservation in this session yet.",
             )
 
         val workflow = input.session.currentWorkflow ?: workflowDefinition(input.session)?.startSession()
-            ?: return ConversationTurnResult(
-                session = input.session.withoutWorkflow(nextIntent = intent),
+            ?: return StateHandlerResult(
+                updatedSession = input.session.withoutWorkflow(nextIntent = intent),
                 reply = "I do not have a confirmed reservation in this session yet.",
             )
 
@@ -61,7 +60,7 @@ class ReservationCancelIntentHandler(
             WorkflowEngineInput(
                 ownerIntent = intent,
                 incomingIntent = input.intent,
-                message = input.message,
+                message = input.processedText,
                 analysis = input.analysis,
                 workflow = workflow,
                 workflowCommand = input.workflowCommand,
@@ -71,37 +70,39 @@ class ReservationCancelIntentHandler(
 
         return when (result.outcome) {
             WorkflowOutcome.IN_PROGRESS,
-            WorkflowOutcome.NEEDS_CONFIRMATION -> ConversationTurnResult(
-                session = input.session.withWorkflow(result.workflow, intent),
+            WorkflowOutcome.NEEDS_CONFIRMATION -> StateHandlerResult(
+                updatedSession = input.session.withWorkflow(result.workflow, intent),
                 reply = "I found this reservation: ${summary(reservation.filledSlots())}. Should I cancel it?",
             )
             WorkflowOutcome.REJECTED,
-            WorkflowOutcome.CANCELLED -> ConversationTurnResult(
-                session = input.session.withoutWorkflow(nextIntent = intent),
+            WorkflowOutcome.CANCELLED -> StateHandlerResult(
+                updatedSession = input.session.withoutWorkflow(nextIntent = intent),
                 reply = "No problem. I kept the reservation unchanged.",
-                slots = reservation.filledSlots(),
+                slotSnapshot = reservation.filledSlots(),
             )
-            WorkflowOutcome.CONFIRMED -> ConversationTurnResult(
-                session = input.session.withoutWorkflow(nextIntent = intent).copy(
+            WorkflowOutcome.CONFIRMED -> StateHandlerResult(
+                updatedSession = input.session.withoutWorkflow(nextIntent = intent).copy(
                     completedWorkflows = input.session.completedWorkflows -
                         IntentName.RESERVATION_CREATE -
                         IntentName.RESERVATION_MODIFY,
                 ),
                 reply = "I have cancelled the reservation: ${summary(reservation.filledSlots())}.",
-                slots = reservation.filledSlots(),
+                slotSnapshot = reservation.filledSlots(),
                 completed = true,
             )
         }
     }
 
-    private fun summary(slots: Map<SlotName, String>): String =
-        listOfNotNull(
-            slots[SlotName.PEOPLE]?.let { "$it people" },
-            slots[SlotName.DATE]?.let { "on $it" },
-            slots[SlotName.TIME]?.let { "at $it" },
-        ).joinToString(" ")
-            .let { base -> slots[SlotName.NAME]?.let { if (base.isBlank()) "under $it" else "$base, under $it" } ?: base }
-            .ifBlank { "no details captured" }
+    private fun summary(slots: Map<SlotName, String>): String {
+        val parts = buildList {
+            slots[SlotName.PEOPLE]?.let { add("$it people") }
+            slots[SlotName.DATE]?.let { add("on $it") }
+            slots[SlotName.TIME]?.let { add("at $it") }
+            slots[SlotName.NAME]?.let { add("under $it") }
+        }.joinToString(" ")
+
+        return parts.ifBlank { "no details captured" }
+    }
 }
 
 

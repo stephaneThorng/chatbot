@@ -3,13 +3,13 @@
 This repository contains a restaurant chatbot prototype with two services:
 
 - `backend/chatbot`: Kotlin/Ktor backend that owns sessions, conversation state, restaurant data, and replies.
-- `nlp-api`: Python NLP API that analyzes user text and returns intent plus extracted entities.
+- `nlp-api`: Python NLP engine that analyzes user text and returns ranked intents, utterance signals, and normalized entities.
 
 The v1 backend exposes a single HTTP endpoint for chat messages and keeps all state in memory. It is designed for local development and a single running backend instance.
 
 ## Backend Scope
 
-The Python NLP API owns restaurant business intents:
+The Python NLP API owns restaurant business analysis:
 
 - `reservation_create`
 - `reservation_modify`
@@ -21,6 +21,8 @@ The Python NLP API owns restaurant business intents:
 - `pricing_request`
 - `contact_request`
 - `unknown`
+
+It returns a primary intent, ranked intent candidates, utterance kind metadata, canonical entity values, raw entity spans, and warnings. The Kotlin backend treats this as analysis evidence, not as user-facing response text. If `utterance` is missing, the backend treats the analysis as `unknown` instead of accepting a business intent.
 
 The Kotlin backend owns conversation acts such as `greeting`, `thanks`, and `farewell`. It strips simple polite prefixes or suffixes before calling the NLP API, while preserving the detected act in the chat response metadata.
 

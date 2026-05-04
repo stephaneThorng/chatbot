@@ -32,8 +32,7 @@ class ServerTest {
         assertEquals(HttpStatusCode.OK, response.status)
         val body = json.decodeFromString<ChatMessageResponse>(response.bodyAsText())
         assertTrue(body.sessionId.isNotBlank())
-        assertEquals("unknown", body.intent)
-        assertEquals("IDLE", body.state)
+        assertTrue(body.reply.contains("Please send a message", ignoreCase = true))
     }
 
     @Test
@@ -46,6 +45,11 @@ class ServerTest {
                 "confidence": 0.99,
                 "source": "test",
                 "alternatives": {}
+              },
+              "utterance": {
+                "kind": "business_query",
+                "confidence": 1.0,
+                "source": "test"
               },
               "entities": []
             }
@@ -64,8 +68,6 @@ class ServerTest {
 
             assertEquals(HttpStatusCode.OK, response.status)
             val body = json.decodeFromString<ChatMessageResponse>(response.bodyAsText())
-            assertEquals("reservation_create", body.intent)
-            assertEquals("WORKFLOW", body.state)
             assertTrue(body.reply.contains("name", ignoreCase = true))
         } finally {
             mockNlp.stop(0)

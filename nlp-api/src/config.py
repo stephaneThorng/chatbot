@@ -116,6 +116,7 @@ class Settings(BaseSettings):
 
     service_port: int = 8000
     service_host: str = "0.0.0.0"
+    service_timezone: str = "Europe/Paris"
 
     log_level: str = "INFO"
     log_file: str = "./logs/nlp-api.log"

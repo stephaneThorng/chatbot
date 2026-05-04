@@ -1,12 +1,14 @@
 # NLP API
 
-`nlp-api` is a production-oriented FastAPI service for multi-tenant chatbot backends. It performs intent classification and named entity recognition in a single `/analyze` call, supports model versioning through Hugging Face Hub, and includes a full training pipeline for intent and NER models.
+`nlp-api` is a production-oriented FastAPI language analysis engine for chatbot backends. It performs ranked intent classification, utterance signal detection, entity extraction, and entity normalization in a single `/analyze` call. It supports model versioning through Hugging Face Hub and includes a full training pipeline for intent and NER models.
 
 ## Features
 
-- Hybrid intent classification with regex fast path and transformer fallback
+- Hybrid intent classification with regex fast path, transformer fallback, and ranked candidates
+- Utterance analysis for small talk, vague follow-ups, clarification requests, frustration, out-of-domain, ambiguous, and unknown messages
 - Token-classification NER with BIO decoding and heuristic fallback
-- Rich responses with confidences, alternatives, source metadata, and timing breakdowns
+- Canonical entity normalization with raw spans, normalized values, resolution metadata, and warnings
+- Rich responses with confidences, ranked intents, source metadata, and timing breakdowns
 - Async FastAPI startup and request orchestration
 - Hugging Face Hub model revision support for A/B testing
 - Training scripts for intent, NER, and evaluation
@@ -53,6 +55,7 @@ HF_TOKEN=
 HF_CACHE_DIR=./.cache/huggingface
 SERVICE_PORT=8000
 SERVICE_HOST=0.0.0.0
+SERVICE_TIMEZONE=Europe/Paris
 LOG_LEVEL=INFO
 LOG_FILE=./logs/nlp-api.log
 INTENT_CONFIDENCE_THRESHOLD=0.6
@@ -111,6 +114,8 @@ Expected behavior:
 - intent stays `reservation_create`
 - source becomes `context`
 - extracted entity is `PEOPLE_COUNT`
+- `raw_value` preserves the user text
+- `value` contains the canonical slot value when normalization succeeds
 
 Another example:
 
@@ -139,32 +144,61 @@ Important: `events@example.com` does not imply `contact_request` by itself. The 
       "reservation_cancel": 0.08
     }
   },
+  "intents": [
+    {
+      "name": "reservation_create",
+      "confidence": 0.93,
+      "source": "regex",
+      "reason": "primary"
+    },
+    {
+      "name": "reservation_modify",
+      "confidence": 0.12,
+      "source": "alternative",
+      "reason": null
+    }
+  ],
+  "utterance": {
+    "kind": "business_query",
+    "confidence": 0.92,
+    "source": "rule"
+  },
   "entities": [
     {
       "type": "PEOPLE_COUNT",
-      "value": "4 people",
+      "raw_value": "4 people",
+      "value": "4",
       "start": 17,
       "end": 25,
       "confidence": 0.9,
-      "source": "heuristic"
+      "source": "heuristic",
+      "resolution": "count",
+      "normalization_status": "normalized"
     },
     {
       "type": "DATE",
-      "value": "tomorrow",
+      "raw_value": "tomorrow",
+      "value": "2026-05-04",
       "start": 26,
       "end": 34,
       "confidence": 0.9,
-      "source": "heuristic"
+      "source": "heuristic",
+      "resolution": "relative_date",
+      "normalization_status": "normalized"
     },
     {
       "type": "TIME",
-      "value": "7pm",
+      "raw_value": "7pm",
+      "value": "19:00",
       "start": 38,
       "end": 41,
       "confidence": 0.95,
-      "source": "heuristic"
+      "source": "heuristic",
+      "resolution": "time_12h",
+      "normalization_status": "normalized"
     }
   ],
+  "warnings": [],
   "processing_time_ms": 7.4,
   "processing_details": {
     "intent_ms": 2.1,
@@ -197,6 +231,8 @@ See `training/README.md` for dataset shape and Hub upload flow.
 
 The restaurant dataset currently annotates these entity types:
 `DATE`, `TIME`, `PEOPLE_COUNT`, `PERSON`, `PHONE`, `EMAIL`, `MENU_ITEM`, `PRICE_ITEM`, and `LOCATION`.
+
+The API normalizes supported `DATE`, `TIME`, and `PEOPLE_COUNT` entities after span extraction. Relative dates use the service clock and `SERVICE_TIMEZONE`.
 
 ## Testing
 

@@ -9,43 +9,55 @@ import dev.stephyu.core.chat.domain.workflow.WorkflowPhase
 class WorkflowStateHandler(
     private val intentCatalog: IntentCatalog,
 ) : StateHandler {
-    override fun process(input: ConversationTurnContext): ConversationTurnResult =
-        resolveIntentForState(input)
-            ?.let(intentCatalog::findIntentHandler)
-            ?.let { primaryService ->
-                val primaryResult = primaryService.process(input).copy(
-                    handledIntent = primaryService.intent,
-                )
-                if (!shouldEnrichWorkflow(input, primaryService.intent)) {
-                    primaryResult
-                } else {
-                    enrichWorkflow(primaryResult, input)
-                }
-            }
-            ?: ConversationTurnResult(
-                session = input.session.copy(state = ConversationState.IDLE),
-                reply = "I can help with reservations, opening hours, location, menu, prices, and contact details.",
-            )
+    override fun process(input: StateHandlerInput): StateHandlerResult {
+        val targetIntent = resolveTargetIntent(input)
+            ?: return fallbackToIdle(input)
 
-    private fun resolveIntentForState(input: ConversationTurnContext): IntentName? =
-        when {
-            intentCatalog.findIntentPolicy(input.intent).allowDuringWorkflow -> input.intent
-            else -> input.session.currentWorkflow?.ownerIntent
+        val intentHandler = intentCatalog.findIntentHandler(targetIntent)
+            ?: return fallbackToIdle(input)
+
+        val result = intentHandler
+            .process(input)
+            .copy(handledIntentOverride = intentHandler.intent)
+
+        if (!shouldEnrichWorkflow(input, intentHandler.intent)) {
+            return result
         }
 
-    private fun shouldEnrichWorkflow(input: ConversationTurnContext, primaryIntent: IntentName): Boolean =
+        return enrichWorkflow(result, input)
+    }
+
+    private fun resolveTargetIntent(input: StateHandlerInput): IntentName? {
+        val inputIntentPolicy = intentCatalog.findIntentPolicy(input.intent)
+        if (inputIntentPolicy.allowDuringWorkflow) {
+            return input.intent
+        }
+        return input.session.currentWorkflow?.ownerIntent
+    }
+
+    private fun fallbackToIdle(input: StateHandlerInput): StateHandlerResult =
+        StateHandlerResult(
+            updatedSession = input.session.copy(state = ConversationState.IDLE),
+            reply = "I can help with reservations, opening hours, location, menu, prices, and contact details.",
+        )
+
+    private fun shouldEnrichWorkflow(input: StateHandlerInput, primaryIntent: IntentName): Boolean =
         input.session.hasCurrentWorkflow() &&
             intentCatalog.findIntentPolicy(primaryIntent).category == IntentCategory.INFORMATIONAL &&
             input.session.currentWorkflow?.ownerIntent != null
 
     private fun enrichWorkflow(
-        primaryResult: ConversationTurnResult,
-        originalInput: ConversationTurnContext,
-    ): ConversationTurnResult {
-        val workflowIntent = originalInput.session.currentWorkflow?.ownerIntent ?: return primaryResult
-        val workflowService = intentCatalog.findIntentHandler(workflowIntent) ?: return primaryResult
+        primaryResult: StateHandlerResult,
+        originalInput: StateHandlerInput,
+    ): StateHandlerResult {
+        val workflowIntent = originalInput.session.currentWorkflow?.ownerIntent
+            ?: return primaryResult
+
+        val workflowService = intentCatalog.findIntentHandler(workflowIntent)
+            ?: return primaryResult
+
         val workflowInput = originalInput.copy(
-            session = primaryResult.session,
+            session = primaryResult.updatedSession,
             intent = workflowIntent,
             processingMode = ProcessingMode.BACKGROUND_ENRICHMENT,
         )
@@ -53,15 +65,17 @@ class WorkflowStateHandler(
         val resumePrompt = workflowResumePrompt(workflowResult)
 
         return primaryResult.copy(
-            session = workflowResult.session,
+            updatedSession = workflowResult.updatedSession,
             reply = primaryResult.reply + resumePrompt.orEmpty(),
-            slots = workflowResult.slots,
-            missingSlots = workflowResult.missingSlots,
+            slotSnapshot = workflowResult.slotSnapshot,
+            missingSlotSnapshot = workflowResult.missingSlotSnapshot,
         )
     }
 
-    private fun workflowResumePrompt(workflowResult: ConversationTurnResult): String? {
-        val workflow = workflowResult.session.currentWorkflow ?: return null
+    private fun workflowResumePrompt(workflowResult: StateHandlerResult): String? {
+        val workflow = workflowResult.updatedSession.currentWorkflow
+            ?: return null
+
         return when (workflow.phase) {
             WorkflowPhase.COLLECTING ->
                 workflow.firstMissingRequirement()?.prompt?.defaultText?.let { " Next: $it" }

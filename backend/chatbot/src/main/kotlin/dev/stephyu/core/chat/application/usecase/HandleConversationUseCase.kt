@@ -4,6 +4,7 @@ import dev.stephyu.core.chat.application.command.ConversationResult
 import dev.stephyu.core.chat.application.command.HandleConversationCommand
 import dev.stephyu.core.chat.application.coordinator.ConversationCoordinator
 import dev.stephyu.core.chat.application.port.out.ConversationSessionRepository
+import dev.stephyu.core.chat.domain.intent.IntentName
 import dev.stephyu.core.chat.domain.session.ConversationSession
 import java.time.Clock
 import java.time.Duration
@@ -19,20 +20,21 @@ class HandleConversationUseCase(
      */
     suspend fun handle(command: HandleConversationCommand): ConversationResult {
         val now = clock.instant()
-        val session = command.sessionId?.let { conversationSessionRepository.findActive(it, now) }
+        val session = command.sessionId
+            ?.let { conversationSessionRepository.findActive(it, now) }
             ?: newSession(now)
-        val outcome = coordinator.handle(session, command.message.trim())
-        val saved = save(outcome.session, now)
+        val result = coordinator.handle(session, command.message)
+        val saved = save(result.updatedSession, now)
 
         return ConversationResult(
             sessionId = saved.id,
-            reply = outcome.reply,
-            intent = outcome.intent,
-            conversationAct = outcome.conversationAct,
+            reply = result.reply,
+            intent = result.handledIntent ?: IntentName.UNKNOWN,
+            conversationAct = result.conversationAct,
             state = saved.state,
-            slots = outcome.slots,
-            missingSlots = outcome.missingSlots,
-            completed = outcome.completed,
+            slots = result.slots,
+            missingSlots = result.missingSlots,
+            completed = result.completed,
         )
     }
 

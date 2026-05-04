@@ -16,12 +16,6 @@ object ChatMessageWebMapper {
         ChatMessageResponse(
             sessionId = result.sessionId,
             reply = result.reply,
-            intent = result.intent.wireName,
-            conversationAct = result.conversationAct?.wireName,
-            state = result.state.name,
-            slots = result.slots.mapKeys { it.key.wireName },
-            missingSlots = result.missingSlots.map { it.wireName },
-            completed = result.completed,
         )
 }
 

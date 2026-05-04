@@ -1,9 +1,8 @@
 package dev.stephyu.core.chat.application.intent.handler.reservation
 
 import dev.stephyu.core.chat.application.port.out.ReservationInventoryRepository
-import dev.stephyu.core.chat.application.state.ConversationTurnContext
-import dev.stephyu.core.chat.application.state.ConversationTurnResult
-import dev.stephyu.core.chat.application.state.ProcessingMode
+import dev.stephyu.core.chat.application.state.StateHandlerInput
+import dev.stephyu.core.chat.application.state.StateHandlerResult
 import dev.stephyu.core.chat.application.intent.handler.IntentHandler
 import dev.stephyu.core.chat.application.intent.policy.IntentCategory
 import dev.stephyu.core.chat.application.intent.policy.IntentPolicy
@@ -49,10 +48,10 @@ class ReservationModifyIntentHandler(
         )
     }
 
-    override fun process(input: ConversationTurnContext): ConversationTurnResult {
+    override fun process(input: StateHandlerInput): StateHandlerResult {
         val workflow = input.session.currentWorkflow ?: workflowDefinition(input.session)?.startSession()
-            ?: return ConversationTurnResult(
-                session = input.session.withoutWorkflow(nextIntent = intent),
+            ?: return StateHandlerResult(
+                updatedSession = input.session.withoutWorkflow(nextIntent = intent),
                 reply = "I do not have a confirmed reservation in this session yet.",
             )
 
@@ -60,7 +59,7 @@ class ReservationModifyIntentHandler(
             WorkflowEngineInput(
                 ownerIntent = intent,
                 incomingIntent = input.intent,
-                message = input.message,
+                message = input.processedText,
                 analysis = input.analysis,
                 workflow = workflow,
                 workflowCommand = input.workflowCommand,
@@ -69,25 +68,25 @@ class ReservationModifyIntentHandler(
         )
 
         return when (result.outcome) {
-            WorkflowOutcome.CANCELLED -> ConversationTurnResult(
-                session = input.session.withoutWorkflow(nextIntent = null),
+            WorkflowOutcome.CANCELLED -> StateHandlerResult(
+                updatedSession = input.session.withoutWorkflow(nextIntent = null),
                 reply = "I have cancelled the current reservation update request: ${summary(workflow.filledSlots())}.",
-                slots = workflow.filledSlots(),
+                slotSnapshot = workflow.filledSlots(),
             )
-            WorkflowOutcome.IN_PROGRESS -> ConversationTurnResult(
-                session = input.session.withWorkflow(result.workflow, intent),
+            WorkflowOutcome.IN_PROGRESS -> StateHandlerResult(
+                updatedSession = input.session.withWorkflow(result.workflow, intent),
                 reply = result.invalidMessage ?: result.workflow.firstMissingRequirement()?.prompt?.defaultText.orEmpty(),
             )
-            WorkflowOutcome.NEEDS_CONFIRMATION -> ConversationTurnResult(
-                session = input.session.withWorkflow(result.workflow, intent),
+            WorkflowOutcome.NEEDS_CONFIRMATION -> StateHandlerResult(
+                updatedSession = input.session.withWorkflow(result.workflow, intent),
                 reply = confirmationPrompt(result.workflow),
             )
             WorkflowOutcome.REJECTED -> {
                 val resetWorkflow = result.workflow
                     .clearRequirements(RequirementName.DATE, RequirementName.TIME, RequirementName.PEOPLE, RequirementName.CONFIRMATION)
                     .withPhase(WorkflowPhase.COLLECTING)
-                ConversationTurnResult(
-                    session = input.session.withWorkflow(resetWorkflow, intent),
+                StateHandlerResult(
+                    updatedSession = input.session.withWorkflow(resetWorkflow, intent),
                     reply = "No problem. What new date should I use for the reservation?",
                 )
             }
@@ -95,7 +94,7 @@ class ReservationModifyIntentHandler(
         }
     }
 
-    private fun confirmReservation(session: ConversationSession, workflow: WorkflowSession): ConversationTurnResult {
+    private fun confirmReservation(session: ConversationSession, workflow: WorkflowSession): StateHandlerResult {
         val slots = workflow.filledSlots()
         val availability = inventory.checkAvailability(
             date = slots.getValue(SlotName.DATE),
@@ -106,19 +105,19 @@ class ReservationModifyIntentHandler(
             val nextWorkflow = workflow
                 .clearRequirements(RequirementName.TIME, RequirementName.CONFIRMATION)
                 .withPhase(WorkflowPhase.COLLECTING)
-            return ConversationTurnResult(
-                session = session.withWorkflow(nextWorkflow, intent),
+            return StateHandlerResult(
+                updatedSession = session.withWorkflow(nextWorkflow, intent),
                 reply = availability.message,
             )
         }
 
         val snapshot = workflow.toSnapshot(intent, clock)
-        return ConversationTurnResult(
-            session = session.withoutWorkflow(nextIntent = intent).copy(
+        return StateHandlerResult(
+            updatedSession = session.withoutWorkflow(nextIntent = intent).copy(
                 completedWorkflows = session.completedWorkflows + (intent to snapshot),
             ),
             reply = "Your reservation is confirmed: ${summary(slots)}.",
-            slots = slots,
+            slotSnapshot = slots,
             completed = true,
         )
     }
@@ -128,14 +127,16 @@ class ReservationModifyIntentHandler(
         return "I have a reservation for ${slots[SlotName.PEOPLE]} people on ${slots[SlotName.DATE]} at ${slots[SlotName.TIME]}, under ${slots[SlotName.NAME]}. Should I confirm it?"
     }
 
-    private fun summary(slots: Map<SlotName, String>): String =
-        listOfNotNull(
-            slots[SlotName.PEOPLE]?.let { "$it people" },
-            slots[SlotName.DATE]?.let { "on $it" },
-            slots[SlotName.TIME]?.let { "at $it" },
-        ).joinToString(" ")
-            .let { base -> slots[SlotName.NAME]?.let { if (base.isBlank()) "under $it" else "$base, under $it" } ?: base }
-            .ifBlank { "no details captured" }
+    private fun summary(slots: Map<SlotName, String>): String {
+        val parts = buildList {
+            slots[SlotName.PEOPLE]?.let { add("$it people") }
+            slots[SlotName.DATE]?.let { add("on $it") }
+            slots[SlotName.TIME]?.let { add("at $it") }
+            slots[SlotName.NAME]?.let { add("under $it") } // Ajout direct, sans condition
+        }.joinToString(" ")
+
+        return parts.ifBlank { "no details captured" }
+    }
 
     private fun requirements(name: String) = listOf(
         WorkflowRequirementDefinition(

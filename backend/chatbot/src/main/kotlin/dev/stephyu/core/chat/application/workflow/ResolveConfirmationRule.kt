@@ -11,7 +11,8 @@ class ResolveConfirmationRule : WorkflowStateRule {
             return WorkflowRuleResult.Continue(context)
         }
 
-        val confirmationRequirement = context.workflow.requirements.firstOrNull { it.name == RequirementName.CONFIRMATION }
+        val confirmationRequirement = context.workflow.requirements
+            .firstOrNull { it.name == RequirementName.CONFIRMATION }
             ?: return WorkflowRuleResult.Stop(
                 WorkflowEngineResult(
                     workflow = context.workflow,

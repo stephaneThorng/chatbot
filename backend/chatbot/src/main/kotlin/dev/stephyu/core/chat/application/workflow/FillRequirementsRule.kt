@@ -1,6 +1,5 @@
 package dev.stephyu.core.chat.application.workflow
 
-import dev.stephyu.core.chat.domain.nlp.NlpEntity
 import dev.stephyu.core.chat.application.state.ProcessingMode
 import dev.stephyu.core.chat.domain.workflow.RequirementName
 import dev.stephyu.core.chat.domain.workflow.RequirementParsingResult
@@ -63,7 +62,8 @@ class FillRequirementsRule : WorkflowStateRule {
         val entityCandidates = input.analysis.entities
             .filter { it.confidence >= ENTITY_CONFIDENCE_THRESHOLD }
             .filter { it.type in requirement.valueType.acceptedEntities }
-            .map(NlpEntity::value)
+            .flatMap { listOf(it.value, it.rawValue) }
+            .filter { it.isNotBlank() }
 
         val rawCandidate = input.message.takeIf { shouldTryRawMessage(requirement, input.message, input.workflow) }
         return (entityCandidates + listOfNotNull(rawCandidate)).distinct()

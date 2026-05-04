@@ -6,7 +6,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.Month
 import java.time.format.TextStyle
-import java.util.Locale
+import java.util.*
 
 data class RequirementParsingContext(
     val today: LocalDate,
@@ -43,7 +43,10 @@ data class PersonNameRequirementType(
         if (candidate.split(Regex("""\s+""")).size > 3) {
             return RequirementParsingResult.NotMatched
         }
-        if (Regex("""(?i)\b(reservation|book|booking|cancel|modify|change|opening|hours|menu|price|pricing|contact|phone|email|location|address|need|want|would|like|make|new|please)\b""").containsMatchIn(candidate)) {
+        if (Regex("""(?i)\b(reservation|book|booking|cancel|modify|change|opening|hours|menu|price|pricing|contact|phone|email|location|address|need|want|would|like|make|new|please)\b""").containsMatchIn(
+                candidate
+            )
+        ) {
             return RequirementParsingResult.NotMatched
         }
         if (!NAME_PATTERN.matches(candidate)) {
@@ -62,7 +65,8 @@ data class PersonNameRequirementType(
 
     companion object {
         private val NAME_PATTERN = Regex("""[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'\- ]+""")
-        private val NAME_HINT_PATTERN = Regex("""(?i)\b(?:under|for|name is|my name is|au nom de|nom de)\s+([A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'\- ]{1,60})\b""")
+        private val NAME_HINT_PATTERN =
+            Regex("""(?i)\b(?:under|for|name is|my name is|au nom de|nom de)\s+([A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'\- ]{1,60})\b""")
     }
 }
 
@@ -71,7 +75,8 @@ data object DateRequirementType : RequirementValueType {
 
     override fun parse(raw: String, context: RequirementParsingContext): RequirementParsingResult {
         val normalized = raw.lowercase(Locale.ROOT)
-        val parsed = parseRelativeDate(normalized, context.today)
+        val parsed = parseIsoDate(normalized)
+            ?: parseRelativeDate(normalized, context.today)
             ?: parseWeekday(normalized, context.today)
             ?: parseMonthDay(normalized, context.today)
             ?: return RequirementParsingResult.NotMatched
@@ -88,6 +93,9 @@ data object DateRequirementType : RequirementValueType {
             )
         )
     }
+
+    private fun parseIsoDate(text: String): LocalDate? =
+        runCatching { LocalDate.parse(text.trim()) }.getOrNull()
 
     private fun parseRelativeDate(text: String, today: LocalDate): LocalDate? = when {
         Regex("""\b(today|tonight|ce soir|aujourd'hui)\b""").containsMatchIn(text) -> today
@@ -186,7 +194,8 @@ data object TimeRequirementType : RequirementValueType {
         if (meridiemMatch != null) {
             val rawHour = meridiemMatch.groups[1]?.value?.toIntOrNull() ?: return RequirementParsingResult.NotMatched
             val minute = meridiemMatch.groups[2]?.value?.toIntOrNull() ?: 0
-            val meridiem = meridiemMatch.groups[3]?.value?.lowercase(Locale.ROOT) ?: return RequirementParsingResult.NotMatched
+            val meridiem =
+                meridiemMatch.groups[3]?.value?.lowercase(Locale.ROOT) ?: return RequirementParsingResult.NotMatched
             val hour = when {
                 meridiem == "pm" && rawHour < 12 -> rawHour + 12
                 meridiem == "am" && rawHour == 12 -> 0
@@ -196,10 +205,20 @@ data object TimeRequirementType : RequirementValueType {
                 ?: return RequirementParsingResult.Invalid("Please provide a valid reservation time.")
             if (parsed.isBefore(context.earliestReservationTime) || parsed.isAfter(context.latestReservationTime)) {
                 return RequirementParsingResult.Invalid(
-                    "Please choose a reservation time between ${formatTime(context.earliestReservationTime)} and ${formatTime(context.latestReservationTime)}."
+                    "Please choose a reservation time between ${formatTime(context.earliestReservationTime)} and ${
+                        formatTime(
+                            context.latestReservationTime
+                        )
+                    }."
                 )
             }
-            return RequirementParsingResult.Valid(TimeRequirementValue(raw = raw, value = parsed, displayValue = formatTime(parsed)))
+            return RequirementParsingResult.Valid(
+                TimeRequirementValue(
+                    raw = raw,
+                    value = parsed,
+                    displayValue = formatTime(parsed)
+                )
+            )
         }
 
         val twentyFourHourMatch = TWENTY_FOUR_HOUR_PATTERN.find(raw) ?: return RequirementParsingResult.NotMatched
@@ -209,10 +228,20 @@ data object TimeRequirementType : RequirementValueType {
             ?: return RequirementParsingResult.Invalid("Please provide a valid reservation time.")
         if (parsed.isBefore(context.earliestReservationTime) || parsed.isAfter(context.latestReservationTime)) {
             return RequirementParsingResult.Invalid(
-                "Please choose a reservation time between ${formatTime(context.earliestReservationTime)} and ${formatTime(context.latestReservationTime)}."
+                "Please choose a reservation time between ${formatTime(context.earliestReservationTime)} and ${
+                    formatTime(
+                        context.latestReservationTime
+                    )
+                }."
             )
         }
-        return RequirementParsingResult.Valid(TimeRequirementValue(raw = raw, value = parsed, displayValue = formatTime(parsed)))
+        return RequirementParsingResult.Valid(
+            TimeRequirementValue(
+                raw = raw,
+                value = parsed,
+                displayValue = formatTime(parsed)
+            )
+        )
     }
 
     private fun formatTime(time: LocalTime): String =
@@ -235,10 +264,17 @@ data object PartySizeRequirementType : RequirementValueType {
                 "We can accept parties from ${context.minPartySize} to ${context.maxPartySize} people. For how many people should I book?"
             )
         }
-        return RequirementParsingResult.Valid(IntegerRequirementValue(raw = raw, value = value, displayValue = value.toString()))
+        return RequirementParsingResult.Valid(
+            IntegerRequirementValue(
+                raw = raw,
+                value = value,
+                displayValue = value.toString()
+            )
+        )
     }
 
-    private val PEOPLE_PATTERN = Regex("""(?i)\b(?:for\s*)?(\d{1,3})\s*(?:people|persons|guests|personnes|couverts)\b|\bfor\s*(\d{1,3})\b""")
+    private val PEOPLE_PATTERN =
+        Regex("""(?i)\b(?:for\s*)?(\d{1,3})\s*(?:people|persons|guests|personnes|couverts)\b|\bfor\s*(\d{1,3})\b""")
     private val PEOPLE_ONLY_PATTERN = Regex("""\s*\d{1,3}\s*""")
 }
 
@@ -248,23 +284,33 @@ data object ConfirmationRequirementType : RequirementValueType {
     override fun parse(raw: String, context: RequirementParsingContext): RequirementParsingResult {
         val normalized = raw.trim().lowercase(Locale.ROOT)
         if (isYes(normalized)) {
-            return RequirementParsingResult.Valid(BooleanRequirementValue(raw = raw, value = true, displayValue = "yes"))
+            return RequirementParsingResult.Valid(
+                BooleanRequirementValue(
+                    raw = raw,
+                    value = true,
+                    displayValue = "yes"
+                )
+            )
         }
         if (isNo(normalized)) {
-            return RequirementParsingResult.Valid(BooleanRequirementValue(raw = raw, value = false, displayValue = "no"))
+            return RequirementParsingResult.Valid(
+                BooleanRequirementValue(
+                    raw = raw,
+                    value = false,
+                    displayValue = "no"
+                )
+            )
         }
         return RequirementParsingResult.NotMatched
     }
 
     private fun isYes(normalized: String): Boolean =
         normalized in setOf("yes", "y", "ok", "okay", "confirm", "confirmed", "sure", "oui") ||
-            normalized.startsWith("yes ") ||
-            "confirm it" in normalized ||
-            "you can confirm" in normalized
+                normalized.startsWith("yes ") ||
+                "confirm it" in normalized ||
+                "you can confirm" in normalized
 
     private fun isNo(normalized: String): Boolean =
         normalized in setOf("no", "n", "nope", "change", "non") ||
-            normalized.startsWith("no ")
+                normalized.startsWith("no ")
 }
-
-

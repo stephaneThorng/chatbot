@@ -36,5 +36,3 @@ data class BooleanRequirementValue(
     val value: Boolean,
     override val displayValue: String,
 ) : RequirementValue
-
-

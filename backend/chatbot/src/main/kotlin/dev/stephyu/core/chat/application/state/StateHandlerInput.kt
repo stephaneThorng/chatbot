@@ -8,12 +8,12 @@ import dev.stephyu.core.chat.domain.workflow.WorkflowCommand
 /**
  * Normalized state input for a single conversation turn after preprocessing and intent resolution.
  */
-data class ConversationTurnContext(
+data class StateHandlerInput(
     val session: ConversationSession,
     val intent: IntentName,
-    val message: String,
+    val processedText: String,
     val analysis: NlpAnalysis,
-    val workflowCommand: WorkflowCommand? = null,
+    val workflowCommand: WorkflowCommand?,
     val processingMode: ProcessingMode = ProcessingMode.PRIMARY,
 )
 

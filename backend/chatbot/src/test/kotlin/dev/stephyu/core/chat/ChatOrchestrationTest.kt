@@ -4,42 +4,29 @@ import dev.stephyu.core.chat.adapter.out.memory.InMemoryConversationSessionRepos
 import dev.stephyu.core.chat.adapter.out.memory.InMemoryReservationInventoryRepository
 import dev.stephyu.core.chat.adapter.out.memory.InMemoryRestaurantKnowledgeRepository
 import dev.stephyu.core.chat.application.command.HandleConversationCommand
-import dev.stephyu.core.chat.application.intent.handler.knowledge.ContactRequestIntentHandler
+import dev.stephyu.core.chat.application.coordinator.ConversationCoordinator
+import dev.stephyu.core.chat.application.intent.catalog.IntentCatalog
+import dev.stephyu.core.chat.application.intent.decision.IntentDecisionEngine
 import dev.stephyu.core.chat.application.intent.handler.IntentHandler
-import dev.stephyu.core.chat.application.intent.handler.knowledge.LocationRequestIntentHandler
-import dev.stephyu.core.chat.application.intent.handler.knowledge.MenuRequestIntentHandler
-import dev.stephyu.core.chat.application.intent.handler.knowledge.OpeningHoursIntentHandler
-import dev.stephyu.core.chat.application.intent.handler.knowledge.PricingRequestIntentHandler
+import dev.stephyu.core.chat.application.intent.handler.knowledge.*
 import dev.stephyu.core.chat.application.intent.handler.reservation.ReservationCancelIntentHandler
 import dev.stephyu.core.chat.application.intent.handler.reservation.ReservationCreateIntentHandler
 import dev.stephyu.core.chat.application.intent.handler.reservation.ReservationModifyIntentHandler
 import dev.stephyu.core.chat.application.intent.handler.reservation.ReservationStatusIntentHandler
-import dev.stephyu.core.chat.application.coordinator.ConversationCoordinator
 import dev.stephyu.core.chat.application.port.out.NlpAnalyzer
 import dev.stephyu.core.chat.application.signal.ConversationSignalExtractor
-import dev.stephyu.core.chat.application.intent.decision.IntentDecisionEngine
 import dev.stephyu.core.chat.application.state.ConversationStateDispatcher
 import dev.stephyu.core.chat.application.state.IdleStateHandler
 import dev.stephyu.core.chat.application.state.WorkflowStateHandler
 import dev.stephyu.core.chat.application.usecase.HandleConversationUseCase
-import dev.stephyu.core.chat.application.workflow.CancelWorkflowRule
-import dev.stephyu.core.chat.application.workflow.EnterConfirmationRule
-import dev.stephyu.core.chat.application.workflow.FillRequirementsRule
-import dev.stephyu.core.chat.application.workflow.ResolveConfirmationRule
-import dev.stephyu.core.chat.application.workflow.WorkflowEngine
-import dev.stephyu.core.chat.application.workflow.WorkflowStateRule
-import dev.stephyu.core.chat.application.intent.catalog.IntentCatalog
+import dev.stephyu.core.chat.application.workflow.*
 import dev.stephyu.core.chat.domain.conversation.ConversationAct
 import dev.stephyu.core.chat.domain.intent.IntentName
-import dev.stephyu.core.chat.domain.nlp.NlpAnalysis
-import dev.stephyu.core.chat.domain.nlp.NlpAnalysisContext
-import dev.stephyu.core.chat.domain.nlp.NlpEntity
-import dev.stephyu.core.chat.domain.nlp.NlpIntent
-import dev.stephyu.core.chat.domain.nlp.SlotName
+import dev.stephyu.core.chat.domain.nlp.*
+import kotlinx.coroutines.runBlocking
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
-import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -76,7 +63,10 @@ class ChatOrchestrationTest {
     @Test
     fun `low signal idle message does not trust random high confidence NLP intent`() = runBlocking {
         val useCase = useCaseWithNlp(ScriptedNlpAnalyzer {
-            analysis(IntentName.RESERVATION_CANCEL)
+            analysis(
+                intentName = IntentName.RESERVATION_CANCEL,
+                utteranceKind = NlpUtteranceKind.UNKNOWN,
+            )
         })
 
         val result = useCase.handle(HandleConversationCommand("j", null))
@@ -88,7 +78,10 @@ class ChatOrchestrationTest {
     @Test
     fun `idle yes does not trigger random intent`() = runBlocking {
         val useCase = useCaseWithNlp(ScriptedNlpAnalyzer {
-            analysis(IntentName.MENU_REQUEST)
+            analysis(
+                intentName = IntentName.MENU_REQUEST,
+                utteranceKind = NlpUtteranceKind.UNKNOWN,
+            )
         })
 
         val result = useCase.handle(HandleConversationCommand("yes", null))
@@ -100,7 +93,10 @@ class ChatOrchestrationTest {
     @Test
     fun `idle ambiguous standalone token does not trigger random intent`() = runBlocking {
         val useCase = useCaseWithNlp(ScriptedNlpAnalyzer {
-            analysis(IntentName.RESERVATION_STATUS)
+            analysis(
+                intentName = IntentName.RESERVATION_STATUS,
+                utteranceKind = NlpUtteranceKind.UNKNOWN,
+            )
         })
 
         val result = useCase.handle(HandleConversationCommand("miss", null))
@@ -112,7 +108,10 @@ class ChatOrchestrationTest {
     @Test
     fun `idle personal small talk does not trigger random business intent`() = runBlocking {
         val useCase = useCaseWithNlp(ScriptedNlpAnalyzer {
-            analysis(IntentName.PRICING_REQUEST)
+            analysis(
+                intentName = IntentName.PRICING_REQUEST,
+                utteranceKind = NlpUtteranceKind.SMALL_TALK,
+            )
         })
 
         val result = useCase.handle(HandleConversationCommand("how am I", null))
@@ -128,6 +127,7 @@ class ChatOrchestrationTest {
                 intentName = IntentName.MENU_REQUEST,
                 confidence = 0.94,
                 alternatives = mapOf(IntentName.PRICING_REQUEST to 0.03),
+                utteranceKind = NlpUtteranceKind.OUT_OF_DOMAIN,
             )
         })
 
@@ -145,6 +145,7 @@ class ChatOrchestrationTest {
                 intentName = IntentName.PRICING_REQUEST,
                 confidence = 0.72,
                 alternatives = mapOf(IntentName.MENU_REQUEST to 0.24),
+                utteranceKind = NlpUtteranceKind.VAGUE_FOLLOW_UP,
             )
         })
 
@@ -163,7 +164,9 @@ class ChatOrchestrationTest {
                     intentName = IntentName.PRICING_REQUEST,
                     confidence = 0.51,
                     alternatives = mapOf(IntentName.MENU_REQUEST to 0.46),
+                    utteranceKind = NlpUtteranceKind.VAGUE_FOLLOW_UP,
                 )
+
                 else -> analysis(IntentName.UNKNOWN)
             }
         })
@@ -177,12 +180,70 @@ class ChatOrchestrationTest {
     }
 
     @Test
-    fun `low margin informational intents trigger clarification`() = runBlocking {
+    fun `NLP vague follow up utterance reuses last informational topic`() = runBlocking {
+        val useCase = useCaseWithNlp(ScriptedNlpAnalyzer { text, _ ->
+            when {
+                "dessert" in text.lowercase() -> analysis(IntentName.MENU_REQUEST)
+                "more" in text.lowercase() -> analysis(
+                    intentName = IntentName.PRICING_REQUEST,
+                    confidence = 0.9,
+                    utteranceKind = NlpUtteranceKind.VAGUE_FOLLOW_UP,
+                )
+
+                else -> analysis(IntentName.UNKNOWN)
+            }
+        })
+
+        val menu = useCase.handle(HandleConversationCommand("Do you have some dessert?", null))
+        val followUp = useCase.handle(HandleConversationCommand("more?", menu.sessionId))
+
+        assertEquals("menu_request", menu.intent.wireName)
+        assertEquals("menu_request", followUp.intent.wireName)
+        assertTrue(followUp.reply.contains("Menu highlights"))
+    }
+
+    @Test
+    fun `NLP non business utterance prevents random business routing`() = runBlocking {
+        val useCase = useCaseWithNlp(ScriptedNlpAnalyzer {
+            analysis(
+                intentName = IntentName.PRICING_REQUEST,
+                confidence = 0.94,
+                utteranceKind = NlpUtteranceKind.SMALL_TALK,
+            )
+        })
+
+        val result = useCase.handle(HandleConversationCommand("how are you?", null))
+
+        assertEquals("unknown", result.intent.wireName)
+        assertEquals("IDLE", result.state.name)
+    }
+
+    @Test
+    fun `missing NLP utterance falls back to safe unknown`() = runBlocking {
+        val useCase = useCaseWithNlp(ScriptedNlpAnalyzer {
+            NlpAnalysis(
+                intent = NlpIntent(
+                    name = IntentName.MENU_REQUEST,
+                    confidence = 0.99,
+                    source = "legacy_test",
+                ),
+            )
+        })
+
+        val result = useCase.handle(HandleConversationCommand("old contract response", null))
+
+        assertEquals("unknown", result.intent.wireName)
+        assertEquals("IDLE", result.state.name)
+    }
+
+    @Test
+    fun `ambiguous utterance with low margin informational intents triggers clarification`() = runBlocking {
         val useCase = useCaseWithNlp(ScriptedNlpAnalyzer {
             analysis(
                 intentName = IntentName.MENU_REQUEST,
                 confidence = 0.52,
                 alternatives = mapOf(IntentName.PRICING_REQUEST to 0.45),
+                utteranceKind = NlpUtteranceKind.AMBIGUOUS,
             )
         })
 
@@ -203,6 +264,7 @@ class ChatOrchestrationTest {
                     confidence = 0.52,
                     alternatives = mapOf(IntentName.PRICING_REQUEST to 0.45),
                 )
+
                 "pricing" in text.lowercase() -> analysis(IntentName.PRICING_REQUEST)
                 else -> analysis(IntentName.UNKNOWN)
             }
@@ -223,10 +285,13 @@ class ChatOrchestrationTest {
                 "reservation" in text.lowercase() -> analysis(IntentName.RESERVATION_CREATE)
                 context?.requiredSlots?.contains(SlotName.DATE) == true && "July 4" in text ->
                     analysis(IntentName.UNKNOWN, entity(SlotName.DATE, "July 4"))
+
                 context?.requiredSlots?.contains(SlotName.TIME) == true && "7:30pm" in text ->
                     analysis(IntentName.UNKNOWN, entity(SlotName.TIME, "7:30pm"))
+
                 context?.requiredSlots?.contains(SlotName.PEOPLE) == true && text == "5" ->
                     analysis(IntentName.UNKNOWN, entity(SlotName.PEOPLE, "5"))
+
                 else -> analysis(IntentName.UNKNOWN)
             }
         })
@@ -245,12 +310,42 @@ class ChatOrchestrationTest {
     }
 
     @Test
+    fun `canonical NLP entity values fill workflow slots`() = runBlocking {
+        val useCase = useCaseWithNlp(ScriptedNlpAnalyzer { text, context ->
+            when {
+                "reservation" in text.lowercase() -> analysis(IntentName.RESERVATION_CREATE)
+                context?.requiredSlots?.contains(SlotName.DATE) == true && "tomorrow" in text.lowercase() ->
+                    analysis(
+                        IntentName.UNKNOWN,
+                        entity(SlotName.DATE, value = "2026-05-02", rawValue = "tomorrow"),
+                        entity(SlotName.TIME, value = "19:00", rawValue = "7pm"),
+                        entity(SlotName.PEOPLE, value = "5", rawValue = "for 5 ppl"),
+                    )
+
+                else -> analysis(IntentName.UNKNOWN)
+            }
+        })
+
+        val start = useCase.handle(HandleConversationCommand("I need a new reservation", null))
+        useCase.handle(HandleConversationCommand("Stephane", start.sessionId))
+        val result = useCase.handle(HandleConversationCommand("tomorrow at 7pm for 5 ppl", start.sessionId))
+
+        assertEquals("May 2, 2026", result.slots[SlotName.DATE])
+        assertEquals("19:00", result.slots[SlotName.TIME])
+        assertEquals("5", result.slots[SlotName.PEOPLE])
+        assertEquals("WORKFLOW", result.state.name)
+        assertTrue(result.reply.contains("Should I confirm it?"))
+    }
+
+
+    @Test
     fun `blank message preserves active workflow context`() = runBlocking {
         val useCase = useCaseWithNlp(ScriptedNlpAnalyzer { text, context ->
             when {
                 "reservation" in text.lowercase() -> analysis(IntentName.RESERVATION_CREATE)
                 context?.requiredSlots?.contains(SlotName.DATE) == true && "July 4" in text ->
                     analysis(IntentName.UNKNOWN, entity(SlotName.DATE, "July 4"))
+
                 else -> analysis(IntentName.UNKNOWN)
             }
         })
@@ -306,6 +401,7 @@ class ChatOrchestrationTest {
                     IntentName.OPENING_HOURS,
                     entity(SlotName.DATE, "Sunday"),
                 )
+
                 else -> analysis(IntentName.UNKNOWN)
             }
         })
@@ -325,6 +421,7 @@ class ChatOrchestrationTest {
                 "reservation" in text.lowercase() -> analysis(IntentName.RESERVATION_CREATE)
                 context?.requiredSlots?.contains(SlotName.DATE) == true && "July 4" in text ->
                     analysis(IntentName.UNKNOWN, entity(SlotName.DATE, "July 4"))
+
                 else -> analysis(IntentName.UNKNOWN)
             }
         }
@@ -401,8 +498,10 @@ class ChatOrchestrationTest {
                 "reservation" in text.lowercase() -> analysis(IntentName.RESERVATION_CREATE)
                 context?.requiredSlots?.contains(SlotName.DATE) == true && "July 7" in text ->
                     analysis(IntentName.UNKNOWN, entity(SlotName.DATE, "July 7"))
+
                 context?.requiredSlots?.contains(SlotName.TIME) == true && "7pm" in text ->
                     analysis(IntentName.UNKNOWN, entity(SlotName.TIME, "7pm"))
+
                 text == "100" -> analysis(IntentName.RESERVATION_STATUS)
                 else -> analysis(IntentName.UNKNOWN)
             }
@@ -427,8 +526,10 @@ class ChatOrchestrationTest {
                 "reservation" in text.lowercase() -> analysis(IntentName.RESERVATION_CREATE)
                 context?.requiredSlots?.contains(SlotName.DATE) == true && "July 7" in text ->
                     analysis(IntentName.UNKNOWN, entity(SlotName.DATE, "July 7"))
+
                 context?.requiredSlots?.contains(SlotName.TIME) == true && "11:59pm" in text ->
                     analysis(IntentName.UNKNOWN, entity(SlotName.TIME, "11:59pm"))
+
                 else -> analysis(IntentName.UNKNOWN)
             }
         })
@@ -450,10 +551,17 @@ class ChatOrchestrationTest {
                 "reservation" in text.lowercase() -> analysis(IntentName.RESERVATION_CREATE)
                 context?.requiredSlots?.contains(SlotName.DATE) == true && "July 9" in text ->
                     analysis(IntentName.UNKNOWN, entity(SlotName.DATE, "July 9"))
+
                 context?.requiredSlots?.contains(SlotName.TIME) == true && "11pm" in text ->
                     analysis(IntentName.UNKNOWN, entity(SlotName.TIME, "11pm"))
+
                 text.contains("Stephane", ignoreCase = true) && text.contains("3", ignoreCase = false) ->
-                    analysis(IntentName.RESERVATION_CANCEL, entity(SlotName.NAME, "Stephane"), entity(SlotName.PEOPLE, "3"))
+                    analysis(
+                        IntentName.RESERVATION_CANCEL,
+                        entity(SlotName.NAME, "Stephane"),
+                        entity(SlotName.PEOPLE, "3")
+                    )
+
                 text == "yes" -> analysis(IntentName.MENU_REQUEST)
                 else -> analysis(IntentName.UNKNOWN)
             }
@@ -569,7 +677,12 @@ class ChatOrchestrationTest {
         })
 
         val dessert = useCase.handle(HandleConversationCommand("Do you have some dessert?", null))
-        val seafood = useCase.handle(HandleConversationCommand("Can I see the seafood options for weekend dinner?", dessert.sessionId))
+        val seafood = useCase.handle(
+            HandleConversationCommand(
+                "Can I see the seafood options for weekend dinner?",
+                dessert.sessionId
+            )
+        )
 
         assertEquals("menu_request", dessert.intent.wireName)
         assertTrue(dessert.reply.contains("Chocolate Fondant"))
@@ -646,8 +759,10 @@ class ChatOrchestrationTest {
                     entity(SlotName.DATE, "Friday"),
                     entity(SlotName.TIME, "8pm"),
                 )
+
                 context?.requiredSlots?.contains(SlotName.PEOPLE) == true && text == "4" ->
                     analysis(IntentName.UNKNOWN, entity(SlotName.PEOPLE, "4"))
+
                 else -> analysis(IntentName.UNKNOWN)
             }
         })
@@ -724,6 +839,7 @@ class ChatOrchestrationTest {
         vararg entities: NlpEntity,
         confidence: Double = if (intentName == IntentName.UNKNOWN) 0.0 else 0.99,
         alternatives: Map<IntentName, Double> = emptyMap(),
+        utteranceKind: NlpUtteranceKind = NlpUtteranceKind.BUSINESS_QUERY,
     ): NlpAnalysis =
         NlpAnalysis(
             intent = NlpIntent(
@@ -733,14 +849,20 @@ class ChatOrchestrationTest {
                 alternatives = alternatives,
             ),
             entities = entities.toList(),
+            utterance = NlpUtterance(
+                kind = utteranceKind,
+                confidence = if (utteranceKind == NlpUtteranceKind.BUSINESS_QUERY) 1.0 else 0.9,
+                source = "test",
+            ),
         )
 
-    private fun entity(type: SlotName, value: String): NlpEntity =
+    private fun entity(type: SlotName, value: String, rawValue: String = value): NlpEntity =
         NlpEntity(
             type = type,
             value = value,
             confidence = 0.99,
             source = "test",
+            rawValue = rawValue,
         )
 }
 

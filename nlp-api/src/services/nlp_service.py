@@ -10,17 +10,22 @@ from src.api.schemas import (
     AnalysisResponse,
     EntityResponse,
     HealthResponse,
+    IntentCandidate,
     IntentResponse,
     ModelInfo,
     ProcessingDetails,
+    UtteranceResponse,
 )
 from src.config import Settings, settings
 from src.models.intent_classifier import IntentClassifier
 from src.models.ner_extractor import NERExtractor
 from src.services.context_resolver import ContextResolver
+from src.services.entity_normalizer import EntityNormalizer
+from src.services.intent_ranker import IntentRanker
 from src.services.model_manager import ModelManager
 from src.services.spacy_entity_extractor import SpacyEntityExtractor
 from src.services.text_normalizer import NormalizationResult, TextNormalizer
+from src.services.utterance_analyzer import UtteranceAnalyzer
 from src.utils.logger import get_logger
 from src.utils.metrics import metrics_collector
 
@@ -40,6 +45,9 @@ class NLPService:
         text_normalizer: TextNormalizer | None = None,
         context_resolver: ContextResolver | None = None,
         spacy_entity_extractor: SpacyEntityExtractor | None = None,
+        entity_normalizer: EntityNormalizer | None = None,
+        intent_ranker: IntentRanker | None = None,
+        utterance_analyzer: UtteranceAnalyzer | None = None,
     ) -> None:
         self.config = config or settings
         self.model_manager = model_manager or ModelManager(self.config)
@@ -55,6 +63,9 @@ class NLPService:
             spacy_entity_extractor=self.spacy_entity_extractor,
         )
         self.text_normalizer = text_normalizer or TextNormalizer(self.config)
+        self.entity_normalizer = entity_normalizer or EntityNormalizer()
+        self.intent_ranker = intent_ranker or IntentRanker()
+        self.utterance_analyzer = utterance_analyzer or UtteranceAnalyzer()
         self.startup_error: str | None = None
 
     async def initialize(self) -> None:
@@ -93,10 +104,18 @@ class NLPService:
         try:
             intent_result, ner_result = await asyncio.gather(intent_task, ner_task)
             ner_entities = self._map_entities_to_original_text(ner_result.entities, normalization)
+            ranked_intents = self.intent_ranker.rank(intent_result)
+            normalized_entities = self.entity_normalizer.normalize(ner_entities)
+            utterance = self.utterance_analyzer.analyze(
+                text=text,
+                primary_intent=intent_result.name,
+                primary_confidence=intent_result.confidence,
+                entity_count=len(normalized_entities.entities),
+            )
             total_ms = (asyncio.get_running_loop().time() - started) * 1000
             request_metrics.intent_name = intent_result.name
             request_metrics.intent_confidence = intent_result.confidence
-            request_metrics.entity_count = len(ner_entities)
+            request_metrics.entity_count = len(normalized_entities.entities)
             request_metrics.fast_path = intent_result.fast_path
             metrics_collector.finalize_request(request_metrics, success=True)
             return AnalysisResponse(
@@ -107,17 +126,35 @@ class NLPService:
                     source=intent_result.source,
                     alternatives=intent_result.alternatives,
                 ),
+                intents=[
+                    IntentCandidate(
+                        name=intent.name,
+                        confidence=intent.confidence,
+                        source=intent.source,
+                        reason=intent.reason,
+                    )
+                    for intent in ranked_intents
+                ],
+                utterance=UtteranceResponse(
+                    kind=utterance.kind,
+                    confidence=utterance.confidence,
+                    source=utterance.source,
+                ),
                 entities=[
                     EntityResponse(
                         type=entity.type,
+                        raw_value=entity.raw_value,
                         value=entity.value,
                         start=entity.start,
                         end=entity.end,
                         confidence=entity.confidence,
                         source=entity.source,
+                        resolution=entity.resolution,
+                        normalization_status=entity.normalization_status,
                     )
-                    for entity in ner_entities
+                    for entity in normalized_entities.entities
                 ],
+                warnings=normalized_entities.warnings,
                 processing_time_ms=round(total_ms, 3),
                 processing_details=ProcessingDetails(
                     intent_ms=round(intent_result.processing_time_ms, 3),

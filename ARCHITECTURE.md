@@ -32,7 +32,7 @@ Application packages may be grouped by concept. For example:
 4. `ConversationCoordinator` extracts backend-owned conversation signals.
 5. Standalone greetings, thanks, or farewells are handled without NLP.
 6. Business text is sent to `NlpAnalyzer` with the restaurant domain and session context.
-7. `IntentDecisionEngine` combines NLP evidence, intent policies, session state, and topic memory.
+7. `IntentDecisionEngine` combines ranked NLP intents, utterance signals, intent policies, session state, and topic memory.
 8. `ConversationStateDispatcher` delegates to either `IdleStateHandler` or `WorkflowStateHandler`.
 9. The selected `IntentHandler` owns the deterministic reply for its business intent.
 10. Workflow intents advance through `WorkflowEngine` and generic workflow rules.
@@ -72,7 +72,7 @@ The backend treats NLP as evidence, not as an unconditional routing decision. `I
 - ask a deterministic clarification question
 - return `unknown`
 
-The decision uses confidence, alternative intent margin, entity support, session topic memory, pending clarification state, and active workflow ownership. The backend does not classify business intents with local keyword rules.
+The decision uses the primary intent, ranked intent candidates, utterance kind, confidence, candidate margin, entity support, session topic memory, pending clarification state, and active workflow ownership. The backend does not classify business intents with local keyword rules. Missing `utterance` metadata is treated as `unknown` so old or unusable NLP responses fail safely.
 
 ## Workflow Model
 
@@ -121,7 +121,15 @@ The backend calls the Python NLP API at `POST /analyze` with:
 - `context.slots_filled`
 - `context.required_slots`
 
-The NLP adapter is an anti-corruption layer. It maps Python wire names into Kotlin domain types such as `IntentName`, `SlotName`, `NlpAnalysis`, and intent alternatives.
+The NLP response contains:
+
+- `intent`: primary business intent candidate
+- `intents`: ranked business intent candidates
+- `utterance`: utterance kind such as `business_query`, `small_talk`, `vague_follow_up`, `frustration`, or `out_of_domain`
+- `entities`: raw spans plus canonical values, resolution metadata, and normalization status
+- `warnings`: non-fatal analysis warnings
+
+The NLP adapter is an anti-corruption layer. It maps Python wire names into Kotlin domain types such as `IntentName`, `SlotName`, `NlpAnalysis`, ranked intents, utterance signals, and normalized entities. Workflow filling prefers canonical entity values and can fall back to raw values when needed.
 
 If the NLP API fails or returns unusable output, the backend keeps the session alive and falls back to deterministic clarification or unknown/help replies.
 

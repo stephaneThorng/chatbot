@@ -2,15 +2,18 @@
 
 ## Overview
 
-The service is a stateless NLP component intended to sit behind a chatbot backend. It receives a single utterance plus tenant domain metadata, resolves intent and entities, and returns the full result in one response. Conversation state is deliberately excluded from this service.
+The service is a stateless NLP engine intended to sit behind a chatbot backend. It receives a single utterance plus tenant domain metadata, resolves ranked business intents, utterance signals, and canonical entities, then returns the full analysis in one response. Conversation state and reply generation are deliberately excluded from this service.
 
 ## Runtime Flow
 
 1. FastAPI starts through `src.main`.
 2. `NLPService` initializes `IntentClassifier` and `NERExtractor`.
 3. `ModelManager` downloads tokenizer and model artifacts from Hugging Face Hub using the configured revision and cache directory.
-4. Each `/analyze` request runs intent classification and NER extraction concurrently in worker threads.
-5. Metrics and structured logs are recorded for each request.
+4. Each `/analyze` request normalizes text for model input and runs intent classification plus NER extraction concurrently in worker threads.
+5. `IntentRanker` normalizes primary and alternative intent evidence into sorted candidates.
+6. `EntityNormalizer` resolves raw entity spans into canonical values using `TemporalResolver` and deterministic value normalizers.
+7. `UtteranceAnalyzer` classifies the utterance shape, such as business query, small talk, vague follow-up, frustration, out-of-domain, ambiguous, or unknown.
+8. Metrics and structured logs are recorded for each request.
 
 ## Context Handling
 
@@ -28,6 +31,7 @@ This is used in two places:
 
 - `IntentClassifier` keeps the previous intent for short slot-only follow-ups
 - `NERExtractor` filters or supplements extraction toward missing slots only
+- `EntityNormalizer` canonicalizes extracted values after context-aware span mapping
 
 Typical examples:
 
@@ -50,6 +54,12 @@ Typical examples:
 - Resolves short follow-ups from context before regex or model fallback
 - Returns primary intent, alternatives, source, and timing details
 
+### `src/services/intent_ranker.py`
+
+- Converts classifier output into a sorted `intents` candidate list
+- Keeps the primary candidate first and preserves source metadata
+- Makes top-k routing evidence explicit for downstream backends
+
 ### `src/models/ner_extractor.py`
 
 - Uses `AutoModelForTokenClassification` and BIO decoding when available
@@ -57,10 +67,28 @@ Typical examples:
 - Supplements model output with context-derived entities for short follow-ups when the caller indicates missing slots
 - Emits span-level confidence and source metadata per entity
 
+### `src/services/entity_normalizer.py`
+
+- Converts extracted raw spans into canonical entity values
+- Normalizes supported dates, times, and people counts
+- Preserves `raw_value`, `resolution`, `normalization_status`, and non-fatal warnings
+
+### `src/services/temporal_resolver.py`
+
+- Resolves relative dates and time expressions against the service clock
+- Uses `SERVICE_TIMEZONE`, defaulting to `Europe/Paris`
+- Returns deterministic metadata such as `relative_date`, `weekday_date`, `month_day`, `time_12h`, and `time_24h`
+
+### `src/services/utterance_analyzer.py`
+
+- Classifies the utterance type independently of the business intent
+- Emits signals such as `business_query`, `small_talk`, `vague_follow_up`, `clarification_request`, `frustration`, `out_of_domain`, `ambiguous`, and `unknown`
+- Lets the backend avoid treating weak or non-business utterances as workflow commands
+
 ### `src/services/nlp_service.py`
 
 - Orchestrates startup, health reporting, request analysis, and metric aggregation
-- Converts model-layer results into API schemas
+- Converts classifier, ranker, NER, normalizer, and utterance outputs into API schemas
 - Keeps the application stateless and async at the boundary
 
 ### `training/`

@@ -58,6 +58,28 @@ class SlotName(StrEnum):
     LOCATION = "location"
 
 
+class UtteranceKind(StrEnum):
+    """High-level utterance signal labels."""
+
+    BUSINESS_QUERY = "business_query"
+    SMALL_TALK = "small_talk"
+    VAGUE_FOLLOW_UP = "vague_follow_up"
+    CLARIFICATION_REQUEST = "clarification_request"
+    FRUSTRATION = "frustration"
+    OUT_OF_DOMAIN = "out_of_domain"
+    AMBIGUOUS = "ambiguous"
+    UNKNOWN = "unknown"
+
+
+class NormalizationStatus(StrEnum):
+    """Entity normalization status labels."""
+
+    NORMALIZED = "normalized"
+    RAW_ONLY = "raw_only"
+    AMBIGUOUS = "ambiguous"
+    FAILED = "failed"
+
+
 class ContextSlots(SchemaModel):
     """Known conversational slots from upstream orchestration."""
 
@@ -116,15 +138,35 @@ class IntentResponse(SchemaModel):
     alternatives: Dict[str, float] = Field(default_factory=dict)
 
 
+class IntentCandidate(SchemaModel):
+    """Ranked intent candidate."""
+
+    name: IntentName
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    source: str
+    reason: str | None = None
+
+
+class UtteranceResponse(SchemaModel):
+    """Utterance-level analysis signal."""
+
+    kind: UtteranceKind
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    source: str
+
+
 class EntityResponse(SchemaModel):
     """Entity payload."""
 
     type: EntityType
+    raw_value: str
     value: str
     start: int = Field(..., ge=0)
     end: int = Field(..., ge=0)
     confidence: float = Field(..., ge=0.0, le=1.0)
     source: str
+    resolution: str | None = None
+    normalization_status: NormalizationStatus = NormalizationStatus.RAW_ONLY
 
 
 class ProcessingDetails(SchemaModel):
@@ -147,7 +189,10 @@ class AnalysisResponse(SchemaModel):
     """Combined NLP result."""
 
     intent: IntentResponse
+    intents: List[IntentCandidate] = Field(default_factory=list)
+    utterance: UtteranceResponse
     entities: List[EntityResponse] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
     processing_time_ms: float = Field(..., ge=0.0)
     processing_details: ProcessingDetails
     model_info: ModelInfo
