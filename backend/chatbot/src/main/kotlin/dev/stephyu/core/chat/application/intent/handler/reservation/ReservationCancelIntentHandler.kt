@@ -11,8 +11,8 @@ import dev.stephyu.core.chat.application.workflow.WorkflowOutcome
 import dev.stephyu.core.chat.domain.session.ConversationSession
 import dev.stephyu.core.chat.domain.intent.IntentName
 import dev.stephyu.core.chat.domain.nlp.SlotName
-import dev.stephyu.core.chat.domain.workflow.ConfirmationRequirementType
 import dev.stephyu.core.chat.domain.workflow.RequirementActivation
+import dev.stephyu.core.chat.domain.workflow.requirement.valuetype.ConfirmationRequirementType
 import dev.stephyu.core.chat.domain.workflow.RequirementName
 import dev.stephyu.core.chat.domain.workflow.RequirementPrompt
 import dev.stephyu.core.chat.domain.workflow.WorkflowDefinition
