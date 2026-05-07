@@ -19,7 +19,7 @@ async fn post_send_message_returns_200_with_session_id() {
     response.assert_status_ok();
     let body = response.json::<serde_json::Value>();
     assert!(body["session_id"].as_str().is_some_and(|s| !s.is_empty()));
-    assert_eq!(body["reply"], "Not yet implemented");
+    assert_eq!(body["reply"], "Not implemented yet");
 }
 
 #[tokio::test]
