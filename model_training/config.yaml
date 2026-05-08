@@ -1,0 +1,83 @@
+model:
+  name: xlm-roberta-base
+  max_length: 160
+
+training:
+  seed: 42
+  num_epochs: 4
+  batch_size: 8
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  output_dir: outputs/restaurant_xlmr
+  logging_steps: 25
+
+data:
+  train: data/restaurant/train.jsonl
+  validation: data/restaurant/validation.jsonl
+  eval: data/restaurant/eval.jsonl
+
+tags:
+  languages:
+    - en
+    - id
+  domains:
+    - restaurant
+    - hotel
+  tasks:
+    - WF_BOOK
+    - WF_CANCEL
+
+intents:
+  labels:
+    - book
+    - cancel
+    - reservation_status
+    - ask_menu
+    - ask_hours
+    - ask_location
+    - ask_contact
+    - ask_price
+    - ask_availability
+    - ask_payment
+    - help
+    - complain
+    - out_of_scope
+    - greeting
+    - thanks
+    - goodbye
+    - affirmative
+    - negative
+    - provide_info
+  class_weights:
+    book: 1.5
+    cancel: 1.5
+    reservation_status: 1.0
+    ask_menu: 1.0
+    ask_hours: 1.0
+    ask_location: 1.0
+    ask_contact: 1.0
+    ask_price: 1.0
+    ask_availability: 1.0
+    ask_payment: 1.0
+    help: 1.0
+    complain: 1.0
+    out_of_scope: 1.0
+    greeting: 0.5
+    thanks: 0.5
+    goodbye: 0.5
+    affirmative: 2.0
+    negative: 2.0
+    provide_info: 1.2
+
+entities:
+  labels:
+    - person
+    - date
+    - time
+    - people_count
+    - menu_item
+    - price_item
+    - location
+    - phone
+    - email
