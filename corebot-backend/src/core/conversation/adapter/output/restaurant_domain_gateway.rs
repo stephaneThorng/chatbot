@@ -1,6 +1,6 @@
-﻿use std::sync::Arc;
 use crate::core::conversation::application::port::output::domain_gateway_trait::DomainGateway;
 use crate::core::restaurant::application::port::input::restaurant_trait::RestaurantPort;
+use std::sync::Arc;
 /// Outbound adapter - bridges conversation and the restaurant domain.
 /// Implements DomainGateway by delegating every call to RestaurantPort.
 pub struct RestaurantDomainGateway {

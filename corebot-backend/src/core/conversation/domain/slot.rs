@@ -53,7 +53,12 @@ impl SlotBag {
     }
 
     /// Fill a slot. Returns Err if value type does not match or validation fails.
-    pub fn fill(&mut self, name: &str, expected_type: SlotType, value: SlotValue) -> Result<(), SlotError> {
+    pub fn fill(
+        &mut self,
+        name: &str,
+        expected_type: SlotType,
+        value: SlotValue,
+    ) -> Result<(), SlotError> {
         if !value.matches_type(expected_type) {
             return Err(SlotError {
                 slot: name.to_string(),
@@ -80,10 +85,12 @@ impl SlotBag {
     /// Domain-specific validation rules.
     fn validate(&self, name: &str, value: &SlotValue) -> Result<(), SlotError> {
         match (name, value) {
-            ("name", SlotValue::Text(s)) if s.trim().is_empty() || s.len() > 100 => Err(SlotError {
-                slot: name.to_string(),
-                message: "Name must be non-empty (max 100 chars)".to_string(),
-            }),
+            ("name", SlotValue::Text(s)) if s.trim().is_empty() || s.len() > 100 => {
+                Err(SlotError {
+                    slot: name.to_string(),
+                    message: "Name must be non-empty (max 100 chars)".to_string(),
+                })
+            }
             ("people", SlotValue::Number(n)) if *n < 1 || *n > 20 => Err(SlotError {
                 slot: name.to_string(),
                 message: "People must be between 1 and 20".to_string(),
@@ -100,32 +107,50 @@ mod tests {
     #[test]
     fn fill_valid_text_slot() {
         let mut bag = SlotBag::new();
-        assert!(bag.fill("name", SlotType::Text, SlotValue::Text("Alice".into())).is_ok());
+        assert!(
+            bag.fill("name", SlotType::Text, SlotValue::Text("Alice".into()))
+                .is_ok()
+        );
         assert!(bag.is_filled("name"));
     }
 
     #[test]
     fn reject_wrong_type() {
         let mut bag = SlotBag::new();
-        assert!(bag.fill("name", SlotType::Text, SlotValue::Number(42)).is_err());
+        assert!(
+            bag.fill("name", SlotType::Text, SlotValue::Number(42))
+                .is_err()
+        );
     }
 
     #[test]
     fn reject_empty_name() {
         let mut bag = SlotBag::new();
-        assert!(bag.fill("name", SlotType::Text, SlotValue::Text("".into())).is_err());
+        assert!(
+            bag.fill("name", SlotType::Text, SlotValue::Text("".into()))
+                .is_err()
+        );
     }
 
     #[test]
     fn reject_people_out_of_range() {
         let mut bag = SlotBag::new();
-        assert!(bag.fill("people", SlotType::Number, SlotValue::Number(0)).is_err());
-        assert!(bag.fill("people", SlotType::Number, SlotValue::Number(21)).is_err());
+        assert!(
+            bag.fill("people", SlotType::Number, SlotValue::Number(0))
+                .is_err()
+        );
+        assert!(
+            bag.fill("people", SlotType::Number, SlotValue::Number(21))
+                .is_err()
+        );
     }
 
     #[test]
     fn accept_people_in_range() {
         let mut bag = SlotBag::new();
-        assert!(bag.fill("people", SlotType::Number, SlotValue::Number(4)).is_ok());
+        assert!(
+            bag.fill("people", SlotType::Number, SlotValue::Number(4))
+                .is_ok()
+        );
     }
 }

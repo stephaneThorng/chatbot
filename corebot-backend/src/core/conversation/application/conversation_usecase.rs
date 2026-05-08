@@ -5,14 +5,18 @@ use uuid::Uuid;
 use super::conversation_command::{HandleConversationCommand, HandleConversationResult};
 use super::port::input::conversation_trait::HandleConversation;
 use super::port::output::domain_gateway_trait::DomainGateway;
-
+use super::port::output::nlp_analyzer_trait::NlpAnalyzer;
 pub struct HandleConversationUseCase {
     domain_gateway: Arc<dyn DomainGateway>,
+    nlp_analyzer: Arc<dyn NlpAnalyzer>,
 }
 
 impl HandleConversationUseCase {
-    pub fn new(domain_gateway: Arc<dyn DomainGateway>) -> Self {
-        Self { domain_gateway }
+    pub fn new(domain_gateway: Arc<dyn DomainGateway>, nlp_analyzer: Arc<dyn NlpAnalyzer>) -> Self {
+        Self {
+            domain_gateway,
+            nlp_analyzer,
+        }
     }
 }
 
@@ -21,17 +25,33 @@ impl HandleConversation for HandleConversationUseCase {
         let session_id = command
             .session_id
             .unwrap_or_else(|| Uuid::new_v4().to_string());
+        let analysis = self.nlp_analyzer.analyze(
+            &command.message,
+            command.lang.as_deref().unwrap_or("en"),
+            "restaurant",
+            command.task,
+        );
 
-        // Stub intent routing — replace with NLP dispatch when available.
-        let reply = self.domain_gateway.get_opening_hours();
+        let reply = match analysis.intent.name.as_str() {
+            "opening_hours" => self.domain_gateway.get_opening_hours(),
+            "greeting" => "Hello! How can I help with the restaurant today?".to_string(),
+            "thanks" => "You're welcome.".to_string(),
+            "farewell" => "Goodbye!".to_string(),
+            _ => format!("Detected intent: {}", analysis.intent.name),
+        };
 
-        HandleConversationResult { session_id, reply }
+        HandleConversationResult {
+            session_id,
+            reply,
+            detected_intent: analysis.intent.name,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::nlu_engine::domain::analysis::{NluAnalysis, NluIntent};
 
     struct StubDomainGateway;
 
@@ -41,41 +61,77 @@ mod tests {
         }
     }
 
-    fn make_use_case() -> HandleConversationUseCase {
-        HandleConversationUseCase::new(Arc::new(StubDomainGateway))
+    struct StubNlpAnalyzer {
+        intent_name: &'static str,
+    }
+
+    impl NlpAnalyzer for StubNlpAnalyzer {
+        fn analyze(
+            &self,
+            text: &str,
+            lang: &str,
+            domain: &str,
+            task: Option<String>,
+        ) -> NluAnalysis {
+            let _ = (lang, domain, task);
+            NluAnalysis {
+                tagged_text: text.to_string(),
+                intent: NluIntent {
+                    name: self.intent_name.to_string(),
+                    confidence: 1.0,
+                },
+                intents: vec![],
+                entities: vec![],
+                ner_labels: vec![],
+            }
+        }
+    }
+
+    fn make_use_case(intent_name: &'static str) -> HandleConversationUseCase {
+        HandleConversationUseCase::new(
+            Arc::new(StubDomainGateway),
+            Arc::new(StubNlpAnalyzer { intent_name }),
+        )
     }
 
     fn make_command(session_id: Option<&str>) -> HandleConversationCommand {
         HandleConversationCommand {
             message: "hello".to_string(),
             session_id: session_id.map(str::to_string),
+            lang: Some("en".to_string()),
+            task: None,
         }
     }
 
     #[test]
     fn handle_message_reuses_provided_session_id() {
-        let result = make_use_case().handle_message(make_command(Some("existing-123")));
+        let result = make_use_case("greeting").handle_message(make_command(Some("existing-123")));
         assert_eq!(result.session_id, "existing-123");
     }
 
     #[test]
     fn handle_message_generates_session_id_when_none() {
-        let result = make_use_case().handle_message(make_command(None));
+        let result = make_use_case("greeting").handle_message(make_command(None));
         assert!(!result.session_id.is_empty());
     }
 
     #[test]
     fn handle_message_generates_unique_session_ids() {
-        let uc = make_use_case();
+        let uc = make_use_case("greeting");
         let a = uc.handle_message(make_command(None));
         let b = uc.handle_message(make_command(None));
         assert_ne!(a.session_id, b.session_id);
     }
 
     #[test]
-    fn handle_message_delegates_reply_to_domain_gateway() {
-        let result = make_use_case().handle_message(make_command(None));
+    fn handle_message_delegates_opening_hours_reply_to_domain_gateway() {
+        let result = make_use_case("opening_hours").handle_message(make_command(None));
         assert_eq!(result.reply, "Mon-Sun 9am-10pm");
     }
-}
 
+    #[test]
+    fn handle_message_returns_detected_intent() {
+        let result = make_use_case("thanks").handle_message(make_command(None));
+        assert_eq!(result.detected_intent, "thanks");
+    }
+}

@@ -52,17 +52,22 @@ impl Workflow {
             return self.slots.fill(slot_name, SlotType::Boolean, value);
         }
 
-        let def = self.data_slots.iter().find(|s| s.name == slot_name).ok_or_else(|| SlotError {
-            slot: slot_name.to_string(),
-            message: format!("Unknown slot: {}", slot_name),
-        })?;
+        let def = self
+            .data_slots
+            .iter()
+            .find(|s| s.name == slot_name)
+            .ok_or_else(|| SlotError {
+                slot: slot_name.to_string(),
+                message: format!("Unknown slot: {}", slot_name),
+            })?;
 
         self.slots.fill(slot_name, def.slot_type, value)
     }
 
     /// True when all data slots AND confirmation are filled.
     pub fn is_complete(&self) -> bool {
-        let all_data_filled = self.data_slots
+        let all_data_filled = self
+            .data_slots
             .iter()
             .filter(|s| s.required)
             .all(|s| self.slots.is_filled(&s.name));
@@ -72,7 +77,8 @@ impl Workflow {
 
     /// True when all data slots are filled but confirmation is not yet.
     pub fn is_ready_for_confirmation(&self) -> bool {
-        let all_data_filled = self.data_slots
+        let all_data_filled = self
+            .data_slots
             .iter()
             .filter(|s| s.required)
             .all(|s| self.slots.is_filled(&s.name));
@@ -112,43 +118,59 @@ mod tests {
     #[test]
     fn cancel_goes_straight_to_confirmation() {
         let wf = cancel_workflow();
-        assert!(matches!(wf.next_required_slot(), Some(NextSlot::Confirmation)));
+        assert!(matches!(
+            wf.next_required_slot(),
+            Some(NextSlot::Confirmation)
+        ));
     }
 
     #[test]
     fn slots_advance_in_order() {
         let mut wf = book_workflow();
-        wf.fill_slot("name", SlotValue::Text("Alice".into())).unwrap();
+        wf.fill_slot("name", SlotValue::Text("Alice".into()))
+            .unwrap();
         assert!(matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == "date"));
 
-        wf.fill_slot("date", SlotValue::Date("2026-06-01".into())).unwrap();
+        wf.fill_slot("date", SlotValue::Date("2026-06-01".into()))
+            .unwrap();
         assert!(matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == "time"));
 
-        wf.fill_slot("time", SlotValue::Time("19:00".into())).unwrap();
+        wf.fill_slot("time", SlotValue::Time("19:00".into()))
+            .unwrap();
         assert!(matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == "people"));
     }
 
     #[test]
     fn confirmation_only_after_all_data() {
         let mut wf = book_workflow();
-        wf.fill_slot("name", SlotValue::Text("Alice".into())).unwrap();
-        wf.fill_slot("date", SlotValue::Date("2026-06-01".into())).unwrap();
-        wf.fill_slot("time", SlotValue::Time("19:00".into())).unwrap();
+        wf.fill_slot("name", SlotValue::Text("Alice".into()))
+            .unwrap();
+        wf.fill_slot("date", SlotValue::Date("2026-06-01".into()))
+            .unwrap();
+        wf.fill_slot("time", SlotValue::Time("19:00".into()))
+            .unwrap();
         wf.fill_slot("people", SlotValue::Number(4)).unwrap();
 
         assert!(wf.is_ready_for_confirmation());
         assert!(!wf.is_complete());
-        assert!(matches!(wf.next_required_slot(), Some(NextSlot::Confirmation)));
+        assert!(matches!(
+            wf.next_required_slot(),
+            Some(NextSlot::Confirmation)
+        ));
     }
 
     #[test]
     fn complete_after_confirmation() {
         let mut wf = book_workflow();
-        wf.fill_slot("name", SlotValue::Text("Alice".into())).unwrap();
-        wf.fill_slot("date", SlotValue::Date("2026-06-01".into())).unwrap();
-        wf.fill_slot("time", SlotValue::Time("19:00".into())).unwrap();
+        wf.fill_slot("name", SlotValue::Text("Alice".into()))
+            .unwrap();
+        wf.fill_slot("date", SlotValue::Date("2026-06-01".into()))
+            .unwrap();
+        wf.fill_slot("time", SlotValue::Time("19:00".into()))
+            .unwrap();
         wf.fill_slot("people", SlotValue::Number(4)).unwrap();
-        wf.fill_slot("confirmation", SlotValue::Boolean(true)).unwrap();
+        wf.fill_slot("confirmation", SlotValue::Boolean(true))
+            .unwrap();
 
         assert!(wf.is_complete());
         assert!(wf.next_required_slot().is_none());
@@ -157,12 +179,18 @@ mod tests {
     #[test]
     fn unknown_slot_rejected() {
         let mut wf = book_workflow();
-        assert!(wf.fill_slot("color", SlotValue::Text("blue".into())).is_err());
+        assert!(
+            wf.fill_slot("color", SlotValue::Text("blue".into()))
+                .is_err()
+        );
     }
 
     #[test]
     fn wrong_type_rejected() {
         let mut wf = book_workflow();
-        assert!(wf.fill_slot("people", SlotValue::Text("four".into())).is_err());
+        assert!(
+            wf.fill_slot("people", SlotValue::Text("four".into()))
+                .is_err()
+        );
     }
 }

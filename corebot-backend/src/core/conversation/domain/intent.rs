@@ -78,23 +78,35 @@ impl IntentCatalog {
     }
 
     pub fn is_workflow(&self, id: &IntentId) -> bool {
-        self.policies.get(id).is_some_and(|p| p.kind == IntentKind::Workflow)
+        self.policies
+            .get(id)
+            .is_some_and(|p| p.kind == IntentKind::Workflow)
     }
 
     pub fn is_informational(&self, id: &IntentId) -> bool {
-        self.policies.get(id).is_some_and(|p| p.kind == IntentKind::Informational)
+        self.policies
+            .get(id)
+            .is_some_and(|p| p.kind == IntentKind::Informational)
     }
 
     pub fn required_slots(&self, id: &IntentId) -> Vec<SlotDefinition> {
-        self.policies.get(id).map_or(vec![], |p| p.required_slots.clone())
+        self.policies
+            .get(id)
+            .map_or(vec![], |p| p.required_slots.clone())
     }
 
     pub fn nlu_task(&self, id: &IntentId) -> NluTask {
-        self.policies.get(id).and_then(|p| p.nlu_task).unwrap_or(NluTask::Open)
+        self.policies
+            .get(id)
+            .and_then(|p| p.nlu_task)
+            .unwrap_or(NluTask::Open)
     }
 
     pub fn for_domain(&self, domain: DomainType) -> Vec<&IntentPolicy> {
-        self.policies.values().filter(|p| p.domain == domain).collect()
+        self.policies
+            .values()
+            .filter(|p| p.domain == domain)
+            .collect()
     }
 }
 
@@ -105,38 +117,55 @@ impl IntentCatalog {
 pub fn build_restaurant_catalog() -> IntentCatalog {
     IntentCatalog::new(vec![
         // -- Workflow intents --
-        workflow("book", DomainType::Restaurant, Some(NluTask::BookRequirement), vec![
-            slot("name", SlotType::Text),
-            slot("date", SlotType::Date),
-            slot("time", SlotType::Time),
-            slot("people", SlotType::Number),
-        ]),
-        workflow("cancel", DomainType::Restaurant, Some(NluTask::BookRequirement), vec![]),
-
+        workflow(
+            "book",
+            DomainType::Restaurant,
+            Some(NluTask::BookRequirement),
+            vec![
+                slot("name", SlotType::Text),
+                slot("date", SlotType::Date),
+                slot("time", SlotType::Time),
+                slot("people", SlotType::Number),
+            ],
+        ),
+        workflow(
+            "cancel",
+            DomainType::Restaurant,
+            Some(NluTask::BookRequirement),
+            vec![],
+        ),
         // -- Informational intents (some with optional slots) --
-        informational("menu", DomainType::Restaurant, vec![
-            SlotDefinition { name: "dietary".into(), slot_type: SlotType::Text, required: false },
-        ]),
+        informational(
+            "menu",
+            DomainType::Restaurant,
+            vec![SlotDefinition {
+                name: "dietary".into(),
+                slot_type: SlotType::Text,
+                required: false,
+            }],
+        ),
         informational("location", DomainType::Restaurant, vec![]),
         informational("contact", DomainType::Restaurant, vec![]),
         informational("opening_hours", DomainType::Restaurant, vec![]),
-
         // -- Conversational intents --
         informational("greeting", DomainType::Restaurant, vec![]),
         informational("thanks", DomainType::Restaurant, vec![]),
         informational("farewell", DomainType::Restaurant, vec![]),
-
         // -- Requirement signals (NLU returns during [TASK=book_requirement]) --
         informational("affirmative", DomainType::Restaurant, vec![]),
         informational("negative", DomainType::Restaurant, vec![]),
         informational("provide_info", DomainType::Restaurant, vec![]),
-
         // -- Unknown --
         informational("unknown", DomainType::Restaurant, vec![]),
     ])
 }
 
-fn workflow(id: &str, domain: DomainType, nlu_task: Option<NluTask>, slots: Vec<SlotDefinition>) -> IntentPolicy {
+fn workflow(
+    id: &str,
+    domain: DomainType,
+    nlu_task: Option<NluTask>,
+    slots: Vec<SlotDefinition>,
+) -> IntentPolicy {
     IntentPolicy {
         id: IntentId::new(id),
         domain,
@@ -157,7 +186,11 @@ fn informational(id: &str, domain: DomainType, slots: Vec<SlotDefinition>) -> In
 }
 
 fn slot(name: &str, slot_type: SlotType) -> SlotDefinition {
-    SlotDefinition { name: name.into(), slot_type, required: true }
+    SlotDefinition {
+        name: name.into(),
+        slot_type,
+        required: true,
+    }
 }
 
 #[cfg(test)]

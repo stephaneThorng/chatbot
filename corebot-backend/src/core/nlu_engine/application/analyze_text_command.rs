@@ -1,0 +1,7 @@
+#[derive(Debug, Clone)]
+pub struct AnalyzeTextCommand {
+    pub text: String,
+    pub lang: String,
+    pub domain: String,
+    pub task: Option<String>,
+}

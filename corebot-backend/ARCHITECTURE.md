@@ -1,290 +1,151 @@
-# corebot-backend -- Architecture
+# corebot-backend Architecture
 
 ## Overview
 
-`corebot-backend` is the Rust migration target of the Kotlin chatbot backend.
-It uses **Axum** for HTTP routing and follows **hexagonal (ports and adapters)** architecture.
-Features are self-contained under `src/core/<feature>/`.
+`corebot-backend` is the Rust backend for the chatbot. It uses Axum for HTTP routing and follows feature-based hexagonal architecture under `src/core/<feature>/`.
+
+The main architectural goal is strict separation of concerns:
+
+- domain code owns business concepts and invariants;
+- application code owns use-case orchestration and ports;
+- adapters own concrete protocols, runtimes, clients, repositories, and DTOs.
 
 ## Module Structure
 
-```
+```text
 src/
-├── lib.rs                              Public crate root (exposes core modules)
-├── main.rs                             Entry point - wires adapters, starts server
+├── lib.rs
+├── main.rs
 └── core/
-    ├── conversation/                   Feature: conversation orchestration
-    │   ├── adapter/
-    │   │   ├── input/
-    │   │   │   └── web/                Inbound HTTP adapter (Axum)
-    │   │   │       ├── routes.rs             Route definitions + handler functions
-    │   │   │       ├── send_message_dto.rs        HTTP request/response structs
-    │   │   │       └── send_message_mapper.rs     From<> impls: DTO <-> Command/Result
-    │   │   └── output/
-    │   │       └── restaurant_domain_gateway.rs   Bridges conversation -> RestaurantPort
-    │   └── application/
-    │       ├── conversation_command.rs        Command + Result domain structs
-    │       ├── conversation_usecase.rs        Use case: session resolution + dispatch
-    │       └── port/
-    │           ├── input/
-    │           │   └── conversation_trait.rs  Inbound port (HandleConversation)
-    │           └── output/
-    │               └── domain_gateway_trait.rs  Outbound port (DomainGateway)
-    │
-    └── restaurant/                     Feature: restaurant domain data
-        ├── adapter/
-        │   └── input/
-        │       └── restaurant_adapter.rs   Stub impl of RestaurantPort
-        └── application/
-            └── port/
-                └── input/
-                    └── restaurant_trait.rs   RestaurantPort trait
-
-tests/
-└── conversation_routes_integration_test.rs   Integration tests (HTTP level)
+    ├── conversation/
+    │   ├── domain/
+    │   ├── application/
+    │   │   └── port/
+    │   │       ├── input/
+    │   │       └── output/
+    │   └── adapter/
+    │       ├── input/web/
+    │       └── output/
+    ├── nlu_engine/
+    │   ├── domain/
+    │   ├── application/
+    │   │   └── port/
+    │   │       ├── input/
+    │   │       └── output/
+    │   └── adapter/output/
+    └── restaurant/
+        ├── application/port/input/
+        └── adapter/input/
 ```
 
-## Hexagonal Architecture
+## Layer Rules
 
-```
-HTTP request
-     |
-     v
-[conversation/adapter/input/web/routes.rs]
-     |  uses
-     v
-[HandleConversation trait]              <- conversation/application/port/input/
-     |  implemented by
-     v
-[HandleConversationUseCase]             <- conversation/application/
-     |  calls via
-     v
-[DomainGateway trait]                   <- conversation/application/port/output/
-     |  implemented by
-     v
-[RestaurantDomainGateway]               <- conversation/adapter/output/
-     |  calls via
-     v
-[RestaurantPort trait]                  <- restaurant/application/port/input/
-     |  implemented by
-     v
-[RestaurantAdapter]                     <- restaurant/adapter/input/
-     |
-     v
-  (data source - in-memory stub for v1)
+| Layer | May depend on | Must not import |
+|-------|---------------|-----------------|
+| `domain/` | Rust standard library and pure domain modules | `serde`, `axum`, `ort`, `tokenizers`, adapters, application services |
+| `application/` | domain types, application services, input/output port traits | Axum, HTTP DTOs, adapter modules, concrete repositories/clients/runtimes |
+| `application/port/input/` | command/result/domain types | adapters, concrete use-case construction |
+| `application/port/output/` | domain types and boundary data types needed by use cases | concrete adapter implementations |
+| `adapter/input/` | input ports, commands/results, DTOs, mappers, framework crates | domain policy, persistence/runtime implementation details |
+| `adapter/output/` | output ports, domain types, concrete infrastructure crates | inbound adapters, use-case orchestration internals |
+
+Dependency direction must point inward:
+
+```text
+adapter/input  ─┐
+                ├─> application ports/use cases ─> domain
+adapter/output ─┘
 ```
 
-**Key rule:** Each layer communicates only via port traits, never via concrete structs across boundaries.
+Cross-feature dependency must use a port. A feature must not reach into another feature's adapter or concrete use case.
 
-## Adding a New Domain (e.g. Hotel)
+## Method and Object Placement
 
-1. Create `core/hotel/application/port/input/hotel_trait.rs` with `trait HotelPort`
-2. Create `core/hotel/adapter/input/hotel_adapter.rs` implementing `HotelPort`
-3. Create `core/conversation/adapter/output/hotel_domain_gateway.rs` implementing `DomainGateway` via `HotelPort`
-4. Wire `HotelDomainGateway` in `routes.rs` or via `main.rs` depending on runtime domain
+- Put business state and invariants in `domain/`.
+- Put application commands/results in `application/*_command.rs` unless the feature has a justified split.
+- Put use-case coordination in `application/*_usecase.rs`.
+- Put reusable application transformations or decoders in `application/<service>.rs`.
+- Put inbound protocol mapping in `adapter/input/web/*_dto.rs` and `*_mapper.rs`.
+- Put concrete runtime/client/repository code in `adapter/output/`.
+- Keep framework, serialization, filesystem, ONNX, tokenizer, and HTTP concerns out of domain objects.
+- Keep concrete adapter APIs out of application methods. Application calls traits; adapters implement traits.
 
-Zero changes needed in `conversation_usecase.rs` or any port trait.
+When a behavior appears to need multiple layers, split it explicitly:
 
-## Adding a New Data Method (e.g. get_menu)
+- adapter: retrieve or produce raw boundary data;
+- application: validate, orchestrate, decode, and decide;
+- domain: enforce business invariants and represent business state.
 
-1. Add `fn get_menu(&self) -> Menu` to `DomainGateway` trait
-2. Add `fn get_menu(&self) -> Menu` to `RestaurantPort` trait
-3. Implement in `RestaurantAdapter` (return stub or real data)
-4. Implement in `RestaurantDomainGateway` (delegate to restaurant port)
-5. Call `self.domain_gateway.get_menu()` in the use case when intent routing resolves to `menu`
+## Naming Conventions
 
-## Dependency Rules
+| Concept | Convention | Example |
+|---------|------------|---------|
+| Use case struct | `{Action}{Feature}UseCase` | `HandleConversationUseCase` |
+| Input port trait | `{Action}{Feature}` | `HandleConversation` |
+| Output port trait | `{Capability}` or `{Entity}Repository` | `NluModelRuntime`, `ConversationRepository` |
+| Command | `{Action}{Feature}Command` | `AnalyzeTextCommand` |
+| Result | `{Action}{Feature}Result` | `HandleConversationResult` |
+| HTTP request DTO | `{Action}{Feature}Request` | `SendMessageRequest` |
+| HTTP response DTO | `{Feature}Response` or `{Action}{Feature}Response` | `SendMessageResponse` |
+| Mapper object/module | `{Feature}WebMapper` or `<action>_<feature>_mapper.rs` | `send_message_mapper.rs` |
+| Route file | `routes.rs` | `adapter/input/web/routes.rs` |
+| Integration test | `<feature>_routes_integration_test.rs` | `conversation_routes_integration_test.rs` |
 
-| Layer                          | May depend on              | Must NOT import                      |
-|-------------------------------|----------------------------|--------------------------------------|
-| Domain structs                 | nothing                    | framework crates, serde, axum        |
-| `application/`                 | domain + port traits only  | axum, serde, adapter modules         |
-| `adapter/input/`               | application port traits    | use case structs directly            |
-| `adapter/output/`              | application port traits    | adapter/input modules                |
-| `restaurant/adapter/input/`    | restaurant port trait only | conversation modules                 |
+## Feature Responsibilities
 
-## Request Flow
+### Conversation
 
+- Owns session lifecycle, workflow state, slot filling, conversation policy, and deterministic replies.
+- Calls NLU through an analyzer port; it must not call ONNX runtime or tokenizer code directly.
+- May use restaurant data through a domain gateway port.
+
+### NLU Engine
+
+- Owns local NLP inference behavior: tagged input construction, artifact validation, tokenization boundary, ONNX execution, intent ranking, and BIO entity decoding.
+- Application layer owns preprocessing, artifact validation, model-output decoding, and final `NluAnalysis` construction.
+- `adapter/output/onnx_nlu_runtime.rs` owns only artifact loading, tokenizer integration, ONNX Runtime execution, and returning raw logits plus token metadata through the output port.
+- Do not add keyword intent classifiers here or in conversation code.
+
+### Restaurant
+
+- Owns static restaurant business data for v1.
+- Remains in-memory unless a persistence port is explicitly introduced.
+
+## NLU Engine Flow
+
+```text
+NluEngineAnalyzer
+  -> AnalyzeText input port
+  -> AnalyzeTextUseCase
+       build TaggedInput
+       validate artifact contract
+       call NluModelRuntime output port
+       decode logits and BIO tags into NluAnalysis
+  -> OnnxNluRuntime
+       tokenize prepared tagged text
+       run ONNX Runtime
+       return raw logits, tokens, offsets
 ```
-POST /api/v1/conversation/send_message
-  -> routes.rs            deserialize JSON -> SendMessageRequest
-  -> send_message_mapper  From<SendMessageRequest> -> HandleConversationCommand
-  -> HandleConversation   handle_message(command)
-  -> HandleConversationUseCase
-       resolve session_id
-       call domain_gateway.get_opening_hours()
-  -> RestaurantDomainGateway
-       delegate to restaurant.get_opening_hours()
-  -> RestaurantAdapter    return "Not implemented yet"
-  <- HandleConversationResult { session_id, reply }
-  -> send_message_mapper  From<HandleConversationResult> -> SendMessageResponse
-  <- HTTP 200 JSON
-```
+
+The ONNX adapter must not build `TaggedInput` and must not decode `NluAnalysis`.
 
 ## Testing Strategy
 
-| Type        | Location                               | Scope                                             |
-|-------------|----------------------------------------|---------------------------------------------------|
-| Unit        | `#[cfg(test)]` inside each `.rs` file  | Use case logic, mapper conversions, gateway delegation |
-| Integration | `tests/`                               | Full HTTP request -> response via `axum-test`     |
+| Type | Location | Scope |
+|------|----------|-------|
+| Unit | `#[cfg(test)] mod tests` at the bottom of the same file | Domain invariants, use-case orchestration, mapper conversions, adapter delegation |
+| Integration | `tests/` at crate root | HTTP request/response behavior through Axum |
+| Architecture tests | `tests/architecture*.rs` when introduced | Layer dependency rules and forbidden imports |
 
-### Current test coverage
+Architecture-sensitive changes must test the layer that now owns the behavior. For example, if preprocessing moves from an adapter into a use case, add a use-case test that proves the adapter receives prepared input.
 
-| Test file                                          | Tests |
-|----------------------------------------------------|-------|
-| `conversation_usecase.rs`                          | 4     |
-| `send_message_mapper.rs`                           | 3     |
-| `restaurant_domain_gateway.rs`                     | 1     |
-| `restaurant_adapter.rs`                            | 1     |
-| `conversation_routes_integration_test.rs`          | 4     |
+## Rust Architecture Tooling
 
-## Future Work
+Useful crates/tools for architecture checks:
 
-| Item                                    | Location                                    |
-|-----------------------------------------|---------------------------------------------|
-| Real restaurant data (menu, hours, ...) | `restaurant/adapter/input/restaurant_adapter.rs` |
-| NLP intent routing                      | `conversation/application/conversation_usecase.rs` |
-| Session management                      | `conversation/application/` + session port  |
-| Hotel domain                            | `core/hotel/`                               |
-| NLP client (outbound)                   | `conversation/adapter/output/nlp_client.rs` |
+- `arch-lint`: AST-based architecture linter that can run in `cargo test` with `arch_lint::check!()` and configuration in `arch-lint.toml`.
+- `arch_test_core` / `cargo-archtest-cli`: rule-based architecture tests for module/layer access rules such as `MayNotAccess`, `MayOnlyAccess`, and cyclic dependency checks.
+- `dep_graph_rs`: internal module dependency graph visualization from `use crate::...` statements. Useful for audits, not a hard warning system by itself.
+- `cargo-deny`: dependency graph policy checks for third-party crates, licenses, advisories, and duplicate/banned dependencies. It does not enforce internal hexagonal layers.
 
-## Dependencies
-
-| Crate       | Role                                          |
-|-------------|-----------------------------------------------|
-| `axum`      | HTTP routing and handlers                     |
-| `tokio`     | Async runtime                                 |
-| `serde`     | JSON serialization (DTOs only)                |
-| `uuid`      | Session ID generation                         |
-| `axum-test` | Integration test HTTP client (dev only)       |
-
-## Overview
-
-`corebot-backend` is the Rust migration target of the Kotlin chatbot backend.
-It uses **Axum** for HTTP routing and follows **hexagonal (ports and adapters)** architecture.
-Features are self-contained under `src/core/<feature>/`.
-
-## Module Structure
-
-```
-src/
-├── lib.rs                              Public crate root (exposes core modules)
-├── main.rs                             Entry point — wires adapters, starts server
-└── core/
-    └── conversation/                   Feature: conversation handling
-        ├── mod.rs
-        ├── adapter/
-        │   ├── mod.rs
-        │   └── input/
-        │       ├── mod.rs
-        │       └── web/                Inbound HTTP adapter (Axum)
-        │           ├── mod.rs
-        │           ├── routes.rs             Route definitions + handler functions
-        │           ├── send_message_dto.rs        HTTP request/response structs
-        │           └── send_message_mapper.rs     From<> impls: DTO ↔ Command/Result
-        └── application/
-            ├── mod.rs
-            ├── conversation_command.rs        Command + Result domain structs
-            ├── conversation_usecase.rs        Use case implementation
-            └── port/
-                ├── mod.rs
-                ├── input/
-                │   ├── mod.rs
-                │   └── conversation_trait.rs  Inbound port traits
-                └── output/                    (future: NLP client, session repository)
-
-tests/
-└── conversation_routes_integration_test.rs   Integration tests (HTTP level)
-```
-
-## Hexagonal Architecture
-
-```
-         ┌────────────────────────────────────────┐
-         │  Port: HandleConversation (trait)       │  ← application/port/input/
-         │  Protocol-agnostic inbound contract     │
-         └───────────────────┬────────────────────┘
-                             │ implemented by
-         ┌───────────────────▼────────────────────┐
-         │  HandleConversationUseCase              │  ← application/conversation_usecase.rs
-         │  Owns: session_id resolution, reply     │
-         └───────────────────┬────────────────────┘
-                             │ called via trait by
-         ┌───────────────────┼──────────────────────────────┐
-         │                   │                              │
-    ┌────▼────────┐   ┌──────▼──────┐             ┌────────▼──────┐
-    │ HTTP/Axum   │   │ gRPC        │             │  CLI          │
-    │ routes.rs   │   │ (future)    │             │  (future)     │
-    └─────────────┘   └─────────────┘             └───────────────┘
-      adapter/input/web/
-```
-
-**Rule:** Adapters depend on the port **trait**, never on the use case struct directly.
-
-## Dependency Rules
-
-| Layer              | May depend on              | Must NOT import                      |
-|--------------------|----------------------------|--------------------------------------|
-| Domain structs     | nothing                    | framework crates, serde, axum        |
-| `application/`     | domain only                | axum, serde, adapter modules         |
-| `adapter/input/`   | application port traits    | use case structs directly            |
-| `adapter/output/`  | application port traits    | adapter/input modules                |
-
-## Request Flow
-
-```
-POST /api/v1/conversation/send_message
-        │
-        ▼
-routes.rs           Deserializes JSON → SendMessageRequest
-        │
-        ▼
-send_message_mapper.rs   From<SendMessageRequest> → HandleConversationCommand
-        │
-        ▼
-HandleConversation trait  handle_message(command)
-        │
-        ▼
-HandleConversationUseCase  Resolves/generates session_id, returns HandleConversationResult
-        │
-        ▼
-send_message_mapper.rs   From<HandleConversationResult> → SendMessageResponse
-        │
-        ▼
-routes.rs           Serializes JSON → HTTP 200
-```
-
-## Testing Strategy
-
-| Type        | Location                               | Scope                                        |
-|-------------|----------------------------------------|----------------------------------------------|
-| Unit        | `#[cfg(test)]` inside each `.rs` file  | Use case logic, mapper `From<>` conversions  |
-| Integration | `tests/`                               | Full HTTP request → response via `axum-test` |
-
-### Current test coverage
-
-| Test file                                    | Tests |
-|----------------------------------------------|-------|
-| `conversation_usecase.rs`                    | 4     |
-| `send_message_mapper.rs`                     | 3     |
-| `conversation_routes_integration_test.rs`    | 4     |
-
-## Future Adapters
-
-| Module                              | Purpose                               |
-|-------------------------------------|---------------------------------------|
-| `adapter/output/nlp_client.rs`      | HTTP client to Python NLP API         |
-| `adapter/output/session_repository.rs` | In-memory session store            |
-| `adapter/input/grpc/`               | gRPC inbound adapter (same port trait)|
-| `adapter/input/whatsapp/`           | WhatsApp Business inbound adapter     |
-
-## Dependencies
-
-| Crate       | Role                        |
-|-------------|-----------------------------|
-| `axum`      | HTTP routing and handlers   |
-| `tokio`     | Async runtime               |
-| `serde`     | JSON serialization (DTOs)   |
-| `uuid`      | Session ID generation       |
-| `axum-test` | Integration test HTTP client (dev only) |
-
+Recommended next step: add an architecture test with `arch_test_core` or `arch-lint` once the layer rules are stable enough to enforce in CI.

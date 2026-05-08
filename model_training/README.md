@@ -43,6 +43,20 @@ Useful smoke train:
 python train.py --train data/restaurant/train.jsonl --validation data/restaurant/validation.jsonl --output outputs/smoke --max-train-samples 24 --max-validation-samples 12 --epochs 1
 ```
 
+Export ONNX for Rust inference:
+
+```powershell
+python export_onnx.py --model-dir outputs/restaurant_xlmr
+```
+
+The ONNX export preserves the exact tagged input contract used at training time:
+
+```text
+[TASK=WF_BOOK] [LANG=id] [DOMAIN=restaurant] empat orang besok 20.30
+```
+
+If `task` is absent, the input starts with `[LANG=...] [DOMAIN=...]`.
+
 ## Outputs
 
 Training writes:
@@ -52,3 +66,12 @@ Training writes:
 - `training_config.yaml`
 - `metrics.json`
 - `debug_bio_preview.json`
+
+ONNX export writes:
+
+- `onnx/model.onnx`
+- `onnx/tokenizer.json`
+- `onnx/label_maps.json`
+- `onnx/training_config.yaml`
+- `onnx/onnx_contract.json`
+- `onnx/onnx_validation.json`

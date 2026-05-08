@@ -46,19 +46,28 @@ impl Conversation {
     }
 
     pub fn with_id(id: Uuid, domain: DomainType) -> Self {
-        Self { id, domain, state: ConversationState::Idle }
+        Self {
+            id,
+            domain,
+            state: ConversationState::Idle,
+        }
     }
 
     /// Start a workflow intent. Only works from Idle.
-    pub fn start_workflow(&mut self, intent: &IntentId, catalog: &IntentCatalog) -> TransitionResult {
+    pub fn start_workflow(
+        &mut self,
+        intent: &IntentId,
+        catalog: &IntentCatalog,
+    ) -> TransitionResult {
         match catalog.get(intent) {
             None => TransitionResult::IntentNotFound,
             Some(_) if !catalog.is_workflow(intent) => TransitionResult::NotAWorkflowIntent,
             Some(_) => match &self.state {
                 ConversationState::Idle => {
-                    self.state = ConversationState::Workflow(
-                        Workflow::from_catalog(intent.clone(), catalog),
-                    );
+                    self.state = ConversationState::Workflow(Workflow::from_catalog(
+                        intent.clone(),
+                        catalog,
+                    ));
                     TransitionResult::WorkflowStarted
                 }
                 ConversationState::Workflow(_) => TransitionResult::BlockedByActiveWorkflow,
