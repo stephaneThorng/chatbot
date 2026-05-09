@@ -28,8 +28,7 @@
 - `adapter/output/` contains concrete ONNX Runtime and tokenizer integration.
 - Artifact serialization structs such as ONNX contract and label maps belong in
   `application/` or adapter boundary modules, not in `domain/`.
-- `OnnxNluRuntime` must receive prepared `TaggedInput`; it must not call
-  `build_tagged_input`.
+- `OnnxNluRuntime` must receive prepared `TaggedInput`; it must not build it.
 - `OnnxNluRuntime` must return raw logits, tokens, and offsets through the
   output port; it must not call `decode_nlu_analysis` or build `NluAnalysis`.
 - `AnalyzeTextUseCase` owns the full application pipeline: build tagged input,

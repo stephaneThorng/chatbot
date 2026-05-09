@@ -1,12 +1,13 @@
 use std::cmp::Ordering;
 
 use crate::core::nlu_engine::application::nlu_artifacts::{LabelMaps, OnnxContract};
-use crate::core::nlu_engine::application::nlu_inference_input::OnnxModelOutput;
+use crate::core::nlu_engine::application::nlu_model_inference::OnnxModelOutput;
 use crate::core::nlu_engine::application::port::output::nlu_model_runtime_trait::NluRuntimeError;
 use crate::core::nlu_engine::domain::analysis::{
     NerTokenLabel, NluAnalysis, NluEntity, NluIntent, NluIntentCandidate, TaggedInput,
 };
 
+/// Decodes raw runtime outputs into the domain-level analysis returned by the use case.
 pub fn decode_nlu_analysis(
     tagged_input: TaggedInput,
     raw_text: &str,
@@ -197,16 +198,19 @@ fn decode_entities(
 
         let adjusted_start = token_start.saturating_sub(prefix_length);
         let adjusted_end = token_end.saturating_sub(prefix_length);
-        let Some((prefix, entity_type)) = label.split_once('-') else {
-            flush_entity(
-                raw_text,
-                &mut entities,
-                &mut current_type,
-                &mut current_start,
-                &mut current_end,
-                &mut confidences,
-            );
-            continue;
+        let (prefix, entity_type) = match label.split_once('-') {
+            Some(parts) => parts,
+            None => {
+                flush_entity(
+                    raw_text,
+                    &mut entities,
+                    &mut current_type,
+                    &mut current_start,
+                    &mut current_end,
+                    &mut confidences,
+                );
+                continue;
+            }
         };
 
         match (prefix, current_type.as_deref()) {
@@ -274,9 +278,12 @@ fn flush_entity(
     current_end: &mut usize,
     confidences: &mut Vec<f32>,
 ) {
-    let Some(entity_type) = current_type.take() else {
-        confidences.clear();
-        return;
+    let entity_type = match current_type.take() {
+        Some(entity_type) => entity_type,
+        None => {
+            confidences.clear();
+            return;
+        }
     };
     let start = *current_start;
     let end = *current_end;

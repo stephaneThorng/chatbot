@@ -59,6 +59,8 @@ adapter/output ─┘
 
 Cross-feature dependency must use a port. A feature must not reach into another feature's adapter or concrete use case.
 
+The production composition root lives in `src/main.rs`. Inbound HTTP adapter modules expose route construction that accepts already-built use-case dependencies instead of instantiating concrete output adapters directly.
+
 ## Method and Object Placement
 
 - Put business state and invariants in `domain/`.
@@ -114,7 +116,7 @@ When a behavior appears to need multiple layers, split it explicitly:
 ## NLU Engine Flow
 
 ```text
-NluEngineAnalyzer
+conversation/adapter/output/NluEngineGateway
   -> AnalyzeText input port
   -> AnalyzeTextUseCase
        build TaggedInput
@@ -139,12 +141,17 @@ The ONNX adapter must not build `TaggedInput` and must not decode `NluAnalysis`.
 
 Architecture-sensitive changes must test the layer that now owns the behavior. For example, if preprocessing moves from an adapter into a use case, add a use-case test that proves the adapter receives prepared input.
 
+Executable architecture boundary checks live in:
+
+- [tests/architecture_test.rs](/C:/Users/steph/git/chatbot/corebot-backend/tests/architecture_test.rs): stable layer-access rules with `arch_test_core`
+- [tests/architecture_source_rules_test.rs](/C:/Users/steph/git/chatbot/corebot-backend/tests/architecture_source_rules_test.rs): source-level checks for forbidden imports across layers and features
+
 ## Rust Architecture Tooling
 
 Useful crates/tools for architecture checks:
 
 - `arch-lint`: AST-based architecture linter that can run in `cargo test` with `arch_lint::check!()` and configuration in `arch-lint.toml`.
-- `arch_test_core` / `cargo-archtest-cli`: rule-based architecture tests for module/layer access rules such as `MayNotAccess`, `MayOnlyAccess`, and cyclic dependency checks.
+- `arch_test_core` / `cargo-archtest-cli`: rule-based architecture tests for module/layer access rules such as `MayNotAccess`, `MayOnlyAccess`, and cyclic dependency checks. This repository currently uses `arch_test_core` for layer-access rules.
 - `dep_graph_rs`: internal module dependency graph visualization from `use crate::...` statements. Useful for audits, not a hard warning system by itself.
 - `cargo-deny`: dependency graph policy checks for third-party crates, licenses, advisories, and duplicate/banned dependencies. It does not enforce internal hexagonal layers.
 

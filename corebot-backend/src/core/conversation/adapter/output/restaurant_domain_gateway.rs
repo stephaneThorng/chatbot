@@ -1,4 +1,4 @@
-use crate::core::conversation::application::port::output::domain_gateway_trait::DomainGateway;
+use crate::core::conversation::application::port::output::domain_gateway_trait::DomainGatewayPort;
 use crate::core::restaurant::application::port::input::restaurant_trait::RestaurantPort;
 use std::sync::Arc;
 /// Outbound adapter - bridges conversation and the restaurant domain.
@@ -11,7 +11,7 @@ impl RestaurantDomainGateway {
         Self { restaurant }
     }
 }
-impl DomainGateway for RestaurantDomainGateway {
+impl DomainGatewayPort for RestaurantDomainGateway {
     fn get_opening_hours(&self) -> String {
         self.restaurant.get_opening_hours()
     }

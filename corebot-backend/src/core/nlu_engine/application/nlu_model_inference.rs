@@ -1,22 +1,11 @@
-use crate::core::nlu_engine::domain::analysis::TaggedInput;
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct NluInferenceInput {
-    pub tagged_input: TaggedInput,
-}
-
-impl NluInferenceInput {
-    pub fn new(tagged_input: TaggedInput) -> Self {
-        Self { tagged_input }
-    }
-}
-
+/// Raw ONNX logits returned by the runtime before application-layer decoding.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OnnxModelOutput {
     pub intent_logits: Vec<f32>,
     pub ner_logits: Vec<f32>,
 }
 
+/// Tokenizer metadata and raw model outputs produced by the runtime port.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NluModelInference {
     pub tokens: Vec<String>,

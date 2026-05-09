@@ -1,3 +1,4 @@
+/// Input command for the NLU analysis use case.
 #[derive(Debug, Clone)]
 pub struct AnalyzeTextCommand {
     pub text: String,

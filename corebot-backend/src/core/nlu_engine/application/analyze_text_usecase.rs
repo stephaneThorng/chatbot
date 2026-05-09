@@ -3,34 +3,32 @@ use std::sync::Arc;
 use crate::core::nlu_engine::application::nlu_analysis_decoder::{
     decode_nlu_analysis, validate_artifacts,
 };
-use crate::core::nlu_engine::application::nlu_inference_input::NluInferenceInput;
-use crate::core::nlu_engine::domain::analysis::{
-    InferenceContext, NluAnalysis, build_tagged_input,
-};
+use crate::core::nlu_engine::domain::analysis::{InferenceContext, NluAnalysis, TaggedInput};
 
 use super::analyze_text_command::AnalyzeTextCommand;
-use super::port::input::analyze_text_trait::AnalyzeTextNlu;
+use super::port::input::analyze_text_trait::AnalyzeText;
 use super::port::output::nlu_model_runtime_trait::{NluModelRuntime, NluRuntimeError};
 
+/// Application use case that orchestrates tagged-input construction, runtime
+/// execution, and decoding into a domain `NluAnalysis`.
 pub struct AnalyzeTextUseCase {
     runtime: Arc<dyn NluModelRuntime>,
 }
 
 impl AnalyzeTextUseCase {
+    /// Creates the use case with the runtime port implementation to call.
     pub fn new(runtime: Arc<dyn NluModelRuntime>) -> Self {
         Self { runtime }
     }
 }
 
-impl AnalyzeTextNlu for AnalyzeTextUseCase {
-    fn analyze(&self, command: AnalyzeTextCommand) -> Result<NluAnalysis, NluRuntimeError> {
+impl AnalyzeText for AnalyzeTextUseCase {
+    fn predict(&self, command: AnalyzeTextCommand) -> Result<NluAnalysis, NluRuntimeError> {
         validate_artifacts(self.runtime.contract(), self.runtime.label_maps())?;
         let raw_text = command.text;
         let context = InferenceContext::new(command.lang, command.domain, command.task);
-        let tagged_input = build_tagged_input(&raw_text, &context);
-        let inference = self
-            .runtime
-            .run(NluInferenceInput::new(tagged_input.clone()))?;
+        let tagged_input = TaggedInput::build(&raw_text, &context);
+        let inference = self.runtime.run(tagged_input.clone())?;
         decode_nlu_analysis(
             tagged_input,
             &raw_text,
@@ -50,7 +48,7 @@ mod tests {
     use crate::core::nlu_engine::application::nlu_artifacts::{
         ContractLabels, LabelMaps, OnnxContract,
     };
-    use crate::core::nlu_engine::application::nlu_inference_input::{
+    use crate::core::nlu_engine::application::nlu_model_inference::{
         NluModelInference, OnnxModelOutput,
     };
     use crate::core::nlu_engine::domain::analysis::TaggedInput;
@@ -60,7 +58,7 @@ mod tests {
     struct CapturingRuntime {
         contract: OnnxContract,
         label_maps: LabelMaps,
-        last_input: Mutex<Option<NluInferenceInput>>,
+        last_input: Mutex<Option<TaggedInput>>,
     }
 
     impl CapturingRuntime {
@@ -88,13 +86,7 @@ mod tests {
         }
 
         fn last_tagged_input(&self) -> TaggedInput {
-            self.last_input
-                .lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .tagged_input
-                .clone()
+            self.last_input.lock().unwrap().as_ref().unwrap().clone()
         }
     }
 
@@ -107,7 +99,7 @@ mod tests {
             &self.label_maps
         }
 
-        fn run(&self, input: NluInferenceInput) -> Result<NluModelInference, NluRuntimeError> {
+        fn run(&self, input: TaggedInput) -> Result<NluModelInference, NluRuntimeError> {
             *self.last_input.lock().unwrap() = Some(input);
             Ok(NluModelInference {
                 tokens: vec![
@@ -130,7 +122,7 @@ mod tests {
         let usecase = AnalyzeTextUseCase::new(runtime.clone());
 
         let analysis = usecase
-            .analyze(AnalyzeTextCommand {
+            .predict(AnalyzeTextCommand {
                 text: "Hello".to_string(),
                 lang: "en".to_string(),
                 domain: "restaurant".to_string(),

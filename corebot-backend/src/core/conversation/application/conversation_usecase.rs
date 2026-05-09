@@ -4,18 +4,21 @@ use uuid::Uuid;
 
 use super::conversation_command::{HandleConversationCommand, HandleConversationResult};
 use super::port::input::conversation_trait::HandleConversation;
-use super::port::output::domain_gateway_trait::DomainGateway;
-use super::port::output::nlp_analyzer_trait::NlpAnalyzer;
+use super::port::output::domain_gateway_trait::DomainGatewayPort;
+use super::port::output::nlp_analyzer_trait::NlpEngineGatewayPort;
 pub struct HandleConversationUseCase {
-    domain_gateway: Arc<dyn DomainGateway>,
-    nlp_analyzer: Arc<dyn NlpAnalyzer>,
+    domain_gateway: Arc<dyn DomainGatewayPort>,
+    nlu_engine_gateway: Arc<dyn NlpEngineGatewayPort>,
 }
 
 impl HandleConversationUseCase {
-    pub fn new(domain_gateway: Arc<dyn DomainGateway>, nlp_analyzer: Arc<dyn NlpAnalyzer>) -> Self {
+    pub fn new(
+        domain_gateway: Arc<dyn DomainGatewayPort>,
+        nlu_engine_gateway: Arc<dyn NlpEngineGatewayPort>,
+    ) -> Self {
         Self {
             domain_gateway,
-            nlp_analyzer,
+            nlu_engine_gateway,
         }
     }
 }
@@ -25,7 +28,7 @@ impl HandleConversation for HandleConversationUseCase {
         let session_id = command
             .session_id
             .unwrap_or_else(|| Uuid::new_v4().to_string());
-        let analysis = self.nlp_analyzer.analyze(
+        let analysis = self.nlu_engine_gateway.analyze(
             &command.message,
             command.lang.as_deref().unwrap_or("en"),
             "restaurant",
@@ -55,7 +58,7 @@ mod tests {
 
     struct StubDomainGateway;
 
-    impl DomainGateway for StubDomainGateway {
+    impl DomainGatewayPort for StubDomainGateway {
         fn get_opening_hours(&self) -> String {
             "Mon-Sun 9am-10pm".to_string()
         }
@@ -65,7 +68,7 @@ mod tests {
         intent_name: &'static str,
     }
 
-    impl NlpAnalyzer for StubNlpAnalyzer {
+    impl NlpEngineGatewayPort for StubNlpAnalyzer {
         fn analyze(
             &self,
             text: &str,

@@ -1,24 +1,26 @@
 use std::sync::Arc;
 
-use crate::core::conversation::application::port::output::nlp_analyzer_trait::NlpAnalyzer;
+use crate::core::conversation::application::port::output::nlp_analyzer_trait::NlpEngineGatewayPort;
 use crate::core::nlu_engine::application::AnalyzeTextCommand;
-use crate::core::nlu_engine::application::port::input::analyze_text_trait::AnalyzeTextNlu;
+use crate::core::nlu_engine::application::port::input::analyze_text_trait::AnalyzeText;
 use crate::core::nlu_engine::domain::analysis::{NluAnalysis, NluIntent};
 
-pub struct NluEngineAnalyzer {
-    analyzer: Arc<dyn AnalyzeTextNlu>,
+/// Outbound gateway from `conversation` to the `nlu_engine` application input port.
+pub struct NluEngineGateway {
+    analyzer: Arc<dyn AnalyzeText>,
 }
 
-impl NluEngineAnalyzer {
-    pub fn new(analyzer: Arc<dyn AnalyzeTextNlu>) -> Self {
+impl NluEngineGateway {
+    /// Creates the gateway with the target NLU input port implementation.
+    pub fn new(analyzer: Arc<dyn AnalyzeText>) -> Self {
         Self { analyzer }
     }
 }
 
-impl NlpAnalyzer for NluEngineAnalyzer {
+impl NlpEngineGatewayPort for NluEngineGateway {
     fn analyze(&self, text: &str, lang: &str, domain: &str, task: Option<String>) -> NluAnalysis {
         self.analyzer
-            .analyze(AnalyzeTextCommand {
+            .predict(AnalyzeTextCommand {
                 text: text.to_string(),
                 lang: lang.to_string(),
                 domain: domain.to_string(),

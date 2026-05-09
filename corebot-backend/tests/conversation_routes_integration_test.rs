@@ -7,7 +7,7 @@ use corebot_backend::core::conversation::adapter::input::web::routes::conversati
 use corebot_backend::core::conversation::adapter::output::restaurant_domain_gateway::RestaurantDomainGateway;
 use corebot_backend::core::conversation::application::conversation_usecase::HandleConversationUseCase;
 use corebot_backend::core::conversation::application::port::input::conversation_trait::HandleConversation;
-use corebot_backend::core::conversation::application::port::output::nlp_analyzer_trait::NlpAnalyzer;
+use corebot_backend::core::conversation::application::port::output::nlp_analyzer_trait::NlpEngineGatewayPort;
 use corebot_backend::core::nlu_engine::domain::analysis::{NluAnalysis, NluIntent};
 use corebot_backend::core::restaurant::application::port::input::restaurant_trait::RestaurantPort;
 
@@ -23,7 +23,7 @@ struct StubNlpAnalyzer {
     intent_name: &'static str,
 }
 
-impl NlpAnalyzer for StubNlpAnalyzer {
+impl NlpEngineGatewayPort for StubNlpAnalyzer {
     fn analyze(&self, text: &str, lang: &str, domain: &str, task: Option<String>) -> NluAnalysis {
         let _ = (lang, domain, task);
         NluAnalysis {

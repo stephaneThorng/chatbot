@@ -16,4 +16,5 @@ tokenizers = { version = "0.22.1", default-features = false, features = ["fancy-
 
 [dev-dependencies]
 axum-test = "20.0.0"
+arch_test_core = "0.1"
 tempfile = "3.20.0"

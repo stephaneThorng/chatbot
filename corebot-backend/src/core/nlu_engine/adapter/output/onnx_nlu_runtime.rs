@@ -9,13 +9,15 @@ use tokenizers::Tokenizer;
 use tokenizers::utils::truncation::TruncationDirection;
 
 use crate::core::nlu_engine::application::nlu_artifacts::{LabelMaps, OnnxContract};
-use crate::core::nlu_engine::application::nlu_inference_input::{
-    NluInferenceInput, NluModelInference, OnnxModelOutput,
+use crate::core::nlu_engine::application::nlu_model_inference::{
+    NluModelInference, OnnxModelOutput,
 };
 use crate::core::nlu_engine::application::port::output::nlu_model_runtime_trait::{
     NluModelRuntime, NluRuntimeError,
 };
+use crate::core::nlu_engine::domain::analysis::TaggedInput;
 
+/// Concrete output adapter backed by ONNX Runtime and the exported tokenizer.
 pub struct OnnxNluRuntime {
     session: Mutex<Session>,
     tokenizer: Tokenizer,
@@ -31,6 +33,7 @@ struct EncodedInput {
 }
 
 impl OnnxNluRuntime {
+    /// Loads the tokenizer, ONNX contract, label maps, and model session from an artifact directory.
     pub fn from_artifact_dir(artifact_dir: impl AsRef<Path>) -> Result<Self, NluRuntimeError> {
         let artifact_dir = artifact_dir.as_ref();
         let model_path = artifact_dir.join("model.onnx");
@@ -70,6 +73,7 @@ impl OnnxNluRuntime {
         })
     }
 
+    /// Loads the runtime from the `COREBOT_NLU_ONNX_DIR` environment variable.
     pub fn from_env() -> Result<Self, NluRuntimeError> {
         match std::env::var("COREBOT_NLU_ONNX_DIR") {
             Ok(path) => Self::from_artifact_dir(path),
@@ -80,11 +84,10 @@ impl OnnxNluRuntime {
         }
     }
 
-    fn encode_input(&self, input: NluInferenceInput) -> Result<EncodedInput, NluRuntimeError> {
-        let tagged_input = input.tagged_input;
+    fn encode_input(&self, input: TaggedInput) -> Result<EncodedInput, NluRuntimeError> {
         let mut encoding = self
             .tokenizer
-            .encode(tagged_input.text.clone(), true)
+            .encode(input.text, true)
             .map_err(|error| NluRuntimeError::Tokenizer(error.to_string()))?;
         if encoding.len() > self.contract.max_length {
             encoding.truncate(self.contract.max_length, 0, TruncationDirection::Right);
@@ -153,7 +156,7 @@ impl NluModelRuntime for OnnxNluRuntime {
         &self.label_maps
     }
 
-    fn run(&self, input: NluInferenceInput) -> Result<NluModelInference, NluRuntimeError> {
+    fn run(&self, input: TaggedInput) -> Result<NluModelInference, NluRuntimeError> {
         let input = self.encode_input(input)?;
         let outputs = self.run_model(&input)?;
         Ok(NluModelInference {

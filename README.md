@@ -1,49 +1,47 @@
-﻿# Restaurant Chatbot
+# Restaurant Chatbot
 
-This repository contains a restaurant chatbot prototype with two services:
+This repository contains the Rust backend chatbot and the Python model training project used to produce ONNX artifacts for local NLU inference.
 
-- `backend/chatbot`: Kotlin/Ktor backend that owns sessions, conversation state, restaurant data, and replies.
-- `nlp-api`: Python NLP engine that analyzes user text and returns ranked intents, utterance signals, and normalized entities.
+- `corebot-backend`: Rust/Axum backend that owns HTTP handling, session state, conversation flow, restaurant data, and deterministic replies.
+- `model_training`: Python training and ONNX export project for the local NLU model.
 
-The v1 backend exposes a single HTTP endpoint for chat messages and keeps all state in memory. It is designed for local development and a single running backend instance.
+The current runtime architecture is local and in-memory for v1. The backend exposes a single HTTP endpoint for chat messages and consumes ONNX artifacts exported by `model_training`.
 
 ## Backend Scope
 
-The Python NLP API owns restaurant business analysis:
+The Rust backend owns:
 
-- `reservation_create`
-- `reservation_modify`
-- `reservation_cancel`
-- `reservation_status`
-- `menu_request`
-- `opening_hours`
-- `location_request`
-- `pricing_request`
-- `contact_request`
-- `unknown`
+- conversation state and session lifecycle
+- workflow slot filling
+- deterministic reply generation
+- restaurant domain data for v1
+- local NLU orchestration through `nlu_engine`
 
-It returns a primary intent, ranked intent candidates, utterance kind metadata, canonical entity values, raw entity spans, and warnings. The Kotlin backend treats this as analysis evidence, not as user-facing response text. If `utterance` is missing, the backend treats the analysis as `unknown` instead of accepting a business intent.
+The NLU model runtime returns:
 
-The Kotlin backend owns conversation acts such as `greeting`, `thanks`, and `farewell`. It strips simple polite prefixes or suffixes before calling the NLP API, while preserving the detected act in the chat response metadata.
+- a primary intent
+- ranked intent candidates
+- extracted entities
+- token-level NER labels for debugging
 
-Reservation intents are handled with an explicit finite state machine. Informational intents are handled through deterministic dataset-backed handlers.
+Simple conversation acts such as `greeting`, `thanks`, and `farewell` are handled in the backend conversation logic.
 
-The backend uses a feature-level hexagonal structure under `core/chat`:
+The backend uses feature-based hexagonal architecture under `corebot-backend/src/core/`:
 
-- `domain` for pure conversation, intent, workflow, NLP, session, restaurant knowledge, and reservation models.
-- `application` for use cases, intent decisions, state handling, workflow progression, and outbound ports.
-- `adapter` for Ktor HTTP, in-memory repositories, and the HTTP NLP client.
+- `domain` for pure domain models and invariants
+- `application` for use cases, application services, and ports
+- `adapter` for HTTP, in-memory persistence, gateways, and ONNX runtime integration
 
 ## Chat API
 
-`POST /api/v1/chat/messages`
+`POST /api/v1/conversation/send_message`
 
 Request:
 
 ```json
 {
   "message": "I want to book a table",
-  "sessionId": null
+  "session_id": null
 }
 ```
 
@@ -51,64 +49,46 @@ Response:
 
 ```json
 {
-  "sessionId": "generated-session-id",
-  "reply": "What name should I use for the reservation?",
-  "intent": "reservation_create",
-  "conversationAct": null,
-  "state": "WORKFLOW",
-  "slots": {},
-  "missingSlots": ["name", "date", "time", "people"],
-  "completed": false
+  "session_id": "generated-session-id",
+  "reply": "Not implemented yet",
+  "detected_intent": "opening_hours"
 }
 ```
 
-When `sessionId` is omitted, the backend creates a new session. Sessions use a sliding in-memory TTL of about 30 minutes.
+When `session_id` is omitted, the backend creates a new session. Sessions use a sliding in-memory lifecycle for v1.
 
 ## Running Locally
 
-Start the Kotlin backend:
+Export the ONNX artifact directory first:
 
 ```powershell
-cd backend/chatbot
-.\gradlew.bat run
+$env:COREBOT_NLU_ONNX_DIR = "C:\path\to\model_training\outputs\restaurant_xlmr\onnx"
+```
+
+Start the Rust backend:
+
+```powershell
+cd corebot-backend
+cargo run
 ```
 
 The backend defaults to:
 
-- Backend URL: `http://localhost:8080`
-- NLP API URL: `http://localhost:8000`
-
-The backend has deterministic local fallback behavior when the NLP API is unavailable, but the intended full flow is to run both services.
-
-## Terminal Chat
-
-Start the backend in one terminal:
-
-```powershell
-cd backend/chatbot
-.\gradlew.bat run
-```
-
-Start the terminal chat client in another terminal:
-
-```powershell
-cd backend/chatbot
-.\gradlew.bat chatCli
-```
-
-The CLI sends each message to `POST /api/v1/chat/messages`, stores the returned `sessionId`, and prints the bot reply with intent, conversation act, and state metadata. Use `/reset` to start a new session and `/exit` to quit.
-
-To target another backend URL:
-
-```powershell
-.\gradlew.bat chatCli -PchatbotApiUrl=http://localhost:8080/api/v1/chat/messages
-```
+- Backend URL: `http://localhost:3000`
+- Chat endpoint: `http://localhost:3000/api/v1/conversation/send_message`
 
 ## Testing
 
 Run backend tests:
 
 ```powershell
-cd backend/chatbot
-.\gradlew.bat test
+cd corebot-backend
+cargo test
+```
+
+Run model training tests:
+
+```powershell
+cd model_training
+python -m pytest tests
 ```
