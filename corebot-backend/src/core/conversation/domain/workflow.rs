@@ -102,11 +102,17 @@ mod tests {
     use crate::core::conversation::domain::intent::build_restaurant_catalog;
 
     fn book_workflow() -> Workflow {
-        Workflow::from_catalog(IntentId::new("book"), &build_restaurant_catalog())
+        Workflow::from_catalog(
+            IntentId::new("reservation_create"),
+            &build_restaurant_catalog(),
+        )
     }
 
     fn cancel_workflow() -> Workflow {
-        Workflow::from_catalog(IntentId::new("cancel"), &build_restaurant_catalog())
+        Workflow::from_catalog(
+            IntentId::new("reservation_cancel"),
+            &build_restaurant_catalog(),
+        )
     }
 
     #[test]
@@ -118,10 +124,7 @@ mod tests {
     #[test]
     fn cancel_goes_straight_to_confirmation() {
         let wf = cancel_workflow();
-        assert!(matches!(
-            wf.next_required_slot(),
-            Some(NextSlot::Confirmation)
-        ));
+        assert!(matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == "reference"));
     }
 
     #[test]

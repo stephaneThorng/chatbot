@@ -4,10 +4,13 @@ use axum_test::TestServer;
 use serde_json::json;
 
 use corebot_backend::core::conversation::adapter::inbound::web::routes::conversation_routes_with_use_case;
+use corebot_backend::core::conversation::adapter::outbound::in_memory_conversation_repository::InMemoryConversationRepository;
 use corebot_backend::core::conversation::adapter::outbound::restaurant_domain_gateway::RestaurantDomainGateway;
 use corebot_backend::core::conversation::application::conversation_usecase::HandleConversationUseCase;
 use corebot_backend::core::conversation::application::port::inbound::conversation_trait::HandleConversationPort;
+use corebot_backend::core::conversation::application::port::outbound::conversation_repository::ConversationRepositoryPort;
 use corebot_backend::core::conversation::application::port::outbound::nlp_analyzer_trait::NlpEngineGatewayPort;
+use corebot_backend::core::conversation::domain::domain_type::DomainType;
 use corebot_backend::core::nlu_engine::domain::analysis::{NluAnalysis, NluIntent};
 use corebot_backend::core::restaurant::application::port::inbound::restaurant_trait::RestaurantPort;
 
@@ -42,14 +45,20 @@ impl NlpEngineGatewayPort for StubNlpAnalyzer {
 fn make_server(intent_name: &'static str) -> TestServer {
     let gateway = Arc::new(RestaurantDomainGateway::new(Arc::new(StubRestaurantPort)));
     let analyzer = Arc::new(StubNlpAnalyzer { intent_name });
+    let repository: Arc<dyn ConversationRepositoryPort> = Arc::new(InMemoryConversationRepository::new());
     let use_case: Arc<dyn HandleConversationPort + Send + Sync> =
-        Arc::new(HandleConversationUseCase::new(gateway, analyzer));
+        Arc::new(HandleConversationUseCase::new(
+            DomainType::Restaurant,
+            gateway,
+            analyzer,
+            repository,
+        ));
     TestServer::new(conversation_routes_with_use_case(use_case))
 }
 
 #[tokio::test]
 async fn post_send_message_returns_200_with_session_id() {
-    let server = make_server("opening_hours");
+    let server = make_server("ask_opening_hours");
 
     let response = server
         .post("/api/v1/conversation/send_message")
@@ -60,22 +69,21 @@ async fn post_send_message_returns_200_with_session_id() {
     let body = response.json::<serde_json::Value>();
     assert!(body["session_id"].as_str().is_some_and(|s| !s.is_empty()));
     assert_eq!(body["reply"], "Not implemented yet");
-    assert_eq!(body["detected_intent"], "opening_hours");
 }
 
 #[tokio::test]
 async fn post_send_message_reuses_provided_session_id() {
     let server = make_server("greeting");
+    let session_id = uuid::Uuid::new_v4().to_string();
 
     let response = server
         .post("/api/v1/conversation/send_message")
-        .json(&json!({ "message": "hello", "session_id": "my-session-42" }))
+        .json(&json!({ "message": "hello", "session_id": session_id }))
         .await;
 
     response.assert_status_ok();
     let body = response.json::<serde_json::Value>();
-    assert_eq!(body["session_id"], "my-session-42");
-    assert_eq!(body["detected_intent"], "greeting");
+    assert_eq!(body["session_id"], session_id);
 }
 
 #[tokio::test]

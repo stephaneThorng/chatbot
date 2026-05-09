@@ -27,6 +27,14 @@ def test_generator_rows_cover_languages_and_validate() -> None:
     validate_examples(examples, config)
 
     assert {row["lang"] for row in rows} == {"en", "id"}
-    assert any(row.get("task") == "WF_BOOK" and row["intent"] == "provide_info" for row in rows)
-    assert any(row.get("task") == "WF_CANCEL" and row["intent"] == "provide_info" for row in rows)
+    assert any(
+        row.get("task") == "WF_RESERVATION_CREATE" and row["intent"] == "reservation_create"
+        for row in rows
+    )
+    assert any(
+        row.get("task") == "WF_RESERVATION_CANCEL" and row["intent"] == "reservation_cancel"
+        for row in rows
+    )
+    assert any(row.get("task") == "WF_CHOICE" and row["intent"] == "affirmative" for row in rows)
+    assert any(row["intent"] == "ask_price" for row in rows)
     assert {row["domain"] for row in rows} == {"restaurant"}

@@ -372,13 +372,13 @@ mod tests {
     #[test]
     fn decode_entities_ignores_context_tags() {
         let tokens = vec![
-            "[TASK=WF_BOOK]".to_string(),
+            "[TASK=WF_RESERVATION_CREATE]".to_string(),
             "[LANG=id]".to_string(),
             "[DOMAIN=restaurant]".to_string(),
             "Agus".to_string(),
             "Wijaya".to_string(),
         ];
-        let offsets = vec![(0, 14), (15, 24), (25, 44), (45, 49), (50, 56)];
+        let offsets = vec![(0, 28), (29, 38), (39, 58), (59, 63), (64, 70)];
         let label_maps = LabelMaps {
             intent_label2id: Default::default(),
             intent_id2label: Default::default(),
@@ -397,7 +397,7 @@ mod tests {
 
         let entities = decode_entities(
             "Agus Wijaya",
-            45,
+            59,
             &tokens,
             &offsets,
             &ner_logits,

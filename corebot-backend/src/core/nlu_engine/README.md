@@ -37,7 +37,7 @@ exactly.
 With a workflow task:
 
 ```text
-[TASK=WF_BOOK] [LANG=id] [DOMAIN=restaurant] empat orang besok 20.30
+[TASK=WF_RESERVATION_CREATE] [LANG=id] [DOMAIN=restaurant] empat orang besok 20.30
 ```
 
 Without a workflow task:

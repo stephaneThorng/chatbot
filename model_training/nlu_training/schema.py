@@ -75,6 +75,8 @@ def validate_examples(examples: list[TrainingExample], config: dict[str, Any]) -
     languages = set(config["tags"]["languages"])
     domains = set(config["tags"]["domains"])
     tasks = set(config["tags"]["tasks"])
+    workflow_intents = {"reservation_create", "reservation_cancel"}
+    workflow_choice_intents = {"affirmative", "negative", "unknown"}
 
     for index, example in enumerate(examples, start=1):
         prefix = f"row {index}"
@@ -88,10 +90,32 @@ def validate_examples(examples: list[TrainingExample], config: dict[str, Any]) -
             raise DatasetValidationError(f"{prefix}: unsupported intent {example.intent!r}")
         if example.task is not None and example.task not in tasks:
             raise DatasetValidationError(f"{prefix}: unsupported task {example.task!r}")
-        if example.intent == "provide_info" and example.task is None:
-            raise DatasetValidationError(f"{prefix}: provide_info requires a workflow task")
-        if example.intent != "provide_info" and example.task is not None and not example.entities:
-            raise DatasetValidationError(f"{prefix}: workflow task rows should carry slot entities or provide_info")
+        if example.task == "WF_RESERVATION_CREATE" and example.intent not in {
+            "reservation_create",
+            "cancel",
+            "unknown",
+        }:
+            raise DatasetValidationError(
+                f"{prefix}: WF_RESERVATION_CREATE only supports reservation_create, cancel, or unknown"
+            )
+        if example.task == "WF_RESERVATION_CANCEL" and example.intent not in {
+            "reservation_cancel",
+            "cancel",
+            "unknown",
+        }:
+            raise DatasetValidationError(
+                f"{prefix}: WF_RESERVATION_CANCEL only supports reservation_cancel, cancel, or unknown"
+            )
+        if example.task == "WF_CHOICE" and example.intent not in workflow_choice_intents:
+            raise DatasetValidationError(
+                f"{prefix}: WF_CHOICE only supports affirmative, negative, or unknown"
+            )
+        if example.task is None and example.intent == "cancel":
+            raise DatasetValidationError(f"{prefix}: cancel requires an active workflow task")
+        if example.intent in workflow_intents and example.task is not None and not example.entities:
+            raise DatasetValidationError(
+                f"{prefix}: workflow slot-collection rows must carry entities"
+            )
 
         previous_end = -1
         for entity in sorted(example.entities, key=lambda value: (value.start, value.end)):

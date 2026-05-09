@@ -13,6 +13,13 @@ ndarray = "0.17.2"
 ort = { version = "2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "download-binaries", "copy-dylibs", "tls-native", "api-24"] }
 thiserror = "2.0.12"
 tokenizers = { version = "0.22.1", default-features = false, features = ["fancy-regex"] }
+langdetect-rs = "0.2.3"
+rust-i18n = "4.0.0"
+
+[package.metadata.i18n]
+available-locales = ["en", "id"]
+default-locale = "en"
+load-path = "locales"
 
 [dev-dependencies]
 axum-test = "20.0.0"

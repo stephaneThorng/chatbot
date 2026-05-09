@@ -25,50 +25,59 @@ tags:
     - restaurant
     - hotel
   tasks:
-    - WF_BOOK
-    - WF_CANCEL
+    - WF_RESERVATION_CREATE
+    - WF_RESERVATION_CANCEL
+    - WF_CHOICE
 
 intents:
   labels:
-    - book
+    - reservation_create
+    - reservation_cancel
     - cancel
-    - reservation_status
-    - ask_menu
-    - ask_hours
+    - check_reservation
+    - ask_opening_hours
+    - ask_menu_general
+    - ask_menu_dietary
+    - ask_menu_item_details
     - ask_location
     - ask_contact
+    - ask_payment_methods
     - ask_price
-    - ask_availability
-    - ask_payment
-    - help
-    - complain
-    - out_of_scope
+    - ask_takeaway_delivery
+    - ask_event
+    - ask_facilities
+    - ask_accessibility
+    - ask_entertainment
     - greeting
     - thanks
     - goodbye
     - affirmative
     - negative
-    - provide_info
+    - unknown
   class_weights:
-    book: 1.5
-    cancel: 1.5
-    reservation_status: 1.0
-    ask_menu: 1.0
-    ask_hours: 1.0
+    reservation_create: 1.5
+    reservation_cancel: 1.5
+    cancel: 1.2
+    check_reservation: 1.0
+    ask_opening_hours: 1.0
+    ask_menu_general: 1.0
+    ask_menu_dietary: 1.0
+    ask_menu_item_details: 1.0
     ask_location: 1.0
     ask_contact: 1.0
+    ask_payment_methods: 1.0
     ask_price: 1.0
-    ask_availability: 1.0
-    ask_payment: 1.0
-    help: 1.0
-    complain: 1.0
-    out_of_scope: 1.0
+    ask_takeaway_delivery: 1.0
+    ask_event: 1.0
+    ask_facilities: 1.0
+    ask_accessibility: 1.0
+    ask_entertainment: 1.0
     greeting: 0.5
     thanks: 0.5
     goodbye: 0.5
     affirmative: 2.0
     negative: 2.0
-    provide_info: 1.2
+    unknown: 1.0
 
 entities:
   labels:
@@ -81,3 +90,8 @@ entities:
     - location
     - phone
     - email
+    - dietary_requirement
+    - allergen
+    - facility
+    - payment_method
+    - reservation_reference

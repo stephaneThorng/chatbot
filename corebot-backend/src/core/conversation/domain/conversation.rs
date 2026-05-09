@@ -16,6 +16,7 @@ use super::workflow::Workflow;
 pub struct Conversation {
     pub id: ConversationId,
     pub domain: DomainType,
+    pub lang: String,
     pub state: ConversationState,
 }
 
@@ -40,6 +41,7 @@ impl Conversation {
         Self {
             id: ConversationId::new(),
             domain,
+            lang: "en".to_string(),
             state: ConversationState::Idle,
         }
     }
@@ -48,6 +50,7 @@ impl Conversation {
         Self {
             id,
             domain,
+            lang: "en".to_string(),
             state: ConversationState::Idle,
         }
     }
@@ -78,6 +81,10 @@ impl Conversation {
     pub fn cancel_workflow(&mut self) -> TransitionResult {
         self.state = ConversationState::Idle;
         TransitionResult::WorkflowCancelled
+    }
+
+    pub fn complete_workflow(&mut self) {
+        self.state = ConversationState::Idle;
     }
 
     pub fn active_workflow(&self) -> Option<&Workflow> {
@@ -122,7 +129,7 @@ mod tests {
     #[test]
     fn start_book_workflow_from_idle() {
         let mut conv = Conversation::new(DomainType::Restaurant);
-        let result = conv.start_workflow(&IntentId::new("book"), &catalog());
+        let result = conv.start_workflow(&IntentId::new("reservation_create"), &catalog());
         assert_eq!(result, TransitionResult::WorkflowStarted);
         assert!(conv.has_active_workflow());
     }
@@ -131,16 +138,16 @@ mod tests {
     fn cannot_start_workflow_during_workflow() {
         let c = catalog();
         let mut conv = Conversation::new(DomainType::Restaurant);
-        conv.start_workflow(&IntentId::new("book"), &c);
+        conv.start_workflow(&IntentId::new("reservation_create"), &c);
 
-        let result = conv.start_workflow(&IntentId::new("cancel"), &c);
+        let result = conv.start_workflow(&IntentId::new("reservation_cancel"), &c);
         assert_eq!(result, TransitionResult::BlockedByActiveWorkflow);
     }
 
     #[test]
     fn cancel_returns_to_idle() {
         let mut conv = Conversation::new(DomainType::Restaurant);
-        conv.start_workflow(&IntentId::new("book"), &catalog());
+        conv.start_workflow(&IntentId::new("reservation_create"), &catalog());
         conv.cancel_workflow();
         assert!(conv.is_idle());
     }
@@ -149,17 +156,17 @@ mod tests {
     fn cancel_then_start_new_workflow() {
         let c = catalog();
         let mut conv = Conversation::new(DomainType::Restaurant);
-        conv.start_workflow(&IntentId::new("book"), &c);
+        conv.start_workflow(&IntentId::new("reservation_create"), &c);
         conv.cancel_workflow();
 
-        let result = conv.start_workflow(&IntentId::new("cancel"), &c);
+        let result = conv.start_workflow(&IntentId::new("reservation_cancel"), &c);
         assert_eq!(result, TransitionResult::WorkflowStarted);
     }
 
     #[test]
     fn informational_intent_cannot_start_workflow() {
         let mut conv = Conversation::new(DomainType::Restaurant);
-        let result = conv.start_workflow(&IntentId::new("menu"), &catalog());
+        let result = conv.start_workflow(&IntentId::new("ask_menu_general"), &catalog());
         assert_eq!(result, TransitionResult::NotAWorkflowIntent);
         assert!(conv.is_idle());
     }

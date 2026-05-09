@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import random
-from pathlib import Path
 from typing import Any
 
 from nlu_training.config import load_config
-from nlu_training.schema import TrainingExample, load_jsonl, validate_examples, write_jsonl
+from nlu_training.schema import load_jsonl, validate_examples, write_jsonl
 
 
 SEED = 42
@@ -16,24 +15,34 @@ EN_VALUES = {
     "person": ["Jean Martin", "Maya Chen", "Alex Carter", "Priya Singh", "Noah Davis"],
     "date": ["today", "tomorrow", "Friday", "June 12", "next Monday"],
     "time": ["7pm", "8:30pm", "19:00", "noon", "6 pm"],
-    "people_count": ["2", "4 people", "six people", "3", "5 people"],
+    "people_count": ["2 people", "4 people", "6 people", "3 people", "5 people"],
     "menu_item": ["pizza", "salad", "chocolate cake", "fried rice", "vegetarian pasta"],
-    "price_item": ["set menu", "wine list", "dessert", "lunch special", "kids menu"],
+    "price_item": ["set menu", "wine list", "dessert menu", "lunch special", "kids menu"],
     "location": ["downtown", "near the station", "main branch", "terrace", "private room"],
-    "phone": ["+33123456789", "01 23 45 67 89"],
-    "email": ["events@example.com", "maya@example.com"],
+    "phone": ["+33123456789", "01 23 45 67 89", "+33111222333"],
+    "email": ["events@example.com", "maya@example.com", "hello@example.com"],
+    "dietary_requirement": ["vegan", "halal", "gluten-free"],
+    "allergen": ["tomatoes", "gluten", "eggs"],
+    "facility": ["baby seat", "parking", "smoking area"],
+    "payment_method": ["credit card", "cash", "Apple Pay"],
+    "reservation_reference": ["ABC123", "ZX90", "REF202"],
 }
 
 ID_VALUES = {
     "person": ["Budi Santoso", "Siti Aminah", "Maya Chen", "Agus Wijaya", "Dewi Lestari"],
     "date": ["hari ini", "besok", "Jumat", "12 Juni", "Senin depan"],
     "time": ["jam 7 malam", "20.30", "pukul 19:00", "siang", "jam 6 sore"],
-    "people_count": ["2 orang", "empat orang", "6 orang", "3 orang", "5 orang"],
+    "people_count": ["2 orang", "4 orang", "6 orang", "3 orang", "5 orang"],
     "menu_item": ["nasi goreng", "sate ayam", "salad", "pizza", "kue cokelat"],
-    "price_item": ["menu paket", "daftar wine", "hidangan penutup", "promo makan siang", "menu anak"],
+    "price_item": ["menu paket", "daftar wine", "menu pencuci mulut", "promo makan siang", "menu anak"],
     "location": ["pusat kota", "dekat stasiun", "cabang utama", "teras", "ruang privat"],
-    "phone": ["+628123456789", "021 555 123"],
-    "email": ["acara@example.com", "siti@example.com"],
+    "phone": ["+628123456789", "021 555 123", "+628111222333"],
+    "email": ["acara@example.com", "siti@example.com", "halo@example.com"],
+    "dietary_requirement": ["vegan", "halal", "bebas gluten"],
+    "allergen": ["tomat", "gluten", "telur"],
+    "facility": ["kursi bayi", "parkiran", "area merokok"],
+    "payment_method": ["kartu kredit", "tunai", "QRIS"],
+    "reservation_reference": ["ABC123", "ZX90", "REF202"],
 }
 
 
@@ -71,201 +80,281 @@ def row(
     return payload
 
 
+def rows_from_templates(
+    templates: list[tuple[str, str, list[tuple[str, str]], str | None]],
+    lang: str,
+) -> list[dict[str, Any]]:
+    return [row(text, intent, lang, entities, task) for intent, text, entities, task in templates]
+
+
 def build_english_rows() -> list[dict[str, Any]]:
     values = EN_VALUES
     rows: list[dict[str, Any]] = []
-    for person, date, time, people in zip(values["person"], values["date"], values["time"], values["people_count"]):
+
+    for person, date, time, people, reference in zip(
+        values["person"],
+        values["date"],
+        values["time"],
+        values["people_count"],
+        values["reservation_reference"],
+    ):
         rows.extend(
             [
                 row(
-                    f"I want to book a table for {people} {date} at {time} under {person}",
-                    "book",
+                    f"I want to book a table for {people} on {date} at {time} under {person}",
+                    "reservation_create",
                     "en",
                     [("people_count", people), ("date", date), ("time", time), ("person", person)],
                 ),
                 row(
-                    f"{person} for {people} {date} at {time}",
-                    "provide_info",
+                    f"{person}",
+                    "reservation_create",
                     "en",
-                    [("person", person), ("people_count", people), ("date", date), ("time", time)],
-                    task="WF_BOOK",
+                    [("person", person)],
+                    task="WF_RESERVATION_CREATE",
                 ),
                 row(
-                    f"{people} {date} {time}",
-                    "provide_info",
+                    f"for {people} on {date} at {time}",
+                    "reservation_create",
                     "en",
                     [("people_count", people), ("date", date), ("time", time)],
-                    task="WF_BOOK",
+                    task="WF_RESERVATION_CREATE",
                 ),
                 row(
-                    f"Cancel the booking for {person} on {date} at {time}",
-                    "cancel",
+                    f"I want to cancel my reservation under {person} on {date} at {time}",
+                    "reservation_cancel",
                     "en",
                     [("person", person), ("date", date), ("time", time)],
                 ),
                 row(
-                    f"It is under {person} for {date}",
-                    "provide_info",
+                    f"reference {reference}",
+                    "reservation_cancel",
+                    "en",
+                    [("reservation_reference", reference)],
+                    task="WF_RESERVATION_CANCEL",
+                ),
+                row(
+                    f"It is under {person} on {date}",
+                    "reservation_cancel",
                     "en",
                     [("person", person), ("date", date)],
-                    task="WF_CANCEL",
+                    task="WF_RESERVATION_CANCEL",
                 ),
-                row(f"Do I have a reservation for {date}?", "reservation_status", "en", [("date", date)]),
+                row(
+                    "Please cancel this booking flow",
+                    "cancel",
+                    "en",
+                    task="WF_RESERVATION_CREATE",
+                ),
+                row(
+                    "Stop this cancellation flow",
+                    "cancel",
+                    "en",
+                    task="WF_RESERVATION_CANCEL",
+                ),
+                row(f"Do I have a reservation with reference {reference}?", "check_reservation", "en", [("reservation_reference", reference)]),
             ]
         )
 
-    intent_templates = [
-        ("ask_menu", "Can I see the menu?", []),
-        ("ask_menu", f"Do you serve {values['menu_item'][0]}?", [("menu_item", values["menu_item"][0])]),
-        ("ask_hours", "What time are you open?", []),
-        ("ask_location", f"Where is the {values['location'][2]}?", [("location", values["location"][2])]),
-        ("ask_contact", "What phone number should I call?", []),
-        ("ask_contact", f"Can you contact me at {values['phone'][0]}?", [("phone", values["phone"][0])]),
-        ("ask_price", f"How much is the {values['price_item'][0]}?", [("price_item", values["price_item"][0])]),
-        ("ask_availability", f"Is the {values['location'][3]} available tomorrow?", [("location", values["location"][3]), ("date", "tomorrow")]),
-        ("ask_payment", "Can I pay by credit card?", []),
-        ("help", "What can you help me with?", []),
-        ("complain", "My table was not ready and I am unhappy", []),
-        ("out_of_scope", "Can you book me a flight to Bali?", []),
-        ("greeting", "Hello", []),
-        ("thanks", "Thank you", []),
-        ("goodbye", "Goodbye", []),
-        ("affirmative", "Yes, that is correct", []),
-        ("negative", "No, not now", []),
+    templates = [
+        ("ask_opening_hours", "What time are you open?", [], None),
+        ("ask_opening_hours", "Are you open tomorrow at 8?", [("date", "tomorrow"), ("time", "8")], None),
+        ("ask_opening_hours", "What time do you close on Friday?", [("date", "Friday")], None),
+        ("ask_menu_general", "Can I see the menu?", [], None),
+        ("ask_menu_general", "Can I have the dessert menu?", [("price_item", values["price_item"][2])], None),
+        ("ask_menu_general", "Please send me your drink list", [], None),
+        ("ask_menu_dietary", f"Do you have {values['dietary_requirement'][0]} dishes?", [("dietary_requirement", values["dietary_requirement"][0])], None),
+        ("ask_menu_dietary", f"Which dishes are {values['dietary_requirement'][2]}?", [("dietary_requirement", values["dietary_requirement"][2])], None),
+        ("ask_menu_dietary", f"Do you have {values['dietary_requirement'][1]} options for kids?", [("dietary_requirement", values["dietary_requirement"][1])], None),
+        ("ask_menu_item_details", f"Which dish contains {values['allergen'][0]}?", [("allergen", values["allergen"][0])], None),
+        ("ask_menu_item_details", f"Does the {values['menu_item'][0]} contain {values['allergen'][1]}?", [("menu_item", values["menu_item"][0]), ("allergen", values["allergen"][1])], None),
+        ("ask_menu_item_details", f"What is in the {values['menu_item'][2]}?", [("menu_item", values["menu_item"][2])], None),
+        ("ask_location", "Can you share your address?", [], None),
+        ("ask_location", f"Are you near {values['location'][1]}?", [("location", values["location"][1])], None),
+        ("ask_location", f"Is your restaurant close to {values['location'][0]}?", [("location", values["location"][0])], None),
+        ("ask_contact", "Could you provide your telephone number?", [], None),
+        ("ask_contact", f"Can you contact me at {values['phone'][0]}?", [("phone", values["phone"][0])], None),
+        ("ask_contact", f"My email is {values['email'][0]}", [("email", values["email"][0])], None),
+        ("ask_payment_methods", f"Can I pay by {values['payment_method'][0]}?", [("payment_method", values["payment_method"][0])], None),
+        ("ask_payment_methods", f"Do you accept {values['payment_method'][1]}?", [("payment_method", values["payment_method"][1])], None),
+        ("ask_payment_methods", "Can I split the bill?", [], None),
+        ("ask_price", f"How much is the {values['price_item'][0]}?", [("price_item", values["price_item"][0])], None),
+        ("ask_price", f"What is the price of the {values['price_item'][3]}?", [("price_item", values["price_item"][3])], None),
+        ("ask_price", "Is there a service charge?", [], None),
+        ("ask_takeaway_delivery", "I would like a delivery order.", [], None),
+        ("ask_takeaway_delivery", "Do you offer takeout?", [], None),
+        ("ask_takeaway_delivery", "Can I get this meal delivered?", [], None),
+        ("ask_event", "Do you host birthday parties?", [], None),
+        ("ask_event", "Can I organize a business event there?", [], None),
+        ("ask_event", f"Do you have a {values['location'][4]} for an event?", [("location", values["location"][4])], None),
+        ("ask_facilities", f"Do you have a {values['facility'][0]}?", [("facility", values["facility"][0])], None),
+        ("ask_facilities", f"Is there {values['facility'][1]} near your restaurant?", [("facility", values["facility"][1])], None),
+        ("ask_facilities", f"Do you have a {values['facility'][2]}?", [("facility", values["facility"][2])], None),
+        ("ask_accessibility", "Is the restaurant wheelchair accessible?", [], None),
+        ("ask_accessibility", "Do you have disabled-friendly access?", [], None),
+        ("ask_accessibility", "Is there easy access for a stroller and wheelchair?", [], None),
+        ("ask_entertainment", "Do you have live music?", [], None),
+        ("ask_entertainment", "Is there karaoke tonight?", [], None),
+        ("ask_entertainment", "Do you host concerts on weekends?", [], None),
+        ("greeting", "Hello", [], None),
+        ("greeting", "Hi there", [], None),
+        ("greeting", "Good evening", [], None),
+        ("thanks", "Thank you", [], None),
+        ("thanks", "Thanks a lot", [], None),
+        ("thanks", "I appreciate it", [], None),
+        ("goodbye", "Goodbye", [], None),
+        ("goodbye", "Bye", [], None),
+        ("goodbye", "See you later", [], None),
+        ("affirmative", "Yes", [], "WF_CHOICE"),
+        ("affirmative", "Yes please", [], "WF_CHOICE"),
+        ("affirmative", "That is correct", [], "WF_CHOICE"),
+        ("negative", "No", [], "WF_CHOICE"),
+        ("negative", "No thanks", [], "WF_CHOICE"),
+        ("negative", "That is not right", [], "WF_CHOICE"),
+        ("unknown", "Can you book me a flight to Bali?", [], None),
+        ("unknown", "Maybe purple clouds can reserve me a seat", [], None),
+        ("unknown", "Maybe later", [], "WF_CHOICE"),
+        ("cancel", "Finally, I want to cancel this reservation", [], "WF_RESERVATION_CREATE"),
     ]
-    rows.extend(row(text, intent, "en", entities) for intent, text, entities in intent_templates)
-    extra_templates = [
-        ("ask_menu", "What dishes are on the menu?", []),
-        ("ask_menu", f"Is {values['menu_item'][2]} available?", [("menu_item", values["menu_item"][2])]),
-        ("ask_hours", "Are you open tonight?", []),
-        ("ask_hours", "What are your opening hours on Friday?", [("date", "Friday")]),
-        ("ask_location", "What is your address?", []),
-        ("ask_location", f"Can I sit in the {values['location'][3]}?", [("location", values["location"][3])]),
-        ("ask_contact", f"My email is {values['email'][0]}", [("email", values["email"][0])]),
-        ("ask_contact", "How can I reach the restaurant?", []),
-        ("ask_price", f"What is the price of {values['price_item'][3]}?", [("price_item", values["price_item"][3])]),
-        ("ask_price", "Is there a service charge?", []),
-        ("ask_availability", f"Do you have room for {values['people_count'][1]} at {values['time'][1]}?", [("people_count", values["people_count"][1]), ("time", values["time"][1])]),
-        ("ask_availability", f"Any tables free {values['date'][2]}?", [("date", values["date"][2])]),
-        ("ask_payment", "Do you accept cash?", []),
-        ("ask_payment", "Can I split the bill?", []),
-        ("help", "I need help with a reservation", []),
-        ("help", "What can this chatbot do?", []),
-        ("complain", "I want to complain about slow service", []),
-        ("complain", "The food was cold", []),
-        ("out_of_scope", "What is the weather tomorrow?", [("date", "tomorrow")]),
-        ("out_of_scope", "Can you order a taxi?", []),
-        ("greeting", "Hi there", []),
-        ("greeting", "Good evening", []),
-        ("thanks", "Thanks a lot", []),
-        ("thanks", "I appreciate it", []),
-        ("goodbye", "Bye", []),
-        ("goodbye", "See you later", []),
-        ("affirmative", "Yes please", []),
-        ("affirmative", "That works", []),
-        ("negative", "No thanks", []),
-        ("negative", "That is not right", []),
-    ]
-    rows.extend(row(text, intent, "en", entities) for intent, text, entities in extra_templates)
+    rows.extend(rows_from_templates(templates, "en"))
     return rows
 
 
 def build_indonesian_rows() -> list[dict[str, Any]]:
     values = ID_VALUES
     rows: list[dict[str, Any]] = []
-    for person, date, time, people in zip(values["person"], values["date"], values["time"], values["people_count"]):
+
+    for person, date, time, people, reference in zip(
+        values["person"],
+        values["date"],
+        values["time"],
+        values["people_count"],
+        values["reservation_reference"],
+    ):
         rows.extend(
             [
                 row(
-                    f"Saya mau pesan meja untuk {people} {date} pada {time} atas nama {person}",
-                    "book",
+                    f"Saya mau pesan meja untuk {people} pada {date} jam {time} atas nama {person}",
+                    "reservation_create",
                     "id",
                     [("people_count", people), ("date", date), ("time", time), ("person", person)],
                 ),
                 row(
-                    f"{person} untuk {people} {date} pada {time}",
-                    "provide_info",
+                    f"{person}",
+                    "reservation_create",
                     "id",
-                    [("person", person), ("people_count", people), ("date", date), ("time", time)],
-                    task="WF_BOOK",
+                    [("person", person)],
+                    task="WF_RESERVATION_CREATE",
                 ),
                 row(
-                    f"{people} {date} {time}",
-                    "provide_info",
+                    f"untuk {people} pada {date} jam {time}",
+                    "reservation_create",
                     "id",
                     [("people_count", people), ("date", date), ("time", time)],
-                    task="WF_BOOK",
+                    task="WF_RESERVATION_CREATE",
                 ),
                 row(
-                    f"Batalkan reservasi atas nama {person} pada {date} jam {time}",
-                    "cancel",
+                    f"Saya mau membatalkan reservasi atas nama {person} pada {date} jam {time}",
+                    "reservation_cancel",
                     "id",
                     [("person", person), ("date", date), ("time", time)],
                 ),
                 row(
-                    f"Atas nama {person} untuk {date}",
-                    "provide_info",
+                    f"referensi {reference}",
+                    "reservation_cancel",
+                    "id",
+                    [("reservation_reference", reference)],
+                    task="WF_RESERVATION_CANCEL",
+                ),
+                row(
+                    f"atas nama {person} pada {date}",
+                    "reservation_cancel",
                     "id",
                     [("person", person), ("date", date)],
-                    task="WF_CANCEL",
+                    task="WF_RESERVATION_CANCEL",
                 ),
-                row(f"Apakah saya punya reservasi untuk {date}?", "reservation_status", "id", [("date", date)]),
+                row(
+                    "Tolong batalkan alur pemesanan ini",
+                    "cancel",
+                    "id",
+                    task="WF_RESERVATION_CREATE",
+                ),
+                row(
+                    "Hentikan alur pembatalan ini",
+                    "cancel",
+                    "id",
+                    task="WF_RESERVATION_CANCEL",
+                ),
+                row(
+                    f"Apakah saya punya reservasi dengan referensi {reference}?",
+                    "check_reservation",
+                    "id",
+                    [("reservation_reference", reference)],
+                ),
             ]
         )
 
-    intent_templates = [
-        ("ask_menu", "Boleh lihat menunya?", []),
-        ("ask_menu", f"Ada {values['menu_item'][0]}?", [("menu_item", values["menu_item"][0])]),
-        ("ask_hours", "Jam berapa buka?", []),
-        ("ask_location", f"Di mana {values['location'][2]}?", [("location", values["location"][2])]),
-        ("ask_contact", "Nomor teleponnya berapa?", []),
-        ("ask_contact", f"Bisa hubungi saya di {values['phone'][0]}?", [("phone", values["phone"][0])]),
-        ("ask_price", f"Berapa harga {values['price_item'][0]}?", [("price_item", values["price_item"][0])]),
-        ("ask_availability", f"Apakah {values['location'][3]} tersedia besok?", [("location", values["location"][3]), ("date", "besok")]),
-        ("ask_payment", "Bisa bayar dengan kartu kredit?", []),
-        ("help", "Kamu bisa bantu apa?", []),
-        ("complain", "Meja saya belum siap dan saya kecewa", []),
-        ("out_of_scope", "Tolong pesankan tiket pesawat ke Bali", []),
-        ("greeting", "Halo", []),
-        ("thanks", "Terima kasih", []),
-        ("goodbye", "Sampai jumpa", []),
-        ("affirmative", "Ya, benar", []),
-        ("negative", "Tidak, nanti saja", []),
+    templates = [
+        ("ask_opening_hours", "Jam berapa buka?", [], None),
+        ("ask_opening_hours", "Apakah buka besok jam 8?", [("date", "besok"), ("time", "8")], None),
+        ("ask_opening_hours", "Jam berapa tutup hari Jumat?", [("date", "Jumat")], None),
+        ("ask_menu_general", "Boleh lihat menunya?", [], None),
+        ("ask_menu_general", f"Boleh minta {values['price_item'][2]}?", [("price_item", values["price_item"][2])], None),
+        ("ask_menu_general", "Tolong kirim daftar minumannya", [], None),
+        ("ask_menu_dietary", f"Ada hidangan {values['dietary_requirement'][0]}?", [("dietary_requirement", values["dietary_requirement"][0])], None),
+        ("ask_menu_dietary", f"Menu mana yang {values['dietary_requirement'][2]}?", [("dietary_requirement", values["dietary_requirement"][2])], None),
+        ("ask_menu_dietary", f"Ada pilihan {values['dietary_requirement'][1]} untuk anak?", [("dietary_requirement", values["dietary_requirement"][1])], None),
+        ("ask_menu_item_details", f"Hidangan mana yang mengandung {values['allergen'][0]}?", [("allergen", values["allergen"][0])], None),
+        ("ask_menu_item_details", f"Apakah {values['menu_item'][3]} mengandung {values['allergen'][1]}?", [("menu_item", values["menu_item"][3]), ("allergen", values["allergen"][1])], None),
+        ("ask_menu_item_details", f"Apa isi {values['menu_item'][4]}?", [("menu_item", values["menu_item"][4])], None),
+        ("ask_location", "Bisa kirim alamatnya?", [], None),
+        ("ask_location", f"Apakah restoran dekat {values['location'][1]}?", [("location", values["location"][1])], None),
+        ("ask_location", f"Apakah lokasinya di {values['location'][0]}?", [("location", values["location"][0])], None),
+        ("ask_contact", "Boleh kasih nomor teleponnya?", [], None),
+        ("ask_contact", f"Bisa hubungi saya di {values['phone'][0]}?", [("phone", values["phone"][0])], None),
+        ("ask_contact", f"Email saya {values['email'][0]}", [("email", values["email"][0])], None),
+        ("ask_payment_methods", f"Bisa bayar pakai {values['payment_method'][0]}?", [("payment_method", values["payment_method"][0])], None),
+        ("ask_payment_methods", f"Apakah menerima {values['payment_method'][1]}?", [("payment_method", values["payment_method"][1])], None),
+        ("ask_payment_methods", "Bisa pisah tagihan?", [], None),
+        ("ask_price", f"Berapa harga {values['price_item'][0]}?", [("price_item", values["price_item"][0])], None),
+        ("ask_price", f"Berapa harga {values['price_item'][3]}?", [("price_item", values["price_item"][3])], None),
+        ("ask_price", "Ada biaya layanan?", [], None),
+        ("ask_takeaway_delivery", "Saya mau pesan delivery.", [], None),
+        ("ask_takeaway_delivery", "Apakah ada takeout?", [], None),
+        ("ask_takeaway_delivery", "Bisa dikirim ke rumah?", [], None),
+        ("ask_event", "Apakah bisa untuk pesta ulang tahun?", [], None),
+        ("ask_event", "Bisa buat acara kantor?", [], None),
+        ("ask_event", f"Ada {values['location'][4]} untuk acara?", [("location", values["location"][4])], None),
+        ("ask_facilities", f"Ada {values['facility'][0]}?", [("facility", values["facility"][0])], None),
+        ("ask_facilities", f"Ada {values['facility'][1]} dekat restoran?", [("facility", values["facility"][1])], None),
+        ("ask_facilities", f"Ada {values['facility'][2]}?", [("facility", values["facility"][2])], None),
+        ("ask_accessibility", "Apakah restoran ramah kursi roda?", [], None),
+        ("ask_accessibility", "Apakah aksesnya ramah disabilitas?", [], None),
+        ("ask_accessibility", "Apakah mudah diakses stroller dan kursi roda?", [], None),
+        ("ask_entertainment", "Ada live music?", [], None),
+        ("ask_entertainment", "Ada karaoke malam ini?", [], None),
+        ("ask_entertainment", "Ada konser saat akhir pekan?", [], None),
+        ("greeting", "Halo", [], None),
+        ("greeting", "Hai", [], None),
+        ("greeting", "Selamat malam", [], None),
+        ("thanks", "Terima kasih", [], None),
+        ("thanks", "Makasih banyak", [], None),
+        ("thanks", "Saya menghargainya", [], None),
+        ("goodbye", "Sampai jumpa", [], None),
+        ("goodbye", "Dadah", [], None),
+        ("goodbye", "Sampai nanti", [], None),
+        ("affirmative", "Ya", [], "WF_CHOICE"),
+        ("affirmative", "Ya silakan", [], "WF_CHOICE"),
+        ("affirmative", "Itu benar", [], "WF_CHOICE"),
+        ("negative", "Tidak", [], "WF_CHOICE"),
+        ("negative", "Tidak terima kasih", [], "WF_CHOICE"),
+        ("negative", "Itu tidak benar", [], "WF_CHOICE"),
+        ("unknown", "Bisa pesankan tiket pesawat ke Bali?", [], None),
+        ("unknown", "Mungkin awan ungu bisa pilihkan meja", [], None),
+        ("unknown", "Mungkin nanti", [], "WF_CHOICE"),
+        ("cancel", "Akhirnya saya mau membatalkan reservasi ini", [], "WF_RESERVATION_CREATE"),
     ]
-    rows.extend(row(text, intent, "id", entities) for intent, text, entities in intent_templates)
-    extra_templates = [
-        ("ask_menu", "Ada hidangan apa di menu?", []),
-        ("ask_menu", f"Apakah {values['menu_item'][2]} tersedia?", [("menu_item", values["menu_item"][2])]),
-        ("ask_hours", "Apakah buka malam ini?", []),
-        ("ask_hours", "Jam buka hari Jumat?", [("date", "Jumat")]),
-        ("ask_location", "Alamatnya di mana?", []),
-        ("ask_location", f"Bisa duduk di {values['location'][3]}?", [("location", values["location"][3])]),
-        ("ask_contact", f"Email saya {values['email'][0]}", [("email", values["email"][0])]),
-        ("ask_contact", "Bagaimana cara menghubungi restoran?", []),
-        ("ask_price", f"Berapa harga {values['price_item'][3]}?", [("price_item", values["price_item"][3])]),
-        ("ask_price", "Ada biaya layanan?", []),
-        ("ask_availability", f"Ada meja untuk {values['people_count'][1]} jam {values['time'][1]}?", [("people_count", values["people_count"][1]), ("time", values["time"][1])]),
-        ("ask_availability", f"Ada meja kosong {values['date'][2]}?", [("date", values["date"][2])]),
-        ("ask_payment", "Bisa bayar tunai?", []),
-        ("ask_payment", "Bisa pisah tagihan?", []),
-        ("help", "Saya butuh bantuan reservasi", []),
-        ("help", "Chatbot ini bisa apa?", []),
-        ("complain", "Saya ingin komplain tentang layanan lambat", []),
-        ("complain", "Makanannya dingin", []),
-        ("out_of_scope", "Bagaimana cuaca besok?", [("date", "besok")]),
-        ("out_of_scope", "Bisa pesankan taksi?", []),
-        ("greeting", "Hai", []),
-        ("greeting", "Selamat malam", []),
-        ("thanks", "Makasih banyak", []),
-        ("thanks", "Saya menghargainya", []),
-        ("goodbye", "Dadah", []),
-        ("goodbye", "Sampai nanti", []),
-        ("affirmative", "Ya silakan", []),
-        ("affirmative", "Itu cocok", []),
-        ("negative", "Tidak terima kasih", []),
-        ("negative", "Itu tidak benar", []),
-    ]
-    rows.extend(row(text, intent, "id", entities) for intent, text, entities in extra_templates)
+    rows.extend(rows_from_templates(templates, "id"))
     return rows
 
 
@@ -273,7 +362,7 @@ def split_rows(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[d
     rng = random.Random(SEED)
     grouped: dict[str, list[dict[str, Any]]] = {}
     for item in rows:
-        grouped.setdefault(f"{item['lang']}:{item['intent']}", []).append(item)
+        grouped.setdefault(f"{item['lang']}:{item['intent']}:{item.get('task', '-')}", []).append(item)
 
     train: list[dict[str, Any]] = []
     validation: list[dict[str, Any]] = []

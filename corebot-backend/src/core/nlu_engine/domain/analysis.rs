@@ -102,11 +102,15 @@ mod tests {
 
     #[test]
     fn tagged_input_includes_task_when_present() {
-        let context = InferenceContext::new("id", "restaurant", Some("WF_BOOK".to_string()));
+        let context = InferenceContext::new(
+            "id",
+            "restaurant",
+            Some("WF_RESERVATION_CREATE".to_string()),
+        );
         let tagged = TaggedInput::build("empat orang", &context);
         assert_eq!(
             tagged.text,
-            "[TASK=WF_BOOK] [LANG=id] [DOMAIN=restaurant] empat orang"
+            "[TASK=WF_RESERVATION_CREATE] [LANG=id] [DOMAIN=restaurant] empat orang"
         );
     }
 }

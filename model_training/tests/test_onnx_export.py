@@ -42,10 +42,10 @@ def test_contract_records_shared_preprocessing_rules(tmp_path) -> None:
         "tags": {
             "languages": ["en", "id"],
             "domains": ["restaurant", "hotel"],
-            "tasks": ["WF_BOOK", "WF_CANCEL"],
+            "tasks": ["WF_RESERVATION_CREATE", "WF_RESERVATION_CANCEL", "WF_CHOICE"],
         },
         "intents": {
-            "labels": ["book", "provide_info"],
+            "labels": ["reservation_create", "affirmative"],
         },
         "entities": {
             "labels": ["person", "date"],

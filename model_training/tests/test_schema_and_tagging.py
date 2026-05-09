@@ -7,14 +7,14 @@ from nlu_training.schema import DatasetValidationError, EntitySpan, TrainingExam
 from nlu_training.tagging import align_bio_labels, build_tagged_text
 
 
-def test_validate_rejects_provide_info_without_workflow_task() -> None:
+def test_validate_rejects_cancel_without_active_workflow() -> None:
     config = load_config("config.yaml")
     example = TrainingExample(
-        text="Jean",
+        text="Cancel this flow",
         lang="en",
         domain="restaurant",
-        intent="provide_info",
-        entities=(EntitySpan(0, 4, "person"),),
+        intent="cancel",
+        entities=(),
     )
 
     with pytest.raises(DatasetValidationError):
@@ -41,14 +41,14 @@ def test_tagged_text_shifts_entity_offsets_after_workflow_tags() -> None:
         text="Jean",
         lang="en",
         domain="restaurant",
-        intent="provide_info",
+        intent="reservation_create",
         entities=(EntitySpan(0, 4, "person"),),
-        task="WF_BOOK",
+        task="WF_RESERVATION_CREATE",
     )
 
     tagged = build_tagged_text(example)
 
-    assert tagged.text == "[TASK=WF_BOOK] [LANG=en] [DOMAIN=restaurant] Jean"
+    assert tagged.text == "[TASK=WF_RESERVATION_CREATE] [LANG=en] [DOMAIN=restaurant] Jean"
     assert tagged.entity_spans[0].start == tagged.text.index("Jean")
     assert tagged.entity_spans[0].end == tagged.text.index("Jean") + 4
 
@@ -61,18 +61,20 @@ def test_bio_alignment_keeps_custom_tags_outside_entities() -> None:
         text="Jean",
         lang="en",
         domain="restaurant",
-        intent="provide_info",
+        intent="reservation_create",
         entities=(EntitySpan(0, 4, "person"),),
-        task="WF_BOOK",
+        task="WF_RESERVATION_CREATE",
     )
     tagged = build_tagged_text(example)
     jean_start = tagged.text.index("Jean")
+    task_start = tagged.text.index("[TASK=WF_RESERVATION_CREATE]")
+    lang_start = tagged.text.index("[LANG=en]")
+    domain_start = tagged.text.index("[DOMAIN=restaurant]")
     offsets = [
         (0, 0),
-        (0, 5),
-        (5, 13),
-        (14, 23),
-        (24, 43),
+        (task_start, task_start + len("[TASK=WF_RESERVATION_CREATE]")),
+        (lang_start, lang_start + len("[LANG=en]")),
+        (domain_start, domain_start + len("[DOMAIN=restaurant]")),
         (jean_start, jean_start + 2),
         (jean_start + 2, jean_start + 4),
         (0, 0),
