@@ -1,5 +1,5 @@
-use super::intent::{IntentCatalog, IntentId, SlotDefinition};
-use super::slot::{SlotBag, SlotError, SlotType, SlotValue};
+use crate::core::conversation::domain::catalog::intent::{IntentCatalog, IntentId, SlotDefinition};
+use crate::core::conversation::domain::model::slot::{SlotBag, SlotError, SlotType, SlotValue};
 
 /// Confirmation slot - automatically appended to every workflow.
 const CONFIRMATION_SLOT: &str = "confirmation";
@@ -124,7 +124,9 @@ mod tests {
     #[test]
     fn cancel_goes_straight_to_confirmation() {
         let wf = cancel_workflow();
-        assert!(matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == "reference"));
+        assert!(
+            matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == "reference")
+        );
     }
 
     #[test]

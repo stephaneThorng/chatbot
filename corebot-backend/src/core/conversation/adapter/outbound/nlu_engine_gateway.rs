@@ -13,7 +13,9 @@ pub struct NluEngineGateway {
 impl NluEngineGateway {
     /// Creates the gateway with the target NLU input port implementation.
     pub fn new(analyzer: Arc<dyn AnalyzeTextPort>) -> Self {
-        Self { nlu_engine_analyzer: analyzer }
+        Self {
+            nlu_engine_analyzer: analyzer,
+        }
     }
 }
 

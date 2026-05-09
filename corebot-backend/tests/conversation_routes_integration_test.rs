@@ -9,6 +9,7 @@ use corebot_backend::core::conversation::adapter::outbound::restaurant_domain_ga
 use corebot_backend::core::conversation::application::conversation_usecase::HandleConversationUseCase;
 use corebot_backend::core::conversation::application::port::inbound::conversation_trait::HandleConversationPort;
 use corebot_backend::core::conversation::application::port::outbound::conversation_repository::ConversationRepositoryPort;
+use corebot_backend::core::conversation::application::port::outbound::language_detector_trait::LanguageDetectorPort;
 use corebot_backend::core::conversation::application::port::outbound::nlp_analyzer_trait::NlpEngineGatewayPort;
 use corebot_backend::core::conversation::domain::domain_type::DomainType;
 use corebot_backend::core::nlu_engine::domain::analysis::{NluAnalysis, NluIntent};
@@ -42,16 +43,27 @@ impl NlpEngineGatewayPort for StubNlpAnalyzer {
     }
 }
 
+struct StubLanguageDetector;
+
+impl LanguageDetectorPort for StubLanguageDetector {
+    fn detect(&self, _text: &str) -> String {
+        "en".to_string()
+    }
+}
+
 fn make_server(intent_name: &'static str) -> TestServer {
     let gateway = Arc::new(RestaurantDomainGateway::new(Arc::new(StubRestaurantPort)));
     let analyzer = Arc::new(StubNlpAnalyzer { intent_name });
-    let repository: Arc<dyn ConversationRepositoryPort> = Arc::new(InMemoryConversationRepository::new());
+    let repository: Arc<dyn ConversationRepositoryPort> =
+        Arc::new(InMemoryConversationRepository::new());
+    let language_detector: Arc<dyn LanguageDetectorPort> = Arc::new(StubLanguageDetector);
     let use_case: Arc<dyn HandleConversationPort + Send + Sync> =
         Arc::new(HandleConversationUseCase::new(
             DomainType::Restaurant,
             gateway,
             analyzer,
             repository,
+            language_detector,
         ));
     TestServer::new(conversation_routes_with_use_case(use_case))
 }

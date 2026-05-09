@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use super::domain_type::DomainType;
-use super::slot::SlotType;
+use crate::core::conversation::domain::model::domain_type::DomainType;
+use crate::core::conversation::domain::model::slot::SlotType;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IntentId(pub String);
@@ -120,9 +120,7 @@ impl IntentCatalog {
     }
 
     pub fn system_text_key(&self, key: &str) -> Option<&str> {
-        self.system_texts
-            .get(key)
-            .map(|text| text.0.as_str())
+        self.system_texts.get(key).map(|text| text.0.as_str())
     }
 
     pub fn slot_prompt_key(&self, intent: &IntentId, slot_name: &str) -> Option<&str> {
@@ -238,8 +236,16 @@ pub fn build_restaurant_catalog() -> IntentCatalog {
                 DomainType::Restaurant,
                 IntentResponse::EchoIntent,
             ),
-            informational("ask_location", DomainType::Restaurant, IntentResponse::EchoIntent),
-            informational("ask_contact", DomainType::Restaurant, IntentResponse::EchoIntent),
+            informational(
+                "ask_location",
+                DomainType::Restaurant,
+                IntentResponse::EchoIntent,
+            ),
+            informational(
+                "ask_contact",
+                DomainType::Restaurant,
+                IntentResponse::EchoIntent,
+            ),
             informational(
                 "ask_opening_hours",
                 DomainType::Restaurant,
@@ -250,13 +256,21 @@ pub fn build_restaurant_catalog() -> IntentCatalog {
                 DomainType::Restaurant,
                 IntentResponse::EchoIntent,
             ),
-            informational("ask_price", DomainType::Restaurant, IntentResponse::EchoIntent),
+            informational(
+                "ask_price",
+                DomainType::Restaurant,
+                IntentResponse::EchoIntent,
+            ),
             informational(
                 "ask_takeaway_delivery",
                 DomainType::Restaurant,
                 IntentResponse::EchoIntent,
             ),
-            informational("ask_event", DomainType::Restaurant, IntentResponse::EchoIntent),
+            informational(
+                "ask_event",
+                DomainType::Restaurant,
+                IntentResponse::EchoIntent,
+            ),
             informational(
                 "ask_facilities",
                 DomainType::Restaurant,
@@ -292,8 +306,16 @@ pub fn build_restaurant_catalog() -> IntentCatalog {
                 DomainType::Restaurant,
                 IntentResponse::Static(i18n_key("intent.goodbye.reply")),
             ),
-            informational("affirmative", DomainType::Restaurant, IntentResponse::EchoIntent),
-            informational("negative", DomainType::Restaurant, IntentResponse::EchoIntent),
+            informational(
+                "affirmative",
+                DomainType::Restaurant,
+                IntentResponse::EchoIntent,
+            ),
+            informational(
+                "negative",
+                DomainType::Restaurant,
+                IntentResponse::EchoIntent,
+            ),
             informational("cancel", DomainType::Restaurant, IntentResponse::EchoIntent),
             informational(
                 "unknown",
@@ -311,38 +333,20 @@ fn build_hotel_catalog() -> IntentCatalog {
 
 fn restaurant_system_texts() -> HashMap<String, I18nKey> {
     [
-        (
-            "no_active_workflow",
-            i18n_key("system.no_active_workflow"),
-        ),
+        ("no_active_workflow", i18n_key("system.no_active_workflow")),
         (
             "no_active_workflow_to_cancel",
             i18n_key("system.no_active_workflow_to_cancel"),
         ),
-        (
-            "workflow_cancelled",
-            i18n_key("system.workflow_cancelled"),
-        ),
-        (
-            "confirm_yes_no",
-            i18n_key("system.confirm_yes_no"),
-        ),
-        (
-            "workflow_complete",
-            i18n_key("system.workflow_complete"),
-        ),
-        (
-            "echo_intent",
-            i18n_key("system.echo_intent"),
-        ),
+        ("workflow_cancelled", i18n_key("system.workflow_cancelled")),
+        ("confirm_yes_no", i18n_key("system.confirm_yes_no")),
+        ("workflow_complete", i18n_key("system.workflow_complete")),
+        ("echo_intent", i18n_key("system.echo_intent")),
         (
             "missing_slot_fallback",
             i18n_key("system.missing_slot_fallback"),
         ),
-        (
-            "confirm_generic",
-            i18n_key("system.confirm_generic"),
-        ),
+        ("confirm_generic", i18n_key("system.confirm_generic")),
     ]
     .into_iter()
     .map(|(key, value)| (key.to_string(), value))
@@ -393,7 +397,10 @@ fn required_slot(
         name: name.into(),
         slot_type,
         required: true,
-        entity_types: entity_types.iter().map(|value| (*value).to_string()).collect(),
+        entity_types: entity_types
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect(),
         prompt,
     }
 }
@@ -408,7 +415,10 @@ fn optional_slot(
         name: name.into(),
         slot_type,
         required: false,
-        entity_types: entity_types.iter().map(|value| (*value).to_string()).collect(),
+        entity_types: entity_types
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect(),
         prompt,
     }
 }

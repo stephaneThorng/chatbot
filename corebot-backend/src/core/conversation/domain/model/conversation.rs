@@ -1,7 +1,7 @@
-use super::conversation_id::ConversationId;
-use super::domain_type::DomainType;
-use super::intent::{IntentCatalog, IntentId};
-use super::workflow::Workflow;
+use crate::core::conversation::domain::catalog::intent::{IntentCatalog, IntentId};
+use crate::core::conversation::domain::model::conversation_id::ConversationId;
+use crate::core::conversation::domain::model::domain_type::DomainType;
+use crate::core::conversation::domain::model::workflow::Workflow;
 
 /// Conversation session - one user, one domain, one optional workflow.
 ///

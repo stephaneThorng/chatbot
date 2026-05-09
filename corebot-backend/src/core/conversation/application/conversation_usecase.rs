@@ -1,31 +1,28 @@
 use std::str::FromStr;
-use std::sync::LazyLock;
 use std::sync::Arc;
 
-use langdetect_rs::detector_factory::DetectorFactory;
-use rust_i18n::t;
-
 use super::conversation_command::{HandleConversationCommand, HandleConversationResult};
+use super::conversation_reply_renderer::ConversationReplyRenderer;
 use super::port::inbound::conversation_trait::HandleConversationPort;
 use super::port::outbound::conversation_repository::ConversationRepositoryPort;
 use super::port::outbound::domain_gateway_trait::DomainGatewayPort;
+use super::port::outbound::language_detector_trait::LanguageDetectorPort;
 use super::port::outbound::nlp_analyzer_trait::NlpEngineGatewayPort;
 use crate::core::conversation::domain::conversation::Conversation;
 use crate::core::conversation::domain::conversation_id::ConversationId;
 use crate::core::conversation::domain::domain_type::DomainType;
-use crate::core::conversation::domain::intent::{IntentCatalog, IntentId, IntentResponse, NluTask, SlotDefinition, build_catalog};
-use crate::core::conversation::domain::slot::{SlotType, SlotValue};
-use crate::core::conversation::domain::workflow::NextSlot;
-use crate::core::nlu_engine::domain::analysis::{NluAnalysis, NluEntity};
-
-static LANGUAGE_DETECTOR: LazyLock<DetectorFactory> =
-    LazyLock::new(|| DetectorFactory::default().build());
+use crate::core::conversation::domain::intent::build_catalog;
+use crate::core::conversation::domain::state_machine::{
+    ConversationEvent, ConversationStateMachine, DetectedEntity,
+};
+use crate::core::nlu_engine::domain::analysis::NluAnalysis;
 
 pub struct HandleConversationUseCase {
     domain: DomainType,
-    domain_gateway: Arc<dyn DomainGatewayPort>,
     nlu_engine_gateway: Arc<dyn NlpEngineGatewayPort>,
     conversation_repository: Arc<dyn ConversationRepositoryPort>,
+    language_detector: Arc<dyn LanguageDetectorPort>,
+    reply_renderer: ConversationReplyRenderer,
 }
 
 impl HandleConversationPort for HandleConversationUseCase {
@@ -33,13 +30,21 @@ impl HandleConversationPort for HandleConversationUseCase {
         let (mut conversation, session_id) =
             self.load_or_create_conversation(command.session_id.as_deref(), &command.message);
         let catalog = build_catalog(conversation.domain);
-        let analysis = self.analyze_message(&conversation, &catalog, &command.message);
-
-        let reply = if conversation.has_active_workflow() {
-            self.handle_active_workflow(&mut conversation, &analysis, &catalog)
-        } else {
-            self.handle_idle_intent(&mut conversation, &analysis, &catalog)
-        };
+        let nlu_context = ConversationStateMachine::nlu_context(&conversation, &catalog);
+        let analysis = self.nlu_engine_gateway.analyze(
+            &command.message,
+            &nlu_context.lang,
+            Self::domain_tag(nlu_context.domain),
+            nlu_context.task,
+        );
+        let transition = ConversationStateMachine::apply(
+            &mut conversation,
+            &catalog,
+            Self::event_from_analysis(&command.message, analysis),
+        );
+        let reply = self
+            .reply_renderer
+            .render(&transition.effect, &catalog, &conversation.lang);
 
         self.save_conversation(&conversation);
 
@@ -53,16 +58,22 @@ impl HandleConversationUseCase {
         domain_gateway: Arc<dyn DomainGatewayPort>,
         nlu_engine_gateway: Arc<dyn NlpEngineGatewayPort>,
         conversation_repository: Arc<dyn ConversationRepositoryPort>,
+        language_detector: Arc<dyn LanguageDetectorPort>,
     ) -> Self {
         Self {
             domain,
-            domain_gateway,
             nlu_engine_gateway,
             conversation_repository,
+            language_detector,
+            reply_renderer: ConversationReplyRenderer::new(domain_gateway),
         }
     }
 
-    fn load_or_create_conversation(&self, session_id: Option<&str>, message: &str) -> (Conversation, String) {
+    fn load_or_create_conversation(
+        &self,
+        session_id: Option<&str>,
+        message: &str,
+    ) -> (Conversation, String) {
         let parsed_id = session_id.and_then(|id| ConversationId::from_str(id).ok());
         if let Some(conversation_id) = parsed_id {
             if let Ok(Some(conversation)) = self.conversation_repository.load(&conversation_id) {
@@ -70,186 +81,32 @@ impl HandleConversationUseCase {
             }
 
             let mut conversation = Conversation::with_id(conversation_id.clone(), self.domain);
-            conversation.lang = Self::detect_language(message).to_string();
+            conversation.lang = self.language_detector.detect(message);
             return (conversation, conversation_id.to_string());
         }
 
         let mut conversation = Conversation::new(self.domain);
-        conversation.lang = Self::detect_language(message).to_string();
+        conversation.lang = self.language_detector.detect(message);
         let session_id = conversation.id.to_string();
         (conversation, session_id)
-    }
-
-    fn detect_task(conversation: &Conversation, catalog: &IntentCatalog) -> Option<String> {
-        let workflow = conversation.active_workflow()?;
-        if workflow.is_ready_for_confirmation() {
-            return Some(NluTask::Choice.as_tag().to_string());
-        }
-
-        catalog
-            .nlu_task(&workflow.intent)
-            .map(|task| task.as_tag().to_string())
-    }
-
-    fn analyze_message(&self, conversation: &Conversation, catalog: &IntentCatalog, message: &str) -> NluAnalysis {
-        self.nlu_engine_gateway
-            .analyze(
-                message,
-                &conversation.lang,
-                Self::domain_tag(conversation.domain),
-                Self::detect_task(conversation, catalog),
-            )
     }
 
     fn save_conversation(&self, conversation: &Conversation) {
         let _ = self.conversation_repository.save(conversation);
     }
 
-    fn handle_idle_intent(
-        &self,
-        conversation: &mut Conversation,
-        analysis: &NluAnalysis,
-        catalog: &IntentCatalog,
-    ) -> String {
-        let intent = IntentId::new(&analysis.intent.name);
-        if catalog.is_workflow(&intent) {
-            let _ = conversation.start_workflow(&intent, catalog);
-            self.fill_slots_from_entities(conversation, analysis, catalog);
-            return self.reply_for_workflow_state(conversation, catalog);
-        }
-
-        let Some(policy) = catalog.get(&intent) else {
-            return self.translate_system_text(catalog, "echo_intent", &conversation.lang, "intent", &analysis.intent.name);
-        };
-
-        match &policy.response {
-            IntentResponse::DomainOpeningHours => self.domain_gateway.get_opening_hours(),
-            IntentResponse::Static(key) => self.translate_key(&key.0, &conversation.lang),
-            IntentResponse::EchoIntent => {
-                if analysis.intent.name == "cancel" {
-                    self.translate_system_text(catalog, "no_active_workflow_to_cancel", &conversation.lang, "", "")
-                } else {
-                    self.translate_system_text(catalog, "echo_intent", &conversation.lang, "intent", &analysis.intent.name)
-                }
-            }
-        }
-    }
-
-    fn handle_active_workflow(
-        &self,
-        conversation: &mut Conversation,
-        analysis: &NluAnalysis,
-        catalog: &IntentCatalog,
-    ) -> String {
-        if analysis.intent.name == "cancel" {
-            conversation.cancel_workflow();
-            return self.translate_system_text(catalog, "workflow_cancelled", &conversation.lang, "", "");
-        }
-
-        if let Some(workflow) = conversation.active_workflow() {
-            if workflow.is_ready_for_confirmation() {
-                return self.handle_confirmation_step(conversation, &analysis.intent.name, catalog);
-            }
-        }
-
-        self.fill_slots_from_entities(conversation, analysis, catalog);
-        self.reply_for_workflow_state(conversation, catalog)
-    }
-
-    fn handle_confirmation_step(
-        &self,
-        conversation: &mut Conversation,
-        intent_name: &str,
-        catalog: &IntentCatalog,
-    ) -> String {
-        match intent_name {
-            "affirmative" => {
-                if let Some(workflow) = conversation.active_workflow_mut() {
-                    let _ = workflow.fill_slot("confirmation", SlotValue::Boolean(true));
-                    let completed_intent = workflow.intent.clone();
-                    conversation.complete_workflow();
-                    return catalog
-                        .completion_response_key(&completed_intent)
-                        .map(|key| self.translate_key(key, &conversation.lang))
-                        .unwrap_or_else(|| {
-                            self.translate_system_text(catalog, "workflow_complete", &conversation.lang, "", "")
-                        });
-                }
-                self.translate_system_text(catalog, "no_active_workflow", &conversation.lang, "", "")
-            }
-            "negative" => {
-                conversation.cancel_workflow();
-                self.translate_system_text(catalog, "workflow_cancelled", &conversation.lang, "", "")
-            }
-            _ => self.translate_system_text(catalog, "confirm_yes_no", &conversation.lang, "", ""),
-        }
-    }
-
-    fn fill_slots_from_entities(
-        &self,
-        conversation: &mut Conversation,
-        analysis: &NluAnalysis,
-        catalog: &IntentCatalog,
-    ) {
-        let Some(workflow) = conversation.active_workflow_mut() else {
-            return;
-        };
-        let slot_definitions = catalog.required_slots(&workflow.intent);
-
-        for entity in &analysis.entities {
-            for slot in &slot_definitions {
-                if !slot.entity_types.iter().any(|entity_type| entity_type == &entity.entity_type) {
-                    continue;
-                }
-                if let Some(slot_value) = Self::slot_value_from_entity(slot, entity) {
-                    let _ = workflow.fill_slot(&slot.name, slot_value);
-                }
-            }
-        }
-    }
-
-    fn parse_people_count(entity: &NluEntity) -> Option<u32> {
-        let digits = entity
-            .value
-            .chars()
-            .filter(char::is_ascii_digit)
-            .collect::<String>();
-        digits.parse().ok()
-    }
-
-    fn slot_value_from_entity(slot: &SlotDefinition, entity: &NluEntity) -> Option<SlotValue> {
-        match slot.slot_type {
-            SlotType::Text => Some(SlotValue::Text(entity.value.clone())),
-            SlotType::Date => Some(SlotValue::Date(entity.value.clone())),
-            SlotType::Time => Some(SlotValue::Time(entity.value.clone())),
-            SlotType::Number => Self::parse_people_count(entity).map(SlotValue::Number),
-            SlotType::Boolean => None,
-        }
-    }
-
-    fn reply_for_workflow_state(&self, conversation: &Conversation, catalog: &IntentCatalog) -> String {
-        let Some(workflow) = conversation.active_workflow() else {
-            return self.translate_system_text(catalog, "no_active_workflow", &conversation.lang, "", "");
-        };
-
-        match workflow.next_required_slot() {
-            Some(NextSlot::Data(def)) => catalog
-                .slot_prompt_key(&workflow.intent, &def.name)
-                .map(|key| self.translate_key(key, &conversation.lang))
-                .unwrap_or_else(|| {
-                    self.translate_system_text(
-                        catalog,
-                        "missing_slot_fallback",
-                        &conversation.lang,
-                        "slot",
-                        &def.name,
-                    )
-                }),
-            Some(NextSlot::Confirmation) => catalog
-                .confirmation_prompt_key(&workflow.intent)
-                .map(|key| self.translate_key(key, &conversation.lang))
-                .unwrap_or_else(|| self.translate_system_text(catalog, "confirm_generic", &conversation.lang, "", "")),
-            None => self.translate_system_text(catalog, "workflow_complete", &conversation.lang, "", ""),
+    fn event_from_analysis(message: &str, analysis: NluAnalysis) -> ConversationEvent {
+        ConversationEvent::NluAnalysisApplied {
+            intent: crate::core::conversation::domain::intent::IntentId::new(&analysis.intent.name),
+            text: message.to_string(),
+            entities: analysis
+                .entities
+                .into_iter()
+                .map(|entity| DetectedEntity {
+                    entity_type: entity.entity_type,
+                    value: entity.value,
+                })
+                .collect(),
         }
     }
 
@@ -257,39 +114,6 @@ impl HandleConversationUseCase {
         match domain {
             DomainType::Restaurant => "restaurant",
             DomainType::Hotel => "hotel",
-        }
-    }
-
-    fn detect_language(message: &str) -> &'static str {
-        match LANGUAGE_DETECTOR.detect(message, None).ok().as_deref() {
-            Some("id") => "id",
-            Some("en") => "en",
-            _ => "en",
-        }
-    }
-
-    fn translate_key(&self, key: &str, lang: &str) -> String {
-        t!(key, locale = lang).to_string()
-    }
-
-    fn translate_system_text(
-        &self,
-        catalog: &IntentCatalog,
-        system_key: &str,
-        lang: &str,
-        arg_key: &str,
-        arg_value: &str,
-    ) -> String {
-        let Some(i18n_key) = catalog.system_text_key(system_key) else {
-            return String::new();
-        };
-        if arg_key.is_empty() {
-            return self.translate_key(i18n_key, lang);
-        }
-        match arg_key {
-            "intent" => t!(i18n_key, locale = lang, intent = arg_value).to_string(),
-            "slot" => t!(i18n_key, locale = lang, slot = arg_value).to_string(),
-            _ => self.translate_key(i18n_key, lang),
         }
     }
 }
@@ -301,30 +125,79 @@ mod tests {
     use std::sync::RwLock;
 
     use crate::core::conversation::application::port::outbound::conversation_repository::RepositoryError;
-    use crate::core::nlu_engine::domain::analysis::{NluIntent, NerTokenLabel, NluIntentCandidate};
+    use crate::core::nlu_engine::domain::analysis::{
+        NerTokenLabel, NluEntity, NluIntent, NluIntentCandidate,
+    };
 
-    struct StubDomainGateway;
+    struct StubDomainGateway {
+        calls: std::sync::Mutex<u32>,
+    }
+
+    impl StubDomainGateway {
+        fn new() -> Self {
+            Self {
+                calls: std::sync::Mutex::new(0),
+            }
+        }
+
+        fn calls(&self) -> u32 {
+            *self.calls.lock().unwrap()
+        }
+    }
 
     impl DomainGatewayPort for StubDomainGateway {
         fn get_opening_hours(&self) -> String {
+            *self.calls.lock().unwrap() += 1;
             "Mon-Sun 9am-10pm".to_string()
+        }
+    }
+
+    struct StubLanguageDetector {
+        lang: std::sync::Mutex<String>,
+        calls: std::sync::Mutex<u32>,
+    }
+
+    impl StubLanguageDetector {
+        fn new(lang: &str) -> Self {
+            Self {
+                lang: std::sync::Mutex::new(lang.to_string()),
+                calls: std::sync::Mutex::new(0),
+            }
+        }
+
+        fn calls(&self) -> u32 {
+            *self.calls.lock().unwrap()
+        }
+    }
+
+    impl LanguageDetectorPort for StubLanguageDetector {
+        fn detect(&self, _text: &str) -> String {
+            *self.calls.lock().unwrap() += 1;
+            self.lang.lock().unwrap().clone()
         }
     }
 
     struct StubConversationRepository {
         store: RwLock<HashMap<ConversationId, Conversation>>,
+        save_calls: std::sync::Mutex<u32>,
     }
 
     impl StubConversationRepository {
         fn new() -> Self {
             Self {
                 store: RwLock::new(HashMap::new()),
+                save_calls: std::sync::Mutex::new(0),
             }
+        }
+
+        fn save_calls(&self) -> u32 {
+            *self.save_calls.lock().unwrap()
         }
     }
 
     impl ConversationRepositoryPort for StubConversationRepository {
         fn save(&self, conversation: &Conversation) -> Result<(), RepositoryError> {
+            *self.save_calls.lock().unwrap() += 1;
             self.store
                 .write()
                 .unwrap()
@@ -345,6 +218,8 @@ mod tests {
     struct StubNlpAnalyzer {
         responses: std::sync::Mutex<Vec<NluAnalysis>>,
         tasks: std::sync::Mutex<Vec<Option<String>>>,
+        langs: std::sync::Mutex<Vec<String>>,
+        domains: std::sync::Mutex<Vec<String>>,
     }
 
     impl StubNlpAnalyzer {
@@ -352,11 +227,21 @@ mod tests {
             Self {
                 responses: std::sync::Mutex::new(responses.into_iter().rev().collect()),
                 tasks: std::sync::Mutex::new(vec![]),
+                langs: std::sync::Mutex::new(vec![]),
+                domains: std::sync::Mutex::new(vec![]),
             }
         }
 
         fn recorded_tasks(&self) -> Vec<Option<String>> {
             self.tasks.lock().unwrap().clone()
+        }
+
+        fn recorded_langs(&self) -> Vec<String> {
+            self.langs.lock().unwrap().clone()
+        }
+
+        fn recorded_domains(&self) -> Vec<String> {
+            self.domains.lock().unwrap().clone()
         }
     }
 
@@ -368,8 +253,10 @@ mod tests {
             domain: &str,
             task: Option<String>,
         ) -> NluAnalysis {
-            let _ = (text, lang, domain);
+            let _ = text;
             self.tasks.lock().unwrap().push(task);
+            self.langs.lock().unwrap().push(lang.to_string());
+            self.domains.lock().unwrap().push(domain.to_string());
             self.responses
                 .lock()
                 .unwrap()
@@ -402,14 +289,38 @@ mod tests {
         }
     }
 
-    fn make_use_case(analyzer: Arc<StubNlpAnalyzer>) -> HandleConversationUseCase {
-        let repo: Arc<dyn ConversationRepositoryPort> = Arc::new(StubConversationRepository::new());
-        HandleConversationUseCase::new(
-            DomainType::Restaurant,
-            Arc::new(StubDomainGateway),
+    struct UseCaseParts {
+        use_case: HandleConversationUseCase,
+        repo: Arc<StubConversationRepository>,
+        detector: Arc<StubLanguageDetector>,
+        domain_gateway: Arc<StubDomainGateway>,
+    }
+
+    fn make_use_case(analyzer: Arc<StubNlpAnalyzer>) -> UseCaseParts {
+        make_use_case_for_domain(DomainType::Restaurant, analyzer, "en")
+    }
+
+    fn make_use_case_for_domain(
+        domain: DomainType,
+        analyzer: Arc<StubNlpAnalyzer>,
+        lang: &str,
+    ) -> UseCaseParts {
+        let repo = Arc::new(StubConversationRepository::new());
+        let detector = Arc::new(StubLanguageDetector::new(lang));
+        let domain_gateway = Arc::new(StubDomainGateway::new());
+        let use_case = HandleConversationUseCase::new(
+            domain,
+            domain_gateway.clone(),
             analyzer,
+            repo.clone(),
+            detector.clone(),
+        );
+        UseCaseParts {
+            use_case,
             repo,
-        )
+            detector,
+            domain_gateway,
+        }
     }
 
     fn make_command(message: &str, session_id: Option<&str>) -> HandleConversationCommand {
@@ -421,23 +332,40 @@ mod tests {
 
     #[test]
     fn handle_message_reuses_provided_session_id() {
+        let session_id = ConversationId::new().to_string();
         let analyzer = Arc::new(StubNlpAnalyzer::new(vec![analysis("greeting", vec![])]));
-        let result = make_use_case(analyzer).handle_message(make_command("hello", Some(&ConversationId::new().to_string())));
-        assert!(!result.session_id.is_empty());
+        let parts = make_use_case(analyzer);
+
+        let result = parts
+            .use_case
+            .handle_message(make_command("hello", Some(&session_id)));
+
+        assert_eq!(result.session_id, session_id);
     }
 
     #[test]
     fn handle_message_generates_session_id_when_none() {
         let analyzer = Arc::new(StubNlpAnalyzer::new(vec![analysis("greeting", vec![])]));
-        let result = make_use_case(analyzer).handle_message(make_command("hello", None));
+
+        let result = make_use_case(analyzer)
+            .use_case
+            .handle_message(make_command("hello", None));
+
         assert!(!result.session_id.is_empty());
     }
 
     #[test]
-    fn handle_message_delegates_opening_hours_reply_to_domain_gateway() {
-        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![analysis("ask_opening_hours", vec![])]));
-        let result = make_use_case(analyzer).handle_message(make_command("hours", None));
+    fn dynamic_domain_response_calls_restaurant_gateway() {
+        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![analysis(
+            "ask_opening_hours",
+            vec![],
+        )]));
+        let parts = make_use_case(analyzer);
+
+        let result = parts.use_case.handle_message(make_command("hours", None));
+
         assert_eq!(result.reply, "Mon-Sun 9am-10pm");
+        assert_eq!(parts.domain_gateway.calls(), 1);
     }
 
     #[test]
@@ -451,12 +379,17 @@ mod tests {
                     entity("time", "7pm"),
                 ],
             ),
-            analysis("reservation_create", vec![entity("people_count", "4 people")]),
+            analysis(
+                "reservation_create",
+                vec![entity("people_count", "4 people")],
+            ),
         ]));
-        let use_case = make_use_case(analyzer.clone());
+        let parts = make_use_case(analyzer.clone());
 
-        let start = use_case.handle_message(make_command("book", None));
-        let next = use_case.handle_message(make_command("for 4 people", Some(&start.session_id)));
+        let start = parts.use_case.handle_message(make_command("book", None));
+        let next = parts
+            .use_case
+            .handle_message(make_command("for 4 people", Some(&start.session_id)));
 
         assert_eq!(start.reply, "For how many people?");
         assert_eq!(
@@ -483,10 +416,12 @@ mod tests {
             ),
             analysis("affirmative", vec![]),
         ]));
-        let use_case = make_use_case(analyzer.clone());
+        let parts = make_use_case(analyzer.clone());
 
-        let start = use_case.handle_message(make_command("book", None));
-        let confirm = use_case.handle_message(make_command("yes", Some(&start.session_id)));
+        let start = parts.use_case.handle_message(make_command("book", None));
+        let confirm = parts
+            .use_case
+            .handle_message(make_command("yes", Some(&start.session_id)));
 
         assert_eq!(
             start.reply,
@@ -505,11 +440,93 @@ mod tests {
             analysis("reservation_create", vec![entity("person", "Jean Martin")]),
             analysis("cancel", vec![]),
         ]));
-        let use_case = make_use_case(analyzer);
+        let parts = make_use_case(analyzer);
 
-        let start = use_case.handle_message(make_command("book", None));
-        let cancel = use_case.handle_message(make_command("cancel", Some(&start.session_id)));
+        let start = parts.use_case.handle_message(make_command("book", None));
+        let cancel = parts
+            .use_case
+            .handle_message(make_command("cancel", Some(&start.session_id)));
 
         assert_eq!(cancel.reply, "Okay, I cancelled the current workflow.");
+    }
+
+    #[test]
+    fn renderer_returns_indonesian_localized_prompt() {
+        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![analysis(
+            "reservation_create",
+            vec![
+                entity("person", "Budi Santoso"),
+                entity("date", "besok"),
+                entity("time", "jam 7 malam"),
+            ],
+        )]));
+        let parts = make_use_case_for_domain(DomainType::Restaurant, analyzer.clone(), "id");
+
+        let result = parts
+            .use_case
+            .handle_message(make_command("Halo, saya mau pesan meja", None));
+
+        assert_eq!(result.reply, "Untuk berapa orang?");
+        assert_eq!(analyzer.recorded_langs(), vec!["id".to_string()]);
+    }
+
+    #[test]
+    fn injected_domain_is_forwarded_to_nlu() {
+        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![analysis("greeting", vec![])]));
+        let parts = make_use_case_for_domain(DomainType::Hotel, analyzer.clone(), "en");
+
+        let result = parts.use_case.handle_message(make_command("hello", None));
+
+        assert_eq!(result.reply, "Detected intent: greeting");
+        assert_eq!(analyzer.recorded_domains(), vec!["hotel".to_string()]);
+    }
+
+    #[test]
+    fn language_detector_is_used_only_for_new_sessions() {
+        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![
+            analysis("greeting", vec![]),
+            analysis("thanks", vec![]),
+        ]));
+        let parts = make_use_case_for_domain(DomainType::Restaurant, analyzer.clone(), "id");
+
+        let first = parts.use_case.handle_message(make_command("halo", None));
+        let _second = parts
+            .use_case
+            .handle_message(make_command("thanks", Some(&first.session_id)));
+
+        assert_eq!(parts.detector.calls(), 1);
+    }
+
+    #[test]
+    fn existing_session_preserves_stored_language() {
+        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![
+            analysis("greeting", vec![]),
+            analysis("thanks", vec![]),
+        ]));
+        let parts = make_use_case_for_domain(DomainType::Restaurant, analyzer.clone(), "id");
+
+        let first = parts.use_case.handle_message(make_command("halo", None));
+        *parts.detector.lang.lock().unwrap() = "en".to_string();
+        let _second = parts
+            .use_case
+            .handle_message(make_command("thanks", Some(&first.session_id)));
+
+        assert_eq!(
+            analyzer.recorded_langs(),
+            vec!["id".to_string(), "id".to_string()]
+        );
+    }
+
+    #[test]
+    fn repository_save_is_called_after_transition() {
+        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![analysis(
+            "reservation_create",
+            vec![],
+        )]));
+        let parts = make_use_case(analyzer);
+
+        let _ = parts.use_case.handle_message(make_command("book", None));
+
+        assert_eq!(parts.repo.save_calls(), 1);
     }
 }
