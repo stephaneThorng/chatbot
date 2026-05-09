@@ -6,24 +6,24 @@ use crate::core::nlu_engine::application::nlu_analysis_decoder::{
 use crate::core::nlu_engine::domain::analysis::{InferenceContext, NluAnalysis, TaggedInput};
 
 use super::analyze_text_command::AnalyzeTextCommand;
-use super::port::input::analyze_text_trait::AnalyzeText;
-use super::port::output::nlu_model_runtime_trait::{NluModelRuntime, NluRuntimeError};
+use super::port::inbound::analyze_text_trait::AnalyzeTextPort;
+use super::port::outbound::nlu_model_runtime_trait::{NluModelRuntimePort, NluRuntimeError};
 
 /// Application use case that orchestrates tagged-input construction, runtime
 /// execution, and decoding into a domain `NluAnalysis`.
 pub struct AnalyzeTextUseCase {
-    runtime: Arc<dyn NluModelRuntime>,
+    runtime: Arc<dyn NluModelRuntimePort>,
 }
 
 impl AnalyzeTextUseCase {
     /// Creates the use case with the runtime port implementation to call.
-    pub fn new(runtime: Arc<dyn NluModelRuntime>) -> Self {
+    pub fn new(runtime: Arc<dyn NluModelRuntimePort>) -> Self {
         Self { runtime }
     }
 }
 
-impl AnalyzeText for AnalyzeTextUseCase {
-    fn predict(&self, command: AnalyzeTextCommand) -> Result<NluAnalysis, NluRuntimeError> {
+impl AnalyzeTextPort for AnalyzeTextUseCase {
+    fn analyze(&self, command: AnalyzeTextCommand) -> Result<NluAnalysis, NluRuntimeError> {
         validate_artifacts(self.runtime.contract(), self.runtime.label_maps())?;
         let raw_text = command.text;
         let context = InferenceContext::new(command.lang, command.domain, command.task);
@@ -90,7 +90,7 @@ mod tests {
         }
     }
 
-    impl NluModelRuntime for CapturingRuntime {
+    impl NluModelRuntimePort for CapturingRuntime {
         fn contract(&self) -> &OnnxContract {
             &self.contract
         }
@@ -122,7 +122,7 @@ mod tests {
         let usecase = AnalyzeTextUseCase::new(runtime.clone());
 
         let analysis = usecase
-            .predict(AnalyzeTextCommand {
+            .analyze(AnalyzeTextCommand {
                 text: "Hello".to_string(),
                 lang: "en".to_string(),
                 domain: "restaurant".to_string(),

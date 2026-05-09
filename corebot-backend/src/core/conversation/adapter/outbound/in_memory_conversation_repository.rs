@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use crate::core::conversation::application::port::output::conversation_repository::{
-    ConversationRepository, RepositoryError,
+use crate::core::conversation::application::port::outbound::conversation_repository::{
+    ConversationRepositoryPort, RepositoryError,
 };
 use crate::core::conversation::domain::conversation::Conversation;
+use crate::core::conversation::domain::conversation_id::ConversationId;
 
 /// In-memory conversation storage for v1.
 /// Thread-safe using RwLock.
 pub struct InMemoryConversationRepository {
-    store: Arc<RwLock<HashMap<String, Conversation>>>,
+    store: Arc<RwLock<HashMap<ConversationId, Conversation>>>,
 }
 
 impl InMemoryConversationRepository {
@@ -26,17 +27,17 @@ impl Default for InMemoryConversationRepository {
     }
 }
 
-impl ConversationRepository for InMemoryConversationRepository {
+impl ConversationRepositoryPort for InMemoryConversationRepository {
     fn save(&self, conversation: &Conversation) -> Result<(), RepositoryError> {
         let mut store = self.store.write().map_err(|_| RepositoryError {
             message: "Failed to acquire write lock".to_string(),
         })?;
 
-        store.insert(conversation.id.to_string(), conversation.clone());
+        store.insert(conversation.id.clone(), conversation.clone());
         Ok(())
     }
 
-    fn load(&self, id: &str) -> Result<Option<Conversation>, RepositoryError> {
+    fn load(&self, id: &ConversationId) -> Result<Option<Conversation>, RepositoryError> {
         let store = self.store.read().map_err(|_| RepositoryError {
             message: "Failed to acquire read lock".to_string(),
         })?;
@@ -44,7 +45,7 @@ impl ConversationRepository for InMemoryConversationRepository {
         Ok(store.get(id).cloned())
     }
 
-    fn delete(&self, id: &str) -> Result<(), RepositoryError> {
+    fn delete(&self, id: &ConversationId) -> Result<(), RepositoryError> {
         let mut store = self.store.write().map_err(|_| RepositoryError {
             message: "Failed to acquire write lock".to_string(),
         })?;
@@ -63,7 +64,7 @@ mod tests {
     fn save_and_load_conversation() {
         let repo = InMemoryConversationRepository::new();
         let conv = Conversation::new(DomainType::Restaurant);
-        let conv_id = conv.id.to_string();
+        let conv_id = conv.id.clone();
 
         repo.save(&conv).unwrap();
         let loaded = repo.load(&conv_id).unwrap();
@@ -75,7 +76,7 @@ mod tests {
     #[test]
     fn load_nonexistent_returns_none() {
         let repo = InMemoryConversationRepository::new();
-        let loaded = repo.load("nonexistent").unwrap();
+        let loaded = repo.load(&ConversationId::new()).unwrap();
         assert!(loaded.is_none());
     }
 
@@ -83,7 +84,7 @@ mod tests {
     fn delete_removes_conversation() {
         let repo = InMemoryConversationRepository::new();
         let conv = Conversation::new(DomainType::Restaurant);
-        let conv_id = conv.id.to_string();
+        let conv_id = conv.id.clone();
 
         repo.save(&conv).unwrap();
         repo.delete(&conv_id).unwrap();
@@ -101,7 +102,7 @@ mod tests {
         repo.save(&conv1).unwrap();
         repo.save(&conv2).unwrap();
 
-        assert!(repo.load(&conv1.id.to_string()).unwrap().is_some());
-        assert!(repo.load(&conv2.id.to_string()).unwrap().is_some());
+        assert!(repo.load(&conv1.id).unwrap().is_some());
+        assert!(repo.load(&conv2.id).unwrap().is_some());
     }
 }

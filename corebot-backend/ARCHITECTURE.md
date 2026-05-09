@@ -32,10 +32,10 @@ src/
     │   │   └── port/
     │   │       ├── input/
     │   │       └── output/
-    │   └── adapter/output/
+    │   └── adapter/outbound/
     └── restaurant/
-        ├── application/port/input/
-        └── adapter/input/
+        ├── application/port/inbound/
+        └── adapter/inbound/
 ```
 
 ## Layer Rules
@@ -43,18 +43,18 @@ src/
 | Layer | May depend on | Must not import |
 |-------|---------------|-----------------|
 | `domain/` | Rust standard library and pure domain modules | `serde`, `axum`, `ort`, `tokenizers`, adapters, application services |
-| `application/` | domain types, application services, input/output port traits | Axum, HTTP DTOs, adapter modules, concrete repositories/clients/runtimes |
-| `application/port/input/` | command/result/domain types | adapters, concrete use-case construction |
-| `application/port/output/` | domain types and boundary data types needed by use cases | concrete adapter implementations |
-| `adapter/input/` | input ports, commands/results, DTOs, mappers, framework crates | domain policy, persistence/runtime implementation details |
-| `adapter/output/` | output ports, domain types, concrete infrastructure crates | inbound adapters, use-case orchestration internals |
+| `application/` | domain types, application services, inbound/outbound port traits | Axum, HTTP DTOs, adapter modules, concrete repositories/clients/runtimes |
+| `application/port/inbound/` | command/result/domain types | adapters, concrete use-case construction |
+| `application/port/outbound/` | domain types and boundary data types needed by use cases | concrete adapter implementations |
+| `adapter/inbound/` | input ports, commands/results, DTOs, mappers, framework crates | domain policy, persistence/runtime implementation details |
+| `adapter/outbound/` | output ports, domain types, concrete infrastructure crates | inbound adapters, use-case orchestration internals |
 
 Dependency direction must point inward:
 
 ```text
-adapter/input  ─┐
+adapter/inbound  ─┐
                 ├─> application ports/use cases ─> domain
-adapter/output ─┘
+adapter/outbound ─┘
 ```
 
 Cross-feature dependency must use a port. A feature must not reach into another feature's adapter or concrete use case.
@@ -67,8 +67,8 @@ The production composition root lives in `src/main.rs`. Inbound HTTP adapter mod
 - Put application commands/results in `application/*_command.rs` unless the feature has a justified split.
 - Put use-case coordination in `application/*_usecase.rs`.
 - Put reusable application transformations or decoders in `application/<service>.rs`.
-- Put inbound protocol mapping in `adapter/input/web/*_dto.rs` and `*_mapper.rs`.
-- Put concrete runtime/client/repository code in `adapter/output/`.
+- Put inbound protocol mapping in `adapter/inbound/web/*_dto.rs` and `*_mapper.rs`.
+- Put concrete runtime/client/repository code in `adapter/outbound/`.
 - Keep framework, serialization, filesystem, ONNX, tokenizer, and HTTP concerns out of domain objects.
 - Keep concrete adapter APIs out of application methods. Application calls traits; adapters implement traits.
 
@@ -83,14 +83,14 @@ When a behavior appears to need multiple layers, split it explicitly:
 | Concept | Convention | Example |
 |---------|------------|---------|
 | Use case struct | `{Action}{Feature}UseCase` | `HandleConversationUseCase` |
-| Input port trait | `{Action}{Feature}` | `HandleConversation` |
-| Output port trait | `{Capability}` or `{Entity}Repository` | `NluModelRuntime`, `ConversationRepository` |
+| Inbound port trait | `{Action}{Feature}Port` | `HandleConversationPort` |
+| Outbound port trait | `{Capability}Port` or `{Entity}RepositoryPort` | `NluModelRuntimePort`, `ConversationRepositoryPort` |
 | Command | `{Action}{Feature}Command` | `AnalyzeTextCommand` |
 | Result | `{Action}{Feature}Result` | `HandleConversationResult` |
 | HTTP request DTO | `{Action}{Feature}Request` | `SendMessageRequest` |
 | HTTP response DTO | `{Feature}Response` or `{Action}{Feature}Response` | `SendMessageResponse` |
 | Mapper object/module | `{Feature}WebMapper` or `<action>_<feature>_mapper.rs` | `send_message_mapper.rs` |
-| Route file | `routes.rs` | `adapter/input/web/routes.rs` |
+| Route file | `routes.rs` | `adapter/inbound/web/routes.rs` |
 | Integration test | `<feature>_routes_integration_test.rs` | `conversation_routes_integration_test.rs` |
 
 ## Feature Responsibilities
@@ -105,7 +105,7 @@ When a behavior appears to need multiple layers, split it explicitly:
 
 - Owns local NLP inference behavior: tagged input construction, artifact validation, tokenization boundary, ONNX execution, intent ranking, and BIO entity decoding.
 - Application layer owns preprocessing, artifact validation, model-output decoding, and final `NluAnalysis` construction.
-- `adapter/output/onnx_nlu_runtime.rs` owns only artifact loading, tokenizer integration, ONNX Runtime execution, and returning raw logits plus token metadata through the output port.
+- `adapter/outbound/onnx_nlu_runtime.rs` owns only artifact loading, tokenizer integration, ONNX Runtime execution, and returning raw logits plus token metadata through the output port.
 - Do not add keyword intent classifiers here or in conversation code.
 
 ### Restaurant
@@ -116,12 +116,12 @@ When a behavior appears to need multiple layers, split it explicitly:
 ## NLU Engine Flow
 
 ```text
-conversation/adapter/output/NluEngineGateway
-  -> AnalyzeText input port
+conversation/adapter/outbound/NluEngineGateway
+  -> AnalyzeTextPort inbound port
   -> AnalyzeTextUseCase
        build TaggedInput
        validate artifact contract
-       call NluModelRuntime output port
+       call NluModelRuntimePort outbound port
        decode logits and BIO tags into NluAnalysis
   -> OnnxNluRuntime
        tokenize prepared tagged text
@@ -156,3 +156,5 @@ Useful crates/tools for architecture checks:
 - `cargo-deny`: dependency graph policy checks for third-party crates, licenses, advisories, and duplicate/banned dependencies. It does not enforce internal hexagonal layers.
 
 Recommended next step: add an architecture test with `arch_test_core` or `arch-lint` once the layer rules are stable enough to enforce in CI.
+
+

@@ -22,10 +22,10 @@
 
 - `domain/` contains pure NLU domain objects such as `InferenceContext`,
   `TaggedInput`, `NluAnalysis`, intents, entities, and token labels.
-- `application/` contains `AnalyzeTextUseCase`, input/output ports, artifact
+- `application/` contains `AnalyzeTextUseCase`, inbound/outbound ports, artifact
   contract structs, preprocessing orchestration, artifact validation, and output
   decoding.
-- `adapter/output/` contains concrete ONNX Runtime and tokenizer integration.
+- `adapter/outbound/` contains concrete ONNX Runtime and tokenizer integration.
 - Artifact serialization structs such as ONNX contract and label maps belong in
   `application/` or adapter boundary modules, not in `domain/`.
 - `OnnxNluRuntime` must receive prepared `TaggedInput`; it must not build it.
@@ -48,6 +48,14 @@
 
 - Domain types live under `domain`.
 - Ports and use cases live under `application`.
-- ONNX Runtime and tokenizer integration live under `adapter/output`.
+- ONNX Runtime and tokenizer integration live under `adapter/outbound`.
 - Keep adapters depending on application ports and boundary/domain types, not on
   conversation internals or application orchestration helpers.
+
+
+
+
+
+
+
+

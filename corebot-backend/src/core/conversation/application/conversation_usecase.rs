@@ -3,9 +3,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use super::conversation_command::{HandleConversationCommand, HandleConversationResult};
-use super::port::input::conversation_trait::HandleConversation;
-use super::port::output::domain_gateway_trait::DomainGatewayPort;
-use super::port::output::nlp_analyzer_trait::NlpEngineGatewayPort;
+use super::port::inbound::conversation_trait::HandleConversationPort;
+use super::port::outbound::domain_gateway_trait::DomainGatewayPort;
+use super::port::outbound::nlp_analyzer_trait::NlpEngineGatewayPort;
 pub struct HandleConversationUseCase {
     domain_gateway: Arc<dyn DomainGatewayPort>,
     nlu_engine_gateway: Arc<dyn NlpEngineGatewayPort>,
@@ -23,7 +23,7 @@ impl HandleConversationUseCase {
     }
 }
 
-impl HandleConversation for HandleConversationUseCase {
+impl HandleConversationPort for HandleConversationUseCase {
     fn handle_message(&self, command: HandleConversationCommand) -> HandleConversationResult {
         let session_id = command
             .session_id

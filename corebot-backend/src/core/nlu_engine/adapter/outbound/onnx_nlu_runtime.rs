@@ -12,8 +12,8 @@ use crate::core::nlu_engine::application::nlu_artifacts::{LabelMaps, OnnxContrac
 use crate::core::nlu_engine::application::nlu_model_inference::{
     NluModelInference, OnnxModelOutput,
 };
-use crate::core::nlu_engine::application::port::output::nlu_model_runtime_trait::{
-    NluModelRuntime, NluRuntimeError,
+use crate::core::nlu_engine::application::port::outbound::nlu_model_runtime_trait::{
+    NluModelRuntimePort, NluRuntimeError,
 };
 use crate::core::nlu_engine::domain::analysis::TaggedInput;
 
@@ -147,7 +147,7 @@ impl OnnxNluRuntime {
     }
 }
 
-impl NluModelRuntime for OnnxNluRuntime {
+impl NluModelRuntimePort for OnnxNluRuntime {
     fn contract(&self) -> &OnnxContract {
         &self.contract
     }

@@ -3,10 +3,10 @@ use std::sync::Arc;
 use axum::{Json, Router, extract::State, routing::post};
 
 use super::send_message_dto::{SendMessageRequest, SendMessageResponse};
-use crate::core::conversation::application::port::input::conversation_trait::HandleConversation;
+use crate::core::conversation::application::port::inbound::conversation_trait::HandleConversationPort;
 
 async fn send_message(
-    State(usecase): State<Arc<dyn HandleConversation + Send + Sync>>,
+    State(usecase): State<Arc<dyn HandleConversationPort + Send + Sync>>,
     Json(request): Json<SendMessageRequest>,
 ) -> Json<SendMessageResponse> {
     let result = usecase.handle_message(request.into());
@@ -14,7 +14,7 @@ async fn send_message(
 }
 
 pub fn conversation_routes_with_use_case(
-    use_case: Arc<dyn HandleConversation + Send + Sync>,
+    use_case: Arc<dyn HandleConversationPort + Send + Sync>,
 ) -> Router {
     Router::new()
         .route("/api/v1/conversation/send_message", post(send_message))

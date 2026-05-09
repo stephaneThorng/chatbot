@@ -1,4 +1,4 @@
-use crate::core::restaurant::application::port::input::restaurant_trait::RestaurantPort;
+use crate::core::restaurant::application::port::inbound::restaurant_trait::RestaurantPort;
 /// Stub implementation of RestaurantPort.
 /// Replace each method body with real data sources when available.
 pub struct RestaurantAdapter;

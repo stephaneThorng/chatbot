@@ -1,5 +1,4 @@
-use uuid::Uuid;
-
+use super::conversation_id::ConversationId;
 use super::domain_type::DomainType;
 use super::intent::{IntentCatalog, IntentId};
 use super::workflow::Workflow;
@@ -15,7 +14,7 @@ use super::workflow::Workflow;
 /// You cannot handle informational intents during a Workflow.
 #[derive(Debug, Clone)]
 pub struct Conversation {
-    pub id: Uuid,
+    pub id: ConversationId,
     pub domain: DomainType,
     pub state: ConversationState,
 }
@@ -39,13 +38,13 @@ pub enum TransitionResult {
 impl Conversation {
     pub fn new(domain: DomainType) -> Self {
         Self {
-            id: Uuid::new_v4(),
+            id: ConversationId::new(),
             domain,
             state: ConversationState::Idle,
         }
     }
 
-    pub fn with_id(id: Uuid, domain: DomainType) -> Self {
+    pub fn with_id(id: ConversationId, domain: DomainType) -> Self {
         Self {
             id,
             domain,

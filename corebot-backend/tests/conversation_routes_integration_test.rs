@@ -3,13 +3,13 @@ use std::sync::Arc;
 use axum_test::TestServer;
 use serde_json::json;
 
-use corebot_backend::core::conversation::adapter::input::web::routes::conversation_routes_with_use_case;
-use corebot_backend::core::conversation::adapter::output::restaurant_domain_gateway::RestaurantDomainGateway;
+use corebot_backend::core::conversation::adapter::inbound::web::routes::conversation_routes_with_use_case;
+use corebot_backend::core::conversation::adapter::outbound::restaurant_domain_gateway::RestaurantDomainGateway;
 use corebot_backend::core::conversation::application::conversation_usecase::HandleConversationUseCase;
-use corebot_backend::core::conversation::application::port::input::conversation_trait::HandleConversation;
-use corebot_backend::core::conversation::application::port::output::nlp_analyzer_trait::NlpEngineGatewayPort;
+use corebot_backend::core::conversation::application::port::inbound::conversation_trait::HandleConversationPort;
+use corebot_backend::core::conversation::application::port::outbound::nlp_analyzer_trait::NlpEngineGatewayPort;
 use corebot_backend::core::nlu_engine::domain::analysis::{NluAnalysis, NluIntent};
-use corebot_backend::core::restaurant::application::port::input::restaurant_trait::RestaurantPort;
+use corebot_backend::core::restaurant::application::port::inbound::restaurant_trait::RestaurantPort;
 
 struct StubRestaurantPort;
 
@@ -42,7 +42,7 @@ impl NlpEngineGatewayPort for StubNlpAnalyzer {
 fn make_server(intent_name: &'static str) -> TestServer {
     let gateway = Arc::new(RestaurantDomainGateway::new(Arc::new(StubRestaurantPort)));
     let analyzer = Arc::new(StubNlpAnalyzer { intent_name });
-    let use_case: Arc<dyn HandleConversation + Send + Sync> =
+    let use_case: Arc<dyn HandleConversationPort + Send + Sync> =
         Arc::new(HandleConversationUseCase::new(gateway, analyzer));
     TestServer::new(conversation_routes_with_use_case(use_case))
 }

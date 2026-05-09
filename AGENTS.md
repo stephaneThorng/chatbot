@@ -20,10 +20,10 @@
 - Use feature-based hexagonal architecture under `corebot-backend/src/core/<feature>/`.
 - Keep domain models free of framework annotations, HTTP serialization concerns, external client types, and artifact serialization concerns.
 - Put application commands, use cases, application services, and port traits under `application`.
-- Put inbound ports under `application/port/input`.
-- Put outbound ports under `application/port/output`.
-- Put HTTP routes and DTOs under `adapter/input/web`.
-- Put persistence, external clients, runtime integrations, and gateways under `adapter/output`.
+- Put inbound ports under `application/port/inbound`.
+- Put outbound ports under `application/port/outbound`.
+- Put HTTP routes and DTOs under `adapter/inbound/web`.
+- Put persistence, external clients, runtime integrations, and gateways under `adapter/outbound`.
 - Adapters may depend on application ports and domain types. They must not call use-case internals or other adapters directly.
 - Application code may depend on domain types and port traits. It must not import `axum`, HTTP DTOs, ONNX runtime APIs, tokenizer APIs, filesystem APIs for adapters, or adapter modules.
 - Domain code must not import `serde`, `axum`, `ort`, `tokenizers`, repositories, clients, or application services.
@@ -31,11 +31,11 @@
 ## Naming
 
 - Use case structs use `{Action}{Feature}UseCase`.
-- Input port traits use `{Action}{Feature}`.
-- Output port traits use capability-oriented names such as `{Entity}Repository`, `{Service}Runtime`, or `{ExternalSystem}Gateway`.
+- Input port traits use `{Action}{Feature}Port`.
+- Output port traits use capability-oriented names suffixed with `Port`, such as `{Entity}RepositoryPort`, `{Service}RuntimePort`, or `{ExternalSystem}GatewayPort`.
 - Command structs use `{Action}{Feature}Command`.
 - Result structs use `{Action}{Feature}Result`.
-- Route files use `routes.rs` inside `adapter/input/web`.
+- Route files use `routes.rs` inside `adapter/inbound/web`.
 - HTTP DTOs use `{Action}{Feature}Request` and `{Action}{Feature}Response`.
 - Mapper files use `{Action}{Feature}Mapper` naming in type names and `<action>_<feature>_mapper.rs` for files.
 
@@ -55,3 +55,5 @@
 - Python training and ONNX export code owns training datasets, model construction, and artifact generation.
 - Rust must consume exported artifacts through explicit runtime contracts.
 - Keep Rust preprocessing aligned with the Python training format when changing NLU input construction.
+
+

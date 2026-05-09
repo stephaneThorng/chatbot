@@ -15,10 +15,10 @@
 - Follow hexagonal architecture under `src/core/<feature>/`.
 - `domain/` owns pure business concepts and value objects.
 - `application/` owns commands, results, use cases, application services, and port traits. No framework imports allowed.
-- `application/port/input/` owns inbound use-case traits.
-- `application/port/output/` owns outbound dependency traits.
-- `adapter/input/` owns inbound adapters such as HTTP, future gRPC, and CLI.
-- `adapter/output/` owns outbound adapters such as repositories, gateways, external clients, and model runtimes.
+- `application/port/inbound/` owns inbound use-case traits.
+- `application/port/outbound/` owns outbound dependency traits.
+- `adapter/inbound/` owns inbound adapters such as HTTP, future gRPC, and CLI.
+- `adapter/outbound/` owns outbound adapters such as repositories, gateways, external clients, and model runtimes.
 - Domain structs must not derive `Serialize` or `Deserialize`. Only DTOs or artifact/config structs outside `domain/` do.
 - Adapters depend on application port traits and domain types, never on use case structs directly.
 - Application code may call output ports, but output adapters must not call application use cases or application decoding/orchestration helpers.
@@ -30,10 +30,10 @@
 |-------|------|--------------|
 | `domain/` | Business state, value objects, invariants, deterministic transformations independent of infrastructure | HTTP/JSON DTOs, `serde`, Axum, ONNX/tokenizer APIs, filesystem/runtime clients |
 | `application/` | Commands, use cases, orchestration, port traits, application-level validation, mapping between port data and domain results | Web routing, DTO serialization, adapter construction, external client details |
-| `application/port/input/` | Traits exposed to inbound adapters | Concrete adapter or use-case wiring |
-| `application/port/output/` | Traits required by use cases to access storage, runtimes, gateways, or external services | Concrete implementation details |
-| `adapter/input/` | Protocol-specific inbound mapping and handler glue | Business decisions, workflow logic, direct persistence/runtime calls |
-| `adapter/output/` | Concrete repositories, gateways, external clients, runtime integrations | Application orchestration, domain policy, inbound adapter calls |
+| `application/port/inbound/` | Traits exposed to inbound adapters | Concrete adapter or use-case wiring |
+| `application/port/outbound/` | Traits required by use cases to access storage, runtimes, gateways, or external services | Concrete implementation details |
+| `adapter/inbound/` | Protocol-specific inbound mapping and handler glue | Business decisions, workflow logic, direct persistence/runtime calls |
+| `adapter/outbound/` | Concrete repositories, gateways, external clients, runtime integrations | Application orchestration, domain policy, inbound adapter calls |
 
 ## Method Placement Rules
 
@@ -55,7 +55,8 @@
 | File: HTTP DTOs | `<action>_<feature>_dto.rs` | `send_message_dto.rs` |
 | File: mapper | `<action>_<feature>_mapper.rs` | `send_message_mapper.rs` |
 | Struct: use case | `{Action}{Feature}UseCase` | `HandleConversationUseCase` |
-| Trait: input port | `{Action}{Feature}` | `HandleConversation` |
+| Trait: inbound port | `{Action}{Feature}Port` | `HandleConversationPort` |
+| Trait: outbound port | `{Capability}Port` or `{Entity}RepositoryPort` | `NluModelRuntimePort` |
 | Struct: command | `{Action}{Feature}Command` | `HandleConversationCommand` |
 | Struct: result | `{Action}{Feature}Result` | `HandleConversationResult` |
 | Struct: HTTP request | `{Action}{Feature}Request` | `SendMessageRequest` |
@@ -72,17 +73,17 @@ src/core/<feature>/
 │   ├── <feature>_usecase.rs
 │   ├── <application_service>.rs
 │   └── port/
-│       ├── input/
+│       ├── inbound/
 │       │   └── <feature>_trait.rs
-│       └── output/
+│       └── outbound/
 │           └── <dependency>_trait.rs
 └── adapter/
-    ├── input/
+    ├── inbound/
     │   └── web/
     │       ├── routes.rs
     │       ├── <action>_<feature>_dto.rs
     │       └── <action>_<feature>_mapper.rs
-    └── output/
+    └── outbound/
         └── <concrete_dependency>.rs
 ```
 

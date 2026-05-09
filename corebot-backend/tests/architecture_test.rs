@@ -7,8 +7,8 @@ fn core_layers_follow_hexagonal_boundaries() {
         "domain".to_owned(),
         "application".to_owned(),
         "adapter".to_owned(),
-        "input".to_owned(),
-        "output".to_owned(),
+        "inbound".to_owned(),
+        "outbound".to_owned(),
         "web".to_owned(),
     ])
     .with_access_rule(MayNotAccess::new(
@@ -22,13 +22,13 @@ fn core_layers_follow_hexagonal_boundaries() {
         true,
     ))
     .with_access_rule(MayNotAccess::new(
-        "input".to_owned(),
-        hash_set!["output".to_owned()],
+        "inbound".to_owned(),
+        hash_set!["outbound".to_owned()],
         true,
     ))
     .with_access_rule(MayNotAccess::new(
-        "output".to_owned(),
-        hash_set!["input".to_owned()],
+        "outbound".to_owned(),
+        hash_set!["inbound".to_owned()],
         true,
     ));
 
