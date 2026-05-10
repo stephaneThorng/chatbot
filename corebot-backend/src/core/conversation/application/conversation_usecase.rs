@@ -2,7 +2,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use super::conversation_command::{HandleConversationCommand, HandleConversationResult};
-use super::conversation_reply_renderer::ConversationReplyRenderer;
+use super::conversation_processor::ConversationProcessor;
 use super::port::inbound::conversation_trait::HandleConversationPort;
 use super::port::outbound::conversation_repository::ConversationRepositoryPort;
 use super::port::outbound::domain_gateway_trait::DomainGatewayPort;
@@ -11,44 +11,42 @@ use super::port::outbound::nlp_analyzer_trait::NlpEngineGatewayPort;
 use crate::core::conversation::domain::conversation::Conversation;
 use crate::core::conversation::domain::conversation_id::ConversationId;
 use crate::core::conversation::domain::domain_type::DomainType;
-use crate::core::conversation::domain::intent::build_catalog;
-use crate::core::conversation::domain::state_machine::{
-    ConversationEvent, ConversationStateMachine, DetectedEntity,
-};
-use crate::core::nlu_engine::domain::analysis::NluAnalysis;
 
+/// Use case that handles one user message in a conversation session.
+///
+/// It stays intentionally thin: session lifecycle, NLU call, conversation
+/// processing delegation, persistence, and response assembly.
 pub struct HandleConversationUseCase {
     domain: DomainType,
     nlu_engine_gateway: Arc<dyn NlpEngineGatewayPort>,
     conversation_repository: Arc<dyn ConversationRepositoryPort>,
     language_detector: Arc<dyn LanguageDetectorPort>,
-    reply_renderer: ConversationReplyRenderer,
+    processor: ConversationProcessor,
 }
 
 impl HandleConversationPort for HandleConversationUseCase {
     fn handle_message(&self, command: HandleConversationCommand) -> HandleConversationResult {
-        let (mut conversation, session_id) =
+        let (conversation, session_id) =
             self.load_or_create_conversation(command.session_id.as_deref(), &command.message);
-        let catalog = build_catalog(conversation.domain);
-        let nlu_context = ConversationStateMachine::nlu_context(&conversation, &catalog);
         let analysis = self.nlu_engine_gateway.analyze(
             &command.message,
-            &nlu_context.lang,
-            Self::domain_tag(nlu_context.domain),
-            nlu_context.task,
+            &conversation.lang,
+            conversation.domain,
+            self.processor.detect_task(&conversation),
         );
-        let transition = ConversationStateMachine::apply(
-            &mut conversation,
-            &catalog,
-            Self::event_from_analysis(&command.message, analysis),
-        );
-        let reply = self
-            .reply_renderer
-            .render(&transition.effect, &catalog, &conversation.lang);
 
-        self.save_conversation(&conversation);
+        let process_result = self
+            .processor
+            .process(&conversation, &command.message, analysis);
 
-        HandleConversationResult { session_id, reply }
+        let _ = self
+            .conversation_repository
+            .save(&process_result.updated_conversation);
+
+        HandleConversationResult {
+            session_id,
+            reply: process_result.reply,
+        }
     }
 }
 
@@ -65,10 +63,14 @@ impl HandleConversationUseCase {
             nlu_engine_gateway,
             conversation_repository,
             language_detector,
-            reply_renderer: ConversationReplyRenderer::new(domain_gateway),
+            processor: ConversationProcessor::new(domain_gateway),
         }
     }
 
+    /// Loads a stored conversation or creates a new one for the configured domain.
+    ///
+    /// Language detection runs only for new sessions so an existing conversation
+    /// keeps the language selected at its first turn.
     fn load_or_create_conversation(
         &self,
         session_id: Option<&str>,
@@ -90,32 +92,6 @@ impl HandleConversationUseCase {
         let session_id = conversation.id.to_string();
         (conversation, session_id)
     }
-
-    fn save_conversation(&self, conversation: &Conversation) {
-        let _ = self.conversation_repository.save(conversation);
-    }
-
-    fn event_from_analysis(message: &str, analysis: NluAnalysis) -> ConversationEvent {
-        ConversationEvent::NluAnalysisApplied {
-            intent: crate::core::conversation::domain::intent::IntentId::new(&analysis.intent.name),
-            text: message.to_string(),
-            entities: analysis
-                .entities
-                .into_iter()
-                .map(|entity| DetectedEntity {
-                    entity_type: entity.entity_type,
-                    value: entity.value,
-                })
-                .collect(),
-        }
-    }
-
-    fn domain_tag(domain: DomainType) -> &'static str {
-        match domain {
-            DomainType::Restaurant => "restaurant",
-            DomainType::Hotel => "hotel",
-        }
-    }
 }
 
 #[cfg(test)]
@@ -125,8 +101,9 @@ mod tests {
     use std::sync::RwLock;
 
     use crate::core::conversation::application::port::outbound::conversation_repository::RepositoryError;
+    use crate::core::conversation::domain::intent::NluTask;
     use crate::core::nlu_engine::domain::analysis::{
-        NerTokenLabel, NluEntity, NluIntent, NluIntentCandidate,
+        NerTokenLabel, NluAnalysis, NluEntity, NluIntent, NluIntentCandidate,
     };
 
     struct StubDomainGateway {
@@ -250,13 +227,19 @@ mod tests {
             &self,
             text: &str,
             lang: &str,
-            domain: &str,
-            task: Option<String>,
+            domain: DomainType,
+            task: Option<NluTask>,
         ) -> NluAnalysis {
             let _ = text;
-            self.tasks.lock().unwrap().push(task);
+            self.tasks
+                .lock()
+                .unwrap()
+                .push(task.map(|t| t.as_tag().to_string()));
             self.langs.lock().unwrap().push(lang.to_string());
-            self.domains.lock().unwrap().push(domain.to_string());
+            self.domains
+                .lock()
+                .unwrap()
+                .push(domain.as_str().to_string());
             self.responses
                 .lock()
                 .unwrap()
@@ -267,7 +250,7 @@ mod tests {
 
     fn analysis(intent_name: &'static str, entities: Vec<NluEntity>) -> NluAnalysis {
         NluAnalysis {
-            tagged_text: String::new(),
+            processed_text: String::new(),
             intent: NluIntent {
                 name: intent_name.to_string(),
                 confidence: 1.0,
@@ -396,10 +379,10 @@ mod tests {
             next.reply,
             "I have the reservation details. Do you confirm this reservation?"
         );
-        assert_eq!(
-            analyzer.recorded_tasks(),
-            vec![None, Some("WF_RESERVATION_CREATE".to_string())]
-        );
+        let recorded = analyzer.recorded_tasks();
+        assert_eq!(recorded.len(), 2);
+        assert!(recorded[0].is_none());
+        assert_eq!(recorded[1], Some("WF_RESERVATION_CREATE".to_string()));
     }
 
     #[test]
@@ -428,10 +411,10 @@ mod tests {
             "I have the reservation details. Do you confirm this reservation?"
         );
         assert_eq!(confirm.reply, "Your reservation request is confirmed.");
-        assert_eq!(
-            analyzer.recorded_tasks(),
-            vec![None, Some("WF_CHOICE".to_string())]
-        );
+        let recorded = analyzer.recorded_tasks();
+        assert_eq!(recorded.len(), 2);
+        assert!(recorded[0].is_none());
+        assert_eq!(recorded[1], Some("WF_CHOICE".to_string()));
     }
 
     #[test]

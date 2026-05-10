@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use crate::core::conversation::application::port::outbound::nlp_analyzer_trait::NlpEngineGatewayPort;
+use crate::core::conversation::domain::domain_type::DomainType;
+use crate::core::conversation::domain::intent::NluTask;
 use crate::core::nlu_engine::application::AnalyzeTextCommand;
 use crate::core::nlu_engine::application::port::inbound::analyze_text_trait::AnalyzeTextPort;
 use crate::core::nlu_engine::domain::analysis::{NluAnalysis, NluIntent};
@@ -20,16 +22,22 @@ impl NluEngineGateway {
 }
 
 impl NlpEngineGatewayPort for NluEngineGateway {
-    fn analyze(&self, text: &str, lang: &str, domain: &str, task: Option<String>) -> NluAnalysis {
+    fn analyze(
+        &self,
+        text: &str,
+        lang: &str,
+        domain: DomainType,
+        task: Option<NluTask>,
+    ) -> NluAnalysis {
         self.nlu_engine_analyzer
             .analyze(AnalyzeTextCommand {
                 text: text.to_string(),
                 lang: lang.to_string(),
-                domain: domain.to_string(),
-                task,
+                domain: domain.as_str().to_string(),
+                task: task.map(|t| t.as_tag().to_string()),
             })
             .unwrap_or_else(|_| NluAnalysis {
-                tagged_text: text.to_string(),
+                processed_text: text.to_string(),
                 intent: NluIntent {
                     name: "unknown".to_string(),
                     confidence: 0.0,

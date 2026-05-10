@@ -133,7 +133,7 @@ mod tests {
         let tagged_input = runtime.last_tagged_input();
         assert_eq!(tagged_input.text, "[LANG=en] [DOMAIN=restaurant] Hello");
         assert_eq!(tagged_input.prefix_length, 30);
-        assert_eq!(analysis.tagged_text, tagged_input.text);
+        assert_eq!(analysis.processed_text, tagged_input.text);
         assert_eq!(analysis.intent.name, "greet");
     }
 }

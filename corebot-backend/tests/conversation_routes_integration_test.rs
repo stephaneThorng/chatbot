@@ -12,6 +12,7 @@ use corebot_backend::core::conversation::application::port::outbound::conversati
 use corebot_backend::core::conversation::application::port::outbound::language_detector_trait::LanguageDetectorPort;
 use corebot_backend::core::conversation::application::port::outbound::nlp_analyzer_trait::NlpEngineGatewayPort;
 use corebot_backend::core::conversation::domain::domain_type::DomainType;
+use corebot_backend::core::conversation::domain::intent::NluTask;
 use corebot_backend::core::nlu_engine::domain::analysis::{NluAnalysis, NluIntent};
 use corebot_backend::core::restaurant::application::port::inbound::restaurant_trait::RestaurantPort;
 
@@ -28,10 +29,16 @@ struct StubNlpAnalyzer {
 }
 
 impl NlpEngineGatewayPort for StubNlpAnalyzer {
-    fn analyze(&self, text: &str, lang: &str, domain: &str, task: Option<String>) -> NluAnalysis {
+    fn analyze(
+        &self,
+        text: &str,
+        lang: &str,
+        domain: DomainType,
+        task: Option<NluTask>,
+    ) -> NluAnalysis {
         let _ = (lang, domain, task);
         NluAnalysis {
-            tagged_text: text.to_string(),
+            processed_text: text.to_string(),
             intent: NluIntent {
                 name: self.intent_name.to_string(),
                 confidence: 1.0,

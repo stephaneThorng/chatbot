@@ -44,7 +44,7 @@ pub fn decode_nlu_analysis(
     )?;
 
     Ok(NluAnalysis {
-        tagged_text: tagged_input.text,
+        processed_text: tagged_input.text,
         intent: NluIntent {
             name: primary_intent.name.clone(),
             confidence: primary_intent.confidence,

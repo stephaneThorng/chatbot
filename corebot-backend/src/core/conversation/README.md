@@ -18,18 +18,19 @@ Conversation state transitions live in the domain FSM:
 - `WF_CHOICE`: NLU task context used when all required workflow slots are filled
   and the bot expects a binary confirmation.
 
-The FSM receives a `ConversationEvent` built from NLU output and returns a
-`ConversationTransition` with the updated conversation state plus a typed
-`ConversationEffect`.
+The FSM receives a compact `ConversationInput` built from NLU output and returns
+a typed `ConversationEffect`.
 
 Core transitions:
 
 - Idle + workflow intent starts the matching workflow.
-- Active workflow + slot entities fills slots through catalog mappings.
+- Active workflow + slot entities fills slots through handler-owned policy mappings.
 - Ready workflow derives `WF_CHOICE`.
 - `affirmative` completes the active workflow.
 - `negative` cancels the active workflow.
 - `cancel` is a built-in interrupt that only cancels an active workflow.
+- Informational intents are not persistent workflow state and are handled before
+  the FSM by the application `ConversationProcessor`.
 
 ## Intent, Task, Workflow, Catalog
 
@@ -38,12 +39,14 @@ These are separate concepts:
 - `intent`: model label predicted for an utterance.
 - `workflow`: deterministic conversation behavior started by configured intents.
 - `task`: NLU context tag passed while a workflow step is active.
-- `catalog`: Rust-built domain reference containing intent policies, workflow
-  slots, entity-to-slot mappings, NLU task tags, and i18n keys.
+- `handler policy`: Rust-built intent reference exposed by each `IntentHandler`,
+  including category, workflow slots, entity-to-slot mappings, NLU task tags, and
+  workflow prompt/completion keys.
+- `catalog`: shared text catalog for system/fallback i18n keys.
 
-The catalog remains Rust-built in v1. Restaurant currently has
-`reservation_create` and `reservation_cancel` workflows. Hotel intentionally has
-an empty catalog until that domain is defined.
+Policies remain Rust-built in v1. Restaurant currently has
+`reservation_create` and `reservation_cancel` workflow handlers. Hotel
+intentionally registers no handlers until that domain is defined.
 
 ## Domain Package Layout
 
@@ -51,7 +54,7 @@ The conversation domain is organized by responsibility:
 
 - `model`: stateful domain objects and value objects, such as `Conversation`,
   `ConversationId`, `Workflow`, `SlotBag`, and `DomainType`.
-- `catalog`: Rust-built intent and workflow metadata.
+- `catalog`: shared system text metadata.
 - `fsm`: deterministic conversation state transitions and typed effects.
 
 Compatibility re-exports are kept from `domain::conversation`,
@@ -65,23 +68,27 @@ preserve the language stored in `Conversation.lang`.
 The use case depends on `LanguageDetectorPort`; the current outbound adapter uses
 `langdetect-rs` and normalizes unsupported detections to English.
 
-## Reply Rendering
+## Conversation Processing
 
-The domain FSM never calls `rust-i18n` or domain gateways. It emits typed effects
-such as slot prompts, confirmation prompts, workflow completions, static intent
-responses, and dynamic domain responses.
+`ConversationProcessor` is the application-level decision point after NLU:
 
-`ConversationReplyRenderer` resolves those effects in the application layer:
+- active workflows and workflow-starting intents are delegated to the domain FSM
+  with the resolved handler policy;
+- informational intents are delegated to stateless `IntentHandler`
+  implementations;
+- static conversational replies such as greeting, thanks, and goodbye are handled
+  by static reply handlers;
+- unknown labels fall back to deterministic system text.
 
-- i18n keys are rendered with `rust-i18n`.
-- informational intent effects are delegated to registered `IntentHandler`
-  implementations when a handler exists.
-- dynamic domain responses inside handlers use application ports such as
-  `DomainGatewayPort`.
+The domain FSM never calls `rust-i18n`, domain gateways, or intent handlers. It
+only emits workflow/system effects such as slot prompts, confirmation prompts,
+workflow completions, and workflow cancellation messages.
 
-Intent handlers isolate "what to do for this intent" from both the FSM and the
-use case. `OpeningHoursIntentHandler` is the first concrete handler and handles
-`ask_opening_hours`.
+Intent handlers isolate immediate "what to do for this intent" behavior from
+both the FSM and the use case. They receive the raw message, language, intent,
+and NER entities. They do not mutate `Conversation` and do not create pending
+clarification state. If required NER is missing, the handler returns a direct
+message asking the user to reformulate; the conversation remains `Idle`.
 
 ## Use Case Role
 
@@ -89,11 +96,11 @@ use case. `OpeningHoursIntentHandler` is the first concrete handler and handles
 
 1. Load or create the conversation.
 2. Detect language for new sessions only.
-3. Build the catalog for the conversation domain.
-4. Ask the FSM for the current NLU context.
+3. Build the shared text catalog for the conversation domain.
+4. Ask the processor for the active workflow NLU task.
 5. Call the NLU gateway.
-6. Apply the FSM event.
-7. Render the returned effect.
+6. Delegate the NLU result to `ConversationProcessor`.
+7. Processor routes to the FSM or an intent handler and returns the reply.
 8. Save the conversation.
 9. Return `session_id` and `reply`.
 

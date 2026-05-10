@@ -1,25 +1,14 @@
-use std::sync::Arc;
-
 use crate::core::conversation::application::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
-use crate::core::conversation::application::port::outbound::domain_gateway_trait::DomainGatewayPort;
 use crate::core::conversation::domain::intent::{IntentId, IntentKind, IntentPolicy};
 use crate::core::conversation::domain::slot::EntityType;
 
-pub struct OpeningHoursIntentHandler {
-    domain_gateway: Arc<dyn DomainGatewayPort>,
-}
+pub struct MenuItemDetailsIntentHandler;
 
-impl OpeningHoursIntentHandler {
-    pub fn new(domain_gateway: Arc<dyn DomainGatewayPort>) -> Self {
-        Self { domain_gateway }
-    }
-}
-
-impl IntentHandler for OpeningHoursIntentHandler {
+impl IntentHandler for MenuItemDetailsIntentHandler {
     fn intent(&self) -> IntentId {
-        IntentId::AskOpeningHours
+        IntentId::AskMenuItemDetails
     }
 
     fn policy(&self) -> IntentPolicy {
@@ -28,7 +17,7 @@ impl IntentHandler for OpeningHoursIntentHandler {
             kind: IntentKind::Informational,
             nlu_task: None,
             workflow_slots: vec![],
-            supported_entities: vec![EntityType::Date, EntityType::Time],
+            supported_entities: vec![EntityType::MenuItem, EntityType::Allergen],
             confirmation_prompt: None,
             completion_response: None,
         }
@@ -40,11 +29,22 @@ impl IntentHandler for OpeningHoursIntentHandler {
             input.analysis_intent,
             input.text,
             input.conversation.lang.as_str(),
-            input.analysis_entities,
         );
+        let menu_entity = self.lookup_entity_value(&input, EntityType::MenuItem);
+        let allergen_entity = self.lookup_entity_value(&input, EntityType::Allergen);
+
+        let reply = match (menu_entity, allergen_entity) {
+            (Some(item), Some(allergen)) => {
+                format!("I can check whether {item} contains {allergen}.")
+            }
+            (Some(item), None) => format!("Here are the available details for {item}."),
+            (None, Some(allergen)) => format!("I can help find dishes that mention {allergen}."),
+            (None, None) => "Which menu item or category would you like details about?".to_string(),
+        };
+
         StateHandlerResult {
             updated_conversation: input.conversation.clone(),
-            reply: self.domain_gateway.get_opening_hours(),
+            reply,
             handled_intent: self.intent(),
         }
     }

@@ -51,7 +51,7 @@ pub struct NerTokenLabel {
 /// Final NLU result returned to callers of the NLU engine.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NluAnalysis {
-    pub tagged_text: String,
+    pub processed_text: String,
     pub intent: NluIntent,
     pub intents: Vec<NluIntentCandidate>,
     pub entities: Vec<NluEntity>,

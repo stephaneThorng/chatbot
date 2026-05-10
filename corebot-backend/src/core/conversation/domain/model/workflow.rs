@@ -1,8 +1,7 @@
-use crate::core::conversation::domain::catalog::intent::{IntentCatalog, IntentId, SlotDefinition};
-use crate::core::conversation::domain::model::slot::{SlotBag, SlotError, SlotType, SlotValue};
-
-/// Confirmation slot - automatically appended to every workflow.
-const CONFIRMATION_SLOT: &str = "confirmation";
+use crate::core::conversation::domain::catalog::intent::{IntentId, IntentPolicy, NluTask};
+use crate::core::conversation::domain::model::slot::{
+    SlotBag, SlotDefinition, SlotError, SlotName, SlotType, SlotValue,
+};
 
 /// An active multi-turn workflow collecting slots toward completion.
 /// Always ends with a mandatory confirmation step.
@@ -12,20 +11,25 @@ const CONFIRMATION_SLOT: &str = "confirmation";
 #[derive(Debug, Clone)]
 pub struct Workflow {
     pub intent: IntentId,
+    pub nlu_task: Option<NluTask>,
     data_slots: Vec<SlotDefinition>,
     pub slots: SlotBag,
 }
 
 impl Workflow {
-    /// Create a workflow from the catalog's slot definitions.
+    /// Create a workflow from the handler-owned policy.
     /// Confirmation is always added automatically at the end.
-    pub fn from_catalog(intent: IntentId, catalog: &IntentCatalog) -> Self {
-        let data_slots = catalog.required_slots(&intent);
+    pub fn from_policy(policy: &IntentPolicy) -> Self {
         Self {
-            intent,
-            data_slots,
+            intent: policy.id.clone(),
+            nlu_task: policy.nlu_task,
+            data_slots: policy.workflow_slots.clone(),
             slots: SlotBag::new(),
         }
+    }
+
+    pub fn slot_definitions(&self) -> &[SlotDefinition] {
+        &self.data_slots
     }
 
     /// The next slot to collect.
@@ -33,13 +37,13 @@ impl Workflow {
     pub fn next_required_slot(&self) -> Option<NextSlot<'_>> {
         // First: unfilled required data slots
         for def in &self.data_slots {
-            if def.required && !self.slots.is_filled(&def.name) {
+            if def.required && !self.slots.is_filled(def.name) {
                 return Some(NextSlot::Data(def));
             }
         }
 
         // Then: confirmation (only when all data slots are filled)
-        if !self.slots.is_filled(CONFIRMATION_SLOT) {
+        if !self.slots.is_filled(SlotName::Confirmation) {
             return Some(NextSlot::Confirmation);
         }
 
@@ -47,8 +51,8 @@ impl Workflow {
     }
 
     /// Fill a data slot with a validated value.
-    pub fn fill_slot(&mut self, slot_name: &str, value: SlotValue) -> Result<(), SlotError> {
-        if slot_name == CONFIRMATION_SLOT {
+    pub fn fill_slot(&mut self, slot_name: SlotName, value: SlotValue) -> Result<(), SlotError> {
+        if slot_name == SlotName::Confirmation {
             return self.slots.fill(slot_name, SlotType::Boolean, value);
         }
 
@@ -57,7 +61,7 @@ impl Workflow {
             .iter()
             .find(|s| s.name == slot_name)
             .ok_or_else(|| SlotError {
-                slot: slot_name.to_string(),
+                slot: slot_name,
                 message: format!("Unknown slot: {}", slot_name),
             })?;
 
@@ -70,9 +74,9 @@ impl Workflow {
             .data_slots
             .iter()
             .filter(|s| s.required)
-            .all(|s| self.slots.is_filled(&s.name));
+            .all(|s| self.slots.is_filled(s.name));
 
-        all_data_filled && self.slots.is_filled(CONFIRMATION_SLOT)
+        all_data_filled && self.slots.is_filled(SlotName::Confirmation)
     }
 
     /// True when all data slots are filled but confirmation is not yet.
@@ -81,9 +85,9 @@ impl Workflow {
             .data_slots
             .iter()
             .filter(|s| s.required)
-            .all(|s| self.slots.is_filled(&s.name));
+            .all(|s| self.slots.is_filled(s.name));
 
-        all_data_filled && !self.slots.is_filled(CONFIRMATION_SLOT)
+        all_data_filled && !self.slots.is_filled(SlotName::Confirmation)
     }
 }
 
@@ -99,62 +103,101 @@ pub enum NextSlot<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::conversation::domain::intent::build_restaurant_catalog;
+    use crate::core::conversation::domain::intent::{IntentKind, NluTask, i18n_key};
+    use crate::core::conversation::domain::slot::EntityType;
 
     fn book_workflow() -> Workflow {
-        Workflow::from_catalog(
-            IntentId::new("reservation_create"),
-            &build_restaurant_catalog(),
-        )
+        Workflow::from_policy(&IntentPolicy {
+            id: IntentId::ReservationCreate,
+            kind: IntentKind::Workflow,
+            nlu_task: Some(NluTask::ReservationCreate),
+            workflow_slots: vec![
+                slot(SlotName::Name, SlotType::Text, true),
+                slot(SlotName::Date, SlotType::Date, true),
+                slot(SlotName::Time, SlotType::Time, true),
+                slot(SlotName::People, SlotType::Number, true),
+            ],
+            supported_entities: vec![],
+            confirmation_prompt: None,
+            completion_response: None,
+        })
     }
 
     fn cancel_workflow() -> Workflow {
-        Workflow::from_catalog(
-            IntentId::new("reservation_cancel"),
-            &build_restaurant_catalog(),
-        )
+        Workflow::from_policy(&IntentPolicy {
+            id: IntentId::ReservationCancel,
+            kind: IntentKind::Workflow,
+            nlu_task: Some(NluTask::ReservationCancel),
+            workflow_slots: vec![
+                slot(SlotName::Reference, SlotType::Text, true),
+                slot(SlotName::Name, SlotType::Text, false),
+                slot(SlotName::Date, SlotType::Date, false),
+            ],
+            supported_entities: vec![],
+            confirmation_prompt: None,
+            completion_response: None,
+        })
+    }
+
+    fn slot(name: SlotName, slot_type: SlotType, required: bool) -> SlotDefinition {
+        SlotDefinition {
+            name,
+            slot_type,
+            required,
+            entity_types: vec![EntityType::Unknown("test".to_string())],
+            prompt: i18n_key("test.prompt"),
+        }
     }
 
     #[test]
     fn book_first_slot_is_name() {
         let wf = book_workflow();
-        assert!(matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == "name"));
+        assert!(
+            matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::Name)
+        );
     }
 
     #[test]
     fn cancel_goes_straight_to_confirmation() {
         let wf = cancel_workflow();
         assert!(
-            matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == "reference")
+            matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::Reference)
         );
     }
 
     #[test]
     fn slots_advance_in_order() {
         let mut wf = book_workflow();
-        wf.fill_slot("name", SlotValue::Text("Alice".into()))
+        wf.fill_slot(SlotName::Name, SlotValue::Text("Alice".into()))
             .unwrap();
-        assert!(matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == "date"));
+        assert!(
+            matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::Date)
+        );
 
-        wf.fill_slot("date", SlotValue::Date("2026-06-01".into()))
+        wf.fill_slot(SlotName::Date, SlotValue::Date("2026-06-01".into()))
             .unwrap();
-        assert!(matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == "time"));
+        assert!(
+            matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::Time)
+        );
 
-        wf.fill_slot("time", SlotValue::Time("19:00".into()))
+        wf.fill_slot(SlotName::Time, SlotValue::Time("19:00".into()))
             .unwrap();
-        assert!(matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == "people"));
+        assert!(
+            matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::People)
+        );
     }
 
     #[test]
     fn confirmation_only_after_all_data() {
         let mut wf = book_workflow();
-        wf.fill_slot("name", SlotValue::Text("Alice".into()))
+        wf.fill_slot(SlotName::Name, SlotValue::Text("Alice".into()))
             .unwrap();
-        wf.fill_slot("date", SlotValue::Date("2026-06-01".into()))
+        wf.fill_slot(SlotName::Date, SlotValue::Date("2026-06-01".into()))
             .unwrap();
-        wf.fill_slot("time", SlotValue::Time("19:00".into()))
+        wf.fill_slot(SlotName::Time, SlotValue::Time("19:00".into()))
             .unwrap();
-        wf.fill_slot("people", SlotValue::Number(4)).unwrap();
+        wf.fill_slot(SlotName::People, SlotValue::Number(4))
+            .unwrap();
 
         assert!(wf.is_ready_for_confirmation());
         assert!(!wf.is_complete());
@@ -167,14 +210,15 @@ mod tests {
     #[test]
     fn complete_after_confirmation() {
         let mut wf = book_workflow();
-        wf.fill_slot("name", SlotValue::Text("Alice".into()))
+        wf.fill_slot(SlotName::Name, SlotValue::Text("Alice".into()))
             .unwrap();
-        wf.fill_slot("date", SlotValue::Date("2026-06-01".into()))
+        wf.fill_slot(SlotName::Date, SlotValue::Date("2026-06-01".into()))
             .unwrap();
-        wf.fill_slot("time", SlotValue::Time("19:00".into()))
+        wf.fill_slot(SlotName::Time, SlotValue::Time("19:00".into()))
             .unwrap();
-        wf.fill_slot("people", SlotValue::Number(4)).unwrap();
-        wf.fill_slot("confirmation", SlotValue::Boolean(true))
+        wf.fill_slot(SlotName::People, SlotValue::Number(4))
+            .unwrap();
+        wf.fill_slot(SlotName::Confirmation, SlotValue::Boolean(true))
             .unwrap();
 
         assert!(wf.is_complete());
@@ -185,7 +229,7 @@ mod tests {
     fn unknown_slot_rejected() {
         let mut wf = book_workflow();
         assert!(
-            wf.fill_slot("color", SlotValue::Text("blue".into()))
+            wf.fill_slot(SlotName::Allergen, SlotValue::Text("blue".into()))
                 .is_err()
         );
     }
@@ -194,7 +238,7 @@ mod tests {
     fn wrong_type_rejected() {
         let mut wf = book_workflow();
         assert!(
-            wf.fill_slot("people", SlotValue::Text("four".into()))
+            wf.fill_slot(SlotName::People, SlotValue::Text("four".into()))
                 .is_err()
         );
     }
