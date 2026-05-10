@@ -13,10 +13,6 @@ impl DomainType {
             DomainType::Hotel => "hotel",
         }
     }
-
-    pub fn to_string(&self) -> String {
-        self.as_str().to_string()
-    }
 }
 
 #[cfg(test)]

@@ -4,8 +4,7 @@ use crate::core::conversation::application::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
 use crate::core::conversation::application::port::outbound::domain_gateway_trait::DomainGatewayPort;
-use crate::core::conversation::domain::intent::{IntentId, IntentKind, IntentPolicy};
-use crate::core::conversation::domain::slot::EntityType;
+use crate::core::conversation::domain::model::intent::{IntentId, IntentKind, IntentPolicy};
 
 pub struct OpeningHoursIntentHandler {
     domain_gateway: Arc<dyn DomainGatewayPort>,
@@ -28,7 +27,6 @@ impl IntentHandler for OpeningHoursIntentHandler {
             kind: IntentKind::Informational,
             nlu_task: None,
             workflow_slots: vec![],
-            supported_entities: vec![EntityType::Date, EntityType::Time],
             confirmation_prompt: None,
             completion_response: None,
         }

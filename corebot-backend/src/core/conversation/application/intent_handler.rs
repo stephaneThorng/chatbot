@@ -4,12 +4,12 @@ use std::sync::Arc;
 use rust_i18n::t;
 
 use crate::core::conversation::domain::conversation::Conversation;
-use crate::core::conversation::domain::intent::{IntentId, IntentKind, IntentPolicy};
+use crate::core::conversation::domain::model::intent::{IntentId, IntentKind, IntentPolicy};
 use crate::core::conversation::domain::slot::{
     EntityType, SlotDefinition, SlotName, SlotType, SlotValue,
 };
-use crate::core::conversation::domain::state_machine::DetectedEntity;
 use crate::core::conversation::domain::workflow::NextSlot;
+use crate::core::nlu_engine::domain::analysis::NluEntity;
 
 /// Stateless input passed to an intent-specific handler.
 ///
@@ -20,7 +20,7 @@ pub struct IntentHandlerInput<'a> {
     pub conversation: &'a Conversation,
     pub analysis_intent: &'a IntentId,
     pub text: &'a str,
-    pub analysis_entities: &'a [DetectedEntity],
+    pub analysis_entities: &'a [NluEntity],
 }
 
 /// Immediate result produced by an informational intent handler.
@@ -62,12 +62,15 @@ pub trait IntentHandler: Send + Sync {
     fn handle_workflow(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let mut updated_conversation = input.conversation.clone();
 
-        if !updated_conversation.has_active_workflow() {
-            let _ = updated_conversation.start_workflow(&self.policy());
+        if !updated_conversation.has_active_workflow()
+            && let Ok(started_conversation) =
+                updated_conversation.with_started_workflow(&self.policy())
+        {
+            updated_conversation = started_conversation;
         }
 
         if input.analysis_intent == &IntentId::Cancel {
-            updated_conversation.cancel_workflow();
+            updated_conversation = updated_conversation.with_cancelled_workflow();
             return StateHandlerResult {
                 updated_conversation,
                 reply: t!(
@@ -81,7 +84,8 @@ pub trait IntentHandler: Send + Sync {
 
         let extracted_updates =
             self.extract_slot_updates(&updated_conversation, input.analysis_entities);
-        let update_result = self.apply_slot_updates(&mut updated_conversation, extracted_updates);
+        let update_result = self.apply_slot_updates(&updated_conversation, extracted_updates);
+        updated_conversation = update_result.updated_conversation.clone();
 
         if let Some(invalid_slot) = update_result.invalid_slot {
             return StateHandlerResult {
@@ -109,7 +113,7 @@ pub trait IntentHandler: Send + Sync {
             IntentId::Affirmative if !update_result.updated_any_slot => {
                 match self.post_process(input.conversation.lang.as_str(), &updated_conversation) {
                     WorkflowPostProcessResult::Succeeded { reply } => {
-                        updated_conversation.complete_workflow();
+                        updated_conversation = updated_conversation.with_completed_workflow();
                         StateHandlerResult {
                             updated_conversation,
                             reply: reply.unwrap_or_else(|| {
@@ -189,14 +193,10 @@ pub trait IntentHandler: Send + Sync {
     fn extract_slot_updates(
         &self,
         conversation: &Conversation,
-        entities: &[DetectedEntity],
+        entities: &[NluEntity],
     ) -> SlotUpdateResult {
         let Some(workflow) = conversation.active_workflow() else {
-            return SlotUpdateResult {
-                updated_any_slot: false,
-                invalid_slot: None,
-                updates: vec![],
-            };
+            return SlotUpdateResult { updates: vec![] };
         };
 
         let slot_definitions = workflow.slot_definitions().to_vec();
@@ -224,36 +224,36 @@ pub trait IntentHandler: Send + Sync {
             }
         }
 
-        SlotUpdateResult {
-            updated_any_slot: !updates.is_empty(),
-            invalid_slot: None,
-            updates,
-        }
+        SlotUpdateResult { updates }
     }
 
     fn apply_slot_updates(
         &self,
-        conversation: &mut Conversation,
+        conversation: &Conversation,
         extracted_updates: SlotUpdateResult,
-    ) -> SlotUpdateResult {
-        let Some(workflow) = conversation.active_workflow_mut() else {
-            return extracted_updates;
-        };
+    ) -> SlotUpdateApplicationResult {
+        let mut updated_conversation = conversation.clone();
+        let mut updated_any_slot = false;
+        let mut invalid_slot = None;
 
-        for update in &extracted_updates.updates {
-            if workflow
-                .fill_slot(update.slot_name, update.value.clone())
-                .is_err()
-            {
-                return SlotUpdateResult {
-                    updated_any_slot: extracted_updates.updated_any_slot,
-                    invalid_slot: Some(update.slot_name),
-                    updates: extracted_updates.updates.clone(),
-                };
+        for update in extracted_updates.updates {
+            match updated_conversation.with_workflow_slot(update.slot_name, update.value) {
+                Ok(conversation) => {
+                    updated_conversation = conversation;
+                    updated_any_slot = true;
+                }
+                Err(error) => {
+                    invalid_slot = Some(error.slot);
+                    break;
+                }
             }
         }
 
-        extracted_updates
+        SlotUpdateApplicationResult {
+            updated_conversation,
+            updated_any_slot,
+            invalid_slot,
+        }
     }
 
     fn slot_value_from_entity(&self, slot: &SlotDefinition, raw_value: &str) -> Option<SlotValue> {
@@ -276,9 +276,13 @@ pub trait IntentHandler: Send + Sync {
 }
 
 pub struct SlotUpdateResult {
+    pub updates: Vec<SlotUpdate>,
+}
+
+pub struct SlotUpdateApplicationResult {
+    pub updated_conversation: Conversation,
     pub updated_any_slot: bool,
     pub invalid_slot: Option<SlotName>,
-    pub updates: Vec<SlotUpdate>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -329,7 +333,6 @@ mod tests {
                 kind: crate::core::conversation::domain::intent::IntentKind::Informational,
                 nlu_task: None,
                 workflow_slots: vec![],
-                supported_entities: vec![],
                 confirmation_prompt: None,
                 completion_response: None,
             }

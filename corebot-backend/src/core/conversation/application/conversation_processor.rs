@@ -3,35 +3,25 @@ use std::sync::Arc;
 
 use rust_i18n::t;
 
-use super::intent_handler::{IntentHandlerInput, IntentHandlerRegistry};
+use super::intent_handler::{IntentHandlerInput, IntentHandlerRegistry, StateHandlerResult};
 use super::intent_handlers::menu_item_details_handler::MenuItemDetailsIntentHandler;
 use super::intent_handlers::opening_hours_handler::OpeningHoursIntentHandler;
 use super::intent_handlers::reservation_cancel_handler::ReservationCancelIntentHandler;
 use super::intent_handlers::reservation_create_handler::ReservationCreateIntentHandler;
 use super::intent_handlers::static_reply_handler::StaticReplyIntentHandler;
 use super::port::outbound::domain_gateway_trait::DomainGatewayPort;
-use crate::core::conversation::domain::catalog::intent::{IntentId, IntentKind};
-use crate::core::conversation::domain::intent::IntentPolicy;
 use crate::core::conversation::domain::model::conversation::Conversation;
 use crate::core::conversation::domain::model::domain_type::DomainType;
-use crate::core::conversation::domain::model::slot::EntityType;
-use crate::core::conversation::domain::state_machine::{
-    ConversationEffect, ConversationInput, ConversationStateMachine, DetectedEntity,
-};
-use crate::core::nlu_engine::domain::analysis::NluAnalysis;
+use crate::core::conversation::domain::model::intent::{IntentId, IntentKind};
+use crate::core::nlu_engine::domain::analysis::{NluAnalysis, NluEntity};
 
-/// Application service that decides how a decoded NLU result affects a conversation.
+/// Application service that routes one decoded NLU turn to the right conversation path.
 ///
-/// Persistent multi-turn workflows are delegated to the domain FSM. Immediate
-/// informational intents are delegated to stateless `IntentHandler`s and leave
-/// the conversation in `Idle`.
+/// Workflow turns are delegated to the matching workflow handler. Idle
+/// informational turns are delegated to stateless intent handlers and keep the
+/// conversation idle.
 pub struct ConversationProcessor {
     intent_handlers: HashMap<DomainType, IntentHandlerRegistry>,
-}
-
-pub struct ConversationProcessResult {
-    pub updated_conversation: Conversation,
-    pub reply: String,
 }
 
 impl ConversationProcessor {
@@ -74,13 +64,6 @@ impl ConversationProcessor {
         self.intent_handlers.get(&domain)
     }
 
-    pub fn detect_task(
-        &self,
-        conversation: &Conversation,
-    ) -> Option<crate::core::conversation::domain::intent::NluTask> {
-        ConversationStateMachine::detect_task(conversation)
-    }
-
     /// Processes one user turn after NLU inference.
     ///
     /// Active workflows and workflow-starting intents go through the FSM.
@@ -90,31 +73,25 @@ impl ConversationProcessor {
         conversation: &Conversation,
         message: &str,
         analysis: NluAnalysis,
-    ) -> ConversationProcessResult {
+    ) -> StateHandlerResult {
         // get intent_registry or return unknown response because of unmatching domain
         let Some(intent_registry) = self.handlers_for(conversation.domain) else {
-            return ConversationProcessResult {
+            return StateHandlerResult {
                 updated_conversation: conversation.clone(),
                 reply: self.render_system_text(
                     "echo_intent",
                     &conversation.lang,
                     &[("intent".to_string(), analysis.intent.name)],
                 ),
+                handled_intent: IntentId::Unknown("unknown".to_string()),
             };
         };
 
         let analysis_intent = IntentId::from(&analysis.intent.name);
-        let analysis_entities = analysis
-            .entities
-            .into_iter()
-            .map(|entity| DetectedEntity {
-                entity_type: EntityType::new(&entity.entity_type),
-                value: entity.value,
-            })
-            .collect::<Vec<_>>();
+        let analysis_entities = analysis.entities;
         let analysis_policy = intent_registry.find_policy(&analysis_intent);
 
-        if let Some(result) = self.process_with_workflow_handler(
+        if let Some(result) = self.process_workflow_turn(
             intent_registry,
             conversation,
             &analysis_intent,
@@ -123,34 +100,6 @@ impl ConversationProcessor {
             analysis_policy.as_ref(),
         ) {
             return result;
-        }
-
-        if conversation.has_active_workflow()
-            || analysis_policy
-                .as_ref()
-                .is_some_and(|policy| policy.kind == IntentKind::Workflow)
-        {
-            let workflow_policy = if conversation.has_active_workflow() {
-                conversation
-                    .active_workflow()
-                    .and_then(|workflow| intent_registry.find_policy(&workflow.intent))
-            } else {
-                analysis_policy.clone()
-            };
-            let result = ConversationStateMachine::apply(
-                conversation,
-                ConversationInput {
-                    intent: analysis_intent,
-                    entities: analysis_entities,
-                    policy: analysis_policy,
-                },
-            );
-            let reply =
-                self.render_effect(&result.effect, workflow_policy.as_ref(), &conversation.lang);
-            return ConversationProcessResult {
-                updated_conversation: result.updated_conversation,
-                reply,
-            };
         }
 
         self.process_idle_intent(
@@ -170,108 +119,72 @@ impl ConversationProcessor {
         lang: &str,
         intent: &IntentId,
         message: &str,
-        entities: &[DetectedEntity],
-    ) -> ConversationProcessResult {
+        entities: &[NluEntity],
+    ) -> StateHandlerResult {
         if let Some(handler) = intent_handlers.get(intent) {
-            let result = handler.handle(IntentHandlerInput {
+            return handler.handle(IntentHandlerInput {
                 conversation,
                 analysis_intent: intent,
                 text: message,
                 analysis_entities: entities,
             });
-            return ConversationProcessResult {
-                updated_conversation: result.updated_conversation,
-                reply: result.reply,
-            };
         }
 
         if intent == &IntentId::Cancel {
-            return ConversationProcessResult {
+            return StateHandlerResult {
                 updated_conversation: conversation.clone(),
                 reply: self.render_system_text("no_active_workflow_to_cancel", lang, &[]),
+                handled_intent: intent.clone(),
             };
         }
 
-        ConversationProcessResult {
+        StateHandlerResult {
             updated_conversation: conversation.clone(),
             reply: self.render_system_text(
                 "echo_intent",
                 lang,
                 &[("intent".to_string(), intent.as_str().to_string())],
             ),
+            handled_intent: intent.clone(),
         }
     }
 
-    fn process_with_workflow_handler(
+    fn process_workflow_turn(
         &self,
         intent_handlers: &IntentHandlerRegistry,
         conversation: &Conversation,
         analysis_intent: &IntentId,
         message: &str,
-        analysis_entities: &[DetectedEntity],
-        analysis_policy: Option<&IntentPolicy>,
-    ) -> Option<ConversationProcessResult> {
-        let handler_intent = if conversation.has_active_workflow() {
-            conversation
-                .active_workflow()
-                .map(|workflow| workflow.intent.clone())?
-        } else if analysis_policy.is_some_and(|policy| policy.kind == IntentKind::Workflow) {
-            analysis_intent.clone()
-        } else {
-            return None;
-        };
+        analysis_entities: &[NluEntity],
+        analysis_policy: Option<&crate::core::conversation::domain::intent::IntentPolicy>,
+    ) -> Option<StateHandlerResult> {
+        let handler_intent =
+            self.workflow_handler_intent(conversation, analysis_intent, analysis_policy)?;
 
         let handler = intent_handlers.get(&handler_intent)?;
-
-        let result = handler.handle(IntentHandlerInput {
+        Some(handler.handle(IntentHandlerInput {
             conversation,
             analysis_intent,
             text: message,
             analysis_entities,
-        });
-
-        Some(ConversationProcessResult {
-            updated_conversation: result.updated_conversation,
-            reply: result.reply,
-        })
+        }))
     }
 
-    fn render_effect(
+    fn workflow_handler_intent(
         &self,
-        effect: &ConversationEffect,
-        workflow_policy: Option<&IntentPolicy>,
-        lang: &str,
-    ) -> String {
-        match effect {
-            ConversationEffect::SystemText { key, params } => {
-                self.render_system_text(key, lang, params)
-            }
-            ConversationEffect::SlotPrompt { slot_name, .. } => workflow_policy
-                .and_then(|policy| {
-                    policy
-                        .workflow_slots
-                        .iter()
-                        .find(|slot| slot.name == *slot_name)
-                        .map(|slot| slot.prompt.0.clone())
-                })
-                .as_deref()
-                .map(|key| self.translate_key(key, lang))
-                .unwrap_or_else(|| {
-                    self.render_system_text(
-                        "missing_slot_fallback",
-                        lang,
-                        &[("slot".to_string(), slot_name.to_string())],
-                    )
-                }),
-            ConversationEffect::ConfirmationPrompt { .. } => workflow_policy
-                .and_then(|policy| policy.confirmation_prompt.as_ref())
-                .map(|key| self.translate_key(&key.0, lang))
-                .unwrap_or_else(|| self.render_system_text("confirm_generic", lang, &[])),
-            ConversationEffect::WorkflowCompletion { .. } => workflow_policy
-                .and_then(|policy| policy.completion_response.as_ref())
-                .map(|key| self.translate_key(&key.0, lang))
-                .unwrap_or_else(|| self.render_system_text("workflow_complete", lang, &[])),
+        conversation: &Conversation,
+        analysis_intent: &IntentId,
+        analysis_policy: Option<&crate::core::conversation::domain::intent::IntentPolicy>,
+    ) -> Option<IntentId> {
+        if let Some(workflow) = conversation.active_workflow() {
+            return Some(workflow.intent.clone());
         }
+
+        if analysis_policy.is_some_and(|policy| policy.kind == IntentKind::Workflow) {
+            return Some(analysis_intent.clone());
+        }
+
+        None
     }
 
     fn translate_key(&self, key: &str, lang: &str) -> String {
@@ -318,6 +231,7 @@ mod tests {
     use super::*;
     use crate::core::conversation::application::port::outbound::domain_gateway_trait::DomainGatewayPort;
     use crate::core::conversation::domain::model::domain_type::DomainType;
+    use crate::core::conversation::domain::slot::EntityType;
     use crate::core::nlu_engine::domain::analysis::{
         NerTokenLabel, NluEntity, NluIntent, NluIntentCandidate,
     };
@@ -347,9 +261,9 @@ mod tests {
         }
     }
 
-    fn entity(entity_type: &str, value: &str) -> NluEntity {
+    fn entity(entity_type: EntityType, value: &str) -> NluEntity {
         NluEntity {
-            entity_type: entity_type.to_string(),
+            entity_type,
             value: value.to_string(),
             raw_value: value.to_string(),
             start: 0,
@@ -365,7 +279,10 @@ mod tests {
         let result = processor().process(
             &conversation,
             "tell me about ramen",
-            analysis("ask_menu_item_details", vec![entity("menu_item", "ramen")]),
+            analysis(
+                "ask_menu_item_details",
+                vec![entity(EntityType::MenuItem, "ramen")],
+            ),
         );
 
         assert_eq!(result.reply, "Here are the available details for ramen.");
@@ -402,6 +319,42 @@ mod tests {
         );
 
         assert_eq!(result.reply, "What name should I use for the reservation?");
+        assert!(result.updated_conversation.has_active_workflow());
+        assert!(conversation.is_idle());
+    }
+
+    #[test]
+    fn reservation_cancel_starts_workflow_and_prompts_reference() {
+        let conversation = Conversation::new(DomainType::Restaurant);
+
+        let result = processor().process(
+            &conversation,
+            "cancel my booking",
+            analysis("reservation_cancel", vec![]),
+        );
+
+        assert_eq!(result.reply, "What is the reservation reference?");
+        assert!(result.updated_conversation.has_active_workflow());
+        assert!(conversation.is_idle());
+    }
+
+    #[test]
+    fn reservation_cancel_with_reference_asks_for_confirmation() {
+        let conversation = Conversation::new(DomainType::Restaurant);
+
+        let result = processor().process(
+            &conversation,
+            "cancel ABC123",
+            analysis(
+                "reservation_cancel",
+                vec![entity(EntityType::ReservationReference, "ABC123")],
+            ),
+        );
+
+        assert_eq!(
+            result.reply,
+            "I have the cancellation details. Do you confirm the cancellation?"
+        );
         assert!(result.updated_conversation.has_active_workflow());
         assert!(conversation.is_idle());
     }

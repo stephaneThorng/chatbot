@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::core::conversation::application::port::outbound::nlp_analyzer_trait::NlpEngineGatewayPort;
 use crate::core::conversation::domain::domain_type::DomainType;
-use crate::core::conversation::domain::intent::NluTask;
+use crate::core::conversation::domain::model::intent::NluTask;
 use crate::core::nlu_engine::application::AnalyzeTextCommand;
 use crate::core::nlu_engine::application::port::inbound::analyze_text_trait::AnalyzeTextPort;
 use crate::core::nlu_engine::domain::analysis::{NluAnalysis, NluIntent};

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::core::conversation::domain::model::slot::{EntityType, SlotDefinition};
+use crate::core::conversation::domain::model::slot::SlotDefinition;
 
 /// Backend-owned identifier for intents the conversation core knows how to route.
 ///
@@ -119,7 +119,6 @@ pub struct IntentPolicy {
     pub kind: IntentKind,
     pub nlu_task: Option<NluTask>,
     pub workflow_slots: Vec<SlotDefinition>,
-    pub supported_entities: Vec<EntityType>,
     pub confirmation_prompt: Option<I18nKey>,
     pub completion_response: Option<I18nKey>,
 }

@@ -12,7 +12,7 @@ use corebot_backend::core::conversation::application::port::outbound::conversati
 use corebot_backend::core::conversation::application::port::outbound::language_detector_trait::LanguageDetectorPort;
 use corebot_backend::core::conversation::application::port::outbound::nlp_analyzer_trait::NlpEngineGatewayPort;
 use corebot_backend::core::conversation::domain::domain_type::DomainType;
-use corebot_backend::core::conversation::domain::intent::NluTask;
+use corebot_backend::core::conversation::domain::model::intent::NluTask;
 use corebot_backend::core::nlu_engine::domain::analysis::{NluAnalysis, NluIntent};
 use corebot_backend::core::restaurant::application::port::inbound::restaurant_trait::RestaurantPort;
 

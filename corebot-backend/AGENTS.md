@@ -45,6 +45,23 @@
 - Put serialization-only structs near the boundary that reads/writes them, not in `domain/`.
 - If a method needs both a concrete adapter dependency and domain policy, split it: adapter returns raw boundary data, application turns it into domain behavior.
 
+## Architecture Do / Don't
+
+- Do keep application orchestration thin. Route first, then delegate to one owner of the behavior.
+- Do return updated domain values from domain-owned `with_*` methods when state changes.
+- Do keep intermediate application objects such as routing inputs or slot-update collections out of `domain/`.
+- Do let the owning domain object update its nested state. `Conversation` updates `Workflow`; `Workflow` updates `SlotBag`.
+- Do make workflow handlers the single execution path for workflow turns handled in application code.
+- Do keep informational handlers stateless with respect to `Conversation`.
+- Do keep compile-time typed enums for backend-owned concepts such as intents, slots, and entity types.
+
+- Do not mutate external state deeply from non-owner application helpers.
+- Do not expose nested mutable accessors such as `*_mut()` across layers when a domain-owned return-value API can express the change.
+- Do not duplicate workflow execution in multiple places. Avoid splitting the same transition logic across processor, use cases, and handlers.
+- Do not put gateway calls, i18n rendering, or adapter logic in domain types.
+- Do not use raw strings for backend-owned slot or entity checks when a typed enum exists.
+- Do not let catalogs become a second execution system. Shared metadata is fine; behavior belongs in handlers or domain objects.
+
 ## Naming Conventions
 
 | Concept | Convention | Example |

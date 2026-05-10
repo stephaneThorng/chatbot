@@ -94,7 +94,7 @@ fn application_does_not_import_other_feature_application_or_any_adapter() {
 
         for other_feature in &features {
             if other_feature != &feature {
-                if !has_layer(&Path::new("src/core").join(&other_feature), "application") {
+                if !has_layer(&Path::new("src/core").join(other_feature), "application") {
                     continue;
                 }
                 let forbidden = format!("use crate::core::{other_feature}::application::");
@@ -107,7 +107,7 @@ fn application_does_not_import_other_feature_application_or_any_adapter() {
         }
 
         for other_feature in &features {
-            if !has_layer(&Path::new("src/core").join(&other_feature), "adapter") {
+            if !has_layer(&Path::new("src/core").join(other_feature), "adapter") {
                 continue;
             }
             let forbidden = format!("use crate::core::{other_feature}::adapter::");
@@ -134,7 +134,7 @@ fn domain_does_not_import_application_or_adapter_layers() {
 
         let source = read_source(&path);
         for feature in &features {
-            let feature_root = Path::new("src/core").join(&feature);
+            let feature_root = Path::new("src/core").join(feature);
 
             if has_layer(&feature_root, "application") {
                 let forbidden = format!("use crate::core::{feature}::application::");
@@ -154,5 +154,24 @@ fn domain_does_not_import_application_or_adapter_layers() {
                 );
             }
         }
+    }
+}
+
+#[test]
+fn application_does_not_mutate_workflow_in_depth() {
+    for path in collect_rust_files(Path::new("src/core")) {
+        let Some((_, layer)) = feature_and_layer(&path) else {
+            continue;
+        };
+        if layer != "application" {
+            continue;
+        }
+
+        let source = read_source(&path);
+        assert!(
+            !source.contains("active_workflow_mut("),
+            "Application layer file {} mutates workflow internals via `active_workflow_mut(`",
+            relative_core_path(&path)
+        );
     }
 }

@@ -9,17 +9,18 @@ the use case creates a new `Conversation` with the domain injected at bootstrap.
 For v1, sessions are stored in memory. They are conversation state, not durable
 business records.
 
-## State Machine
+## Conversation State
 
-Conversation state transitions live in the domain FSM:
+Conversation state is modeled in the domain with:
 
 - `Idle`: no active workflow.
 - `Workflow`: one active workflow collecting generic slot requirements.
 - `WF_CHOICE`: NLU task context used when all required workflow slots are filled
   and the bot expects a binary confirmation.
 
-The FSM receives a compact `ConversationInput` built from NLU output and returns
-a typed `ConversationEffect`.
+The current runtime execution path for workflow turns is the workflow handler
+selected by `ConversationProcessor`. Workflow task derivation lives on
+`Conversation`.
 
 Core transitions:
 
@@ -29,8 +30,8 @@ Core transitions:
 - `affirmative` completes the active workflow.
 - `negative` cancels the active workflow.
 - `cancel` is a built-in interrupt that only cancels an active workflow.
-- Informational intents are not persistent workflow state and are handled before
-  the FSM by the application `ConversationProcessor`.
+- Informational intents are not persistent workflow state and are handled while
+  the conversation is idle by the application `ConversationProcessor`.
 
 ## Intent, Task, Workflow, Catalog
 
@@ -72,23 +73,37 @@ The use case depends on `LanguageDetectorPort`; the current outbound adapter use
 
 `ConversationProcessor` is the application-level decision point after NLU:
 
-- active workflows and workflow-starting intents are delegated to the domain FSM
-  with the resolved handler policy;
+- active workflows and workflow-starting intents are delegated to the matching
+  workflow handler;
 - informational intents are delegated to stateless `IntentHandler`
   implementations;
 - static conversational replies such as greeting, thanks, and goodbye are handled
   by static reply handlers;
 - unknown labels fall back to deterministic system text.
 
-The domain FSM never calls `rust-i18n`, domain gateways, or intent handlers. It
-only emits workflow/system effects such as slot prompts, confirmation prompts,
-workflow completions, and workflow cancellation messages.
-
 Intent handlers isolate immediate "what to do for this intent" behavior from
-both the FSM and the use case. They receive the raw message, language, intent,
-and NER entities. They do not mutate `Conversation` and do not create pending
-clarification state. If required NER is missing, the handler returns a direct
-message asking the user to reformulate; the conversation remains `Idle`.
+the use case. They receive the raw message, language, intent, and NER entities.
+They do not mutate `Conversation` and do not create pending clarification
+state. If required NER is missing, the handler returns a direct message asking
+the user to reformulate; the conversation remains `Idle`.
+
+## Do / Don't
+
+- Do keep `HandleConversationUseCase` as a readable orchestration trunk.
+- Do keep `ConversationProcessor` as a router that picks one path for the turn.
+- Do keep workflow behavior in workflow handlers and domain-owned `with_*`
+  methods.
+- Do return updated values from owners such as `Conversation::with_workflow_slot`
+  and `Workflow::with_slot`.
+- Do keep application-only intermediate structs out of the domain package.
+
+- Do not mutate borrowed external state deeply from application helpers.
+- Do not split the same workflow execution logic between processor, use cases,
+  and handlers.
+- Do not use raw strings for backend-owned slot, intent, or entity checks when a
+  typed enum exists.
+- Do not use catalogs as a second execution layer. Shared metadata is fine;
+  runtime behavior belongs elsewhere.
 
 ## Use Case Role
 
@@ -100,7 +115,8 @@ message asking the user to reformulate; the conversation remains `Idle`.
 4. Ask the processor for the active workflow NLU task.
 5. Call the NLU gateway.
 6. Delegate the NLU result to `ConversationProcessor`.
-7. Processor routes to the FSM or an intent handler and returns the reply.
+7. Processor routes to a workflow handler or an idle intent handler and returns
+   the reply.
 8. Save the conversation.
 9. Return `session_id` and `reply`.
 

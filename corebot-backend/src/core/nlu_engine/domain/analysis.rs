@@ -1,3 +1,5 @@
+use crate::core::conversation::domain::model::slot::EntityType;
+
 /// Runtime context attached to an utterance before model inference.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InferenceContext {
@@ -31,7 +33,7 @@ pub struct NluIntentCandidate {
 /// Decoded entity span mapped back to the raw user text.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NluEntity {
-    pub entity_type: String,
+    pub entity_type: EntityType,
     pub value: String,
     pub raw_value: String,
     pub start: usize,

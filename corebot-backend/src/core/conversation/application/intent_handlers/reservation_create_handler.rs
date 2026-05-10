@@ -1,7 +1,7 @@
 use crate::core::conversation::application::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult, WorkflowPostProcessResult,
 };
-use crate::core::conversation::domain::intent::{
+use crate::core::conversation::domain::model::intent::{
     IntentId, IntentKind, IntentPolicy, NluTask, i18n_key,
 };
 use crate::core::conversation::domain::slot::{EntityType, SlotDefinition, SlotName, SlotType};
@@ -43,12 +43,6 @@ impl IntentHandler for ReservationCreateIntentHandler {
                     vec![EntityType::PeopleCount],
                     "workflow.reservation_create.slot.people.prompt",
                 ),
-            ],
-            supported_entities: vec![
-                EntityType::Person,
-                EntityType::Date,
-                EntityType::Time,
-                EntityType::PeopleCount,
             ],
             confirmation_prompt: Some(i18n_key("workflow.reservation_create.confirmation.prompt")),
             completion_response: Some(i18n_key("workflow.reservation_create.completion.success")),
@@ -93,19 +87,23 @@ mod tests {
     use crate::core::conversation::domain::conversation::Conversation;
     use crate::core::conversation::domain::domain_type::DomainType;
     use crate::core::conversation::domain::slot::SlotValue;
-    use crate::core::conversation::domain::state_machine::DetectedEntity;
+    use crate::core::nlu_engine::domain::analysis::NluEntity;
 
-    fn entity(entity_type: EntityType, value: &str) -> DetectedEntity {
-        DetectedEntity {
+    fn entity(entity_type: EntityType, value: &str) -> NluEntity {
+        NluEntity {
             entity_type,
             value: value.to_string(),
+            raw_value: value.to_string(),
+            start: 0,
+            end: value.len(),
+            confidence: 1.0,
         }
     }
 
     fn handle(
         conversation: &Conversation,
         intent: IntentId,
-        entities: Vec<DetectedEntity>,
+        entities: Vec<NluEntity>,
     ) -> StateHandlerResult {
         ReservationCreateIntentHandler.handle(IntentHandlerInput {
             conversation,
@@ -141,7 +139,7 @@ mod tests {
 
         let workflow = result.updated_conversation.active_workflow().unwrap();
         assert_eq!(
-            workflow.slots.get(SlotName::Name),
+            workflow.slot_value(SlotName::Name),
             Some(&SlotValue::Text("Alice".to_string()))
         );
         assert_eq!(result.reply, "For how many people?");
@@ -214,7 +212,7 @@ mod tests {
         );
         let workflow = result.updated_conversation.active_workflow().unwrap();
         assert_eq!(
-            workflow.slots.get(SlotName::People),
+            workflow.slot_value(SlotName::People),
             Some(&SlotValue::Number(5))
         );
     }

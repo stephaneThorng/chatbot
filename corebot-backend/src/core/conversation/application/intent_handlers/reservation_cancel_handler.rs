@@ -1,7 +1,7 @@
 use crate::core::conversation::application::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
-use crate::core::conversation::domain::intent::{
+use crate::core::conversation::domain::model::intent::{
     IntentId, IntentKind, IntentPolicy, NluTask, i18n_key,
 };
 use crate::core::conversation::domain::slot::{EntityType, SlotDefinition, SlotName, SlotType};
@@ -41,28 +41,13 @@ impl IntentHandler for ReservationCancelIntentHandler {
                     "workflow.reservation_cancel.slot.date.prompt",
                 ),
             ],
-            supported_entities: vec![
-                EntityType::ReservationReference,
-                EntityType::Person,
-                EntityType::Date,
-            ],
             confirmation_prompt: Some(i18n_key("workflow.reservation_cancel.confirmation.prompt")),
             completion_response: Some(i18n_key("workflow.reservation_cancel.completion.success")),
         }
     }
 
     fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
-        let _ = (
-            input.analysis_intent,
-            input.text,
-            input.conversation.lang.as_str(),
-            input.analysis_entities,
-        );
-        StateHandlerResult {
-            updated_conversation: input.conversation.clone(),
-            reply: String::new(),
-            handled_intent: self.intent(),
-        }
+        self.handle_workflow(input)
     }
 }
 

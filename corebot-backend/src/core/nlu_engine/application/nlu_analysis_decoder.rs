@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use crate::core::conversation::domain::model::slot::EntityType;
 use crate::core::nlu_engine::application::nlu_artifacts::{LabelMaps, OnnxContract};
 use crate::core::nlu_engine::application::nlu_model_inference::OnnxModelOutput;
 use crate::core::nlu_engine::application::port::outbound::nlu_model_runtime_trait::NluRuntimeError;
@@ -302,7 +303,7 @@ fn flush_entity(
         confidences.iter().sum::<f32>() / confidences.len() as f32
     };
     entities.push(NluEntity {
-        entity_type,
+        entity_type: EntityType::from(&entity_type),
         value: value.clone(),
         raw_value: value,
         start,
@@ -407,7 +408,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(entities.len(), 1);
-        assert_eq!(entities[0].entity_type, "person");
+        assert_eq!(entities[0].entity_type, EntityType::Person);
         assert_eq!(entities[0].value, "Agus Wijaya");
     }
 

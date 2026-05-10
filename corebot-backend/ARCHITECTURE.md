@@ -78,6 +78,21 @@ When a behavior appears to need multiple layers, split it explicitly:
 - application: validate, orchestrate, decode, and decide;
 - domain: enforce business invariants and represent business state.
 
+## Conversation Do / Don't
+
+- Do keep `HandleConversationUseCase` as a thin orchestration trunk.
+- Do keep `ConversationProcessor` as a router that chooses one path for the turn.
+- Do let workflow handlers own workflow-turn execution in the application layer.
+- Do model state changes with explicit returned values such as `with_started_workflow`, `with_workflow_slot`, and `with_slot`.
+- Do keep nested state ownership explicit: `Conversation` owns workflow replacement and `Workflow` owns slot replacement.
+- Do keep typed backend concepts in enums rather than ad hoc strings when the labels are Rust-owned.
+
+- Do not let `ConversationProcessor` execute the same workflow rules through multiple paths.
+- Do not mutate a borrowed `Conversation` or nested `Workflow` from helper functions that are not the state owner.
+- Do not expose deep mutable accessors when a returned updated value is sufficient.
+- Do not mix workflow execution, informational intent handling, and i18n rendering responsibilities into one component.
+- Do not put dynamic reply behavior into catalogs when a handler or domain object is the behavior owner.
+
 ## Naming Conventions
 
 | Concept | Convention | Example |

@@ -1,5 +1,5 @@
 use crate::core::conversation::domain::domain_type::DomainType;
-use crate::core::conversation::domain::intent::NluTask;
+use crate::core::conversation::domain::model::intent::NluTask;
 use crate::core::nlu_engine::domain::analysis::NluAnalysis;
 
 pub trait NlpEngineGatewayPort: Send + Sync {

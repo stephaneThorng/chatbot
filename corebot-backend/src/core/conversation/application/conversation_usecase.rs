@@ -32,7 +32,7 @@ impl HandleConversationPort for HandleConversationUseCase {
             &command.message,
             &conversation.lang,
             conversation.domain,
-            self.processor.detect_task(&conversation),
+            conversation.detect_task(),
         );
 
         let process_result = self
@@ -101,7 +101,8 @@ mod tests {
     use std::sync::RwLock;
 
     use crate::core::conversation::application::port::outbound::conversation_repository::RepositoryError;
-    use crate::core::conversation::domain::intent::NluTask;
+    use crate::core::conversation::domain::model::intent::NluTask;
+    use crate::core::conversation::domain::slot::EntityType;
     use crate::core::nlu_engine::domain::analysis::{
         NerTokenLabel, NluAnalysis, NluEntity, NluIntent, NluIntentCandidate,
     };
@@ -261,9 +262,9 @@ mod tests {
         }
     }
 
-    fn entity(entity_type: &str, value: &str) -> NluEntity {
+    fn entity(entity_type: EntityType, value: &str) -> NluEntity {
         NluEntity {
-            entity_type: entity_type.to_string(),
+            entity_type,
             value: value.to_string(),
             raw_value: value.to_string(),
             start: 0,
@@ -357,14 +358,14 @@ mod tests {
             analysis(
                 "reservation_create",
                 vec![
-                    entity("person", "Jean Martin"),
-                    entity("date", "June 12"),
-                    entity("time", "7pm"),
+                    entity(EntityType::Person, "Jean Martin"),
+                    entity(EntityType::Date, "June 12"),
+                    entity(EntityType::Time, "7pm"),
                 ],
             ),
             analysis(
                 "reservation_create",
-                vec![entity("people_count", "4 people")],
+                vec![entity(EntityType::PeopleCount, "4 people")],
             ),
         ]));
         let parts = make_use_case(analyzer.clone());
@@ -391,10 +392,10 @@ mod tests {
             analysis(
                 "reservation_create",
                 vec![
-                    entity("person", "Jean Martin"),
-                    entity("date", "June 12"),
-                    entity("time", "7pm"),
-                    entity("people_count", "4 people"),
+                    entity(EntityType::Person, "Jean Martin"),
+                    entity(EntityType::Date, "June 12"),
+                    entity(EntityType::Time, "7pm"),
+                    entity(EntityType::PeopleCount, "4 people"),
                 ],
             ),
             analysis("affirmative", vec![]),
@@ -420,7 +421,10 @@ mod tests {
     #[test]
     fn cancel_intent_cancels_active_workflow() {
         let analyzer = Arc::new(StubNlpAnalyzer::new(vec![
-            analysis("reservation_create", vec![entity("person", "Jean Martin")]),
+            analysis(
+                "reservation_create",
+                vec![entity(EntityType::Person, "Jean Martin")],
+            ),
             analysis("cancel", vec![]),
         ]));
         let parts = make_use_case(analyzer);
@@ -438,9 +442,9 @@ mod tests {
         let analyzer = Arc::new(StubNlpAnalyzer::new(vec![analysis(
             "reservation_create",
             vec![
-                entity("person", "Budi Santoso"),
-                entity("date", "besok"),
-                entity("time", "jam 7 malam"),
+                entity(EntityType::Person, "Budi Santoso"),
+                entity(EntityType::Date, "besok"),
+                entity(EntityType::Time, "jam 7 malam"),
             ],
         )]));
         let parts = make_use_case_for_domain(DomainType::Restaurant, analyzer.clone(), "id");
