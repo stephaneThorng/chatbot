@@ -24,5 +24,5 @@ pub trait NluModelRuntimePort {
     fn label_maps(&self) -> &LabelMaps;
 
     /// Runs inference on an already prepared tagged input and returns raw outputs.
-    fn run(&self, input: TaggedInput) -> Result<NluModelInference, NluRuntimeError>;
+    fn run(&self, input: &TaggedInput) -> Result<NluModelInference, NluRuntimeError>;
 }

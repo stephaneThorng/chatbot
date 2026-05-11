@@ -23,12 +23,7 @@ impl IntentHandler for MenuItemDetailsIntentHandler {
     }
 
     fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
-        let _ = (
-            input.conversation,
-            input.analysis_intent,
-            input.text,
-            input.conversation.lang.as_str(),
-        );
+        let _ = (&input.conversation, input.analysis_intent, input.text);
         let menu_entity = self.lookup_entity_value(&input, EntityType::MenuItem);
         let allergen_entity = self.lookup_entity_value(&input, EntityType::Allergen);
 
@@ -42,7 +37,7 @@ impl IntentHandler for MenuItemDetailsIntentHandler {
         };
 
         StateHandlerResult {
-            updated_conversation: input.conversation.clone(),
+            updated_conversation: input.conversation,
             reply,
             handled_intent: self.intent(),
         }

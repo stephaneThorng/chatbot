@@ -17,12 +17,22 @@ impl SlotBag {
     }
 
     /// Return a new slot bag with the slot filled after type and domain validation.
-    pub fn with_slot(
-        &self,
+    pub fn into_slot(
+        mut self,
         name: SlotName,
         expected_type: SlotType,
         value: SlotValue,
     ) -> Result<Self, SlotError> {
+        self.set_slot(name, expected_type, value)?;
+        Ok(self)
+    }
+
+    pub fn set_slot(
+        &mut self,
+        name: SlotName,
+        expected_type: SlotType,
+        value: SlotValue,
+    ) -> Result<(), SlotError> {
         if !value.matches_type(expected_type) {
             return Err(SlotError {
                 slot: name,
@@ -32,9 +42,8 @@ impl SlotBag {
 
         Self::validate(name, &value)?;
 
-        let mut updated = self.clone();
-        updated.slots.insert(name, value);
-        Ok(updated)
+        self.slots.insert(name, value);
+        Ok(())
     }
 
     pub fn get(&self, name: SlotName) -> Option<&SlotValue> {
@@ -75,7 +84,8 @@ mod tests {
         let bag = SlotBag::new();
 
         let updated = bag
-            .with_slot(
+            .clone()
+            .into_slot(
                 SlotName::Name,
                 SlotType::Text,
                 SlotValue::Text("Alice".into()),
@@ -90,7 +100,7 @@ mod tests {
     fn reject_wrong_type() {
         let bag = SlotBag::new();
 
-        let result = bag.with_slot(SlotName::Name, SlotType::Text, SlotValue::Number(42));
+        let result = bag.into_slot(SlotName::Name, SlotType::Text, SlotValue::Number(42));
 
         assert!(result.is_err());
     }
@@ -99,7 +109,7 @@ mod tests {
     fn reject_empty_name() {
         let bag = SlotBag::new();
 
-        let result = bag.with_slot(SlotName::Name, SlotType::Text, SlotValue::Text("".into()));
+        let result = bag.into_slot(SlotName::Name, SlotType::Text, SlotValue::Text("".into()));
 
         assert!(result.is_err());
     }
@@ -109,11 +119,12 @@ mod tests {
         let bag = SlotBag::new();
 
         assert!(
-            bag.with_slot(SlotName::People, SlotType::Number, SlotValue::Number(0))
+            bag.clone()
+                .into_slot(SlotName::People, SlotType::Number, SlotValue::Number(0))
                 .is_err()
         );
         assert!(
-            bag.with_slot(SlotName::People, SlotType::Number, SlotValue::Number(21))
+            bag.into_slot(SlotName::People, SlotType::Number, SlotValue::Number(21))
                 .is_err()
         );
     }
@@ -123,7 +134,7 @@ mod tests {
         let bag = SlotBag::new();
 
         assert!(
-            bag.with_slot(SlotName::People, SlotType::Number, SlotValue::Number(4))
+            bag.into_slot(SlotName::People, SlotType::Number, SlotValue::Number(4))
                 .is_ok()
         );
     }

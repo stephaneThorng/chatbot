@@ -91,10 +91,10 @@ the user to reformulate; the conversation remains `Idle`.
 
 - Do keep `HandleConversationUseCase` as a readable orchestration trunk.
 - Do keep `ConversationProcessor` as a router that picks one path for the turn.
-- Do keep workflow behavior in workflow handlers and domain-owned `with_*`
+- Do keep workflow behavior in workflow handlers and domain-owned `into_*`
   methods.
-- Do return updated values from owners such as `Conversation::with_workflow_slot`
-  and `Workflow::with_slot`.
+- Do return updated values from owners such as `Conversation::into_workflow_slot`
+  and `Workflow::into_slot`.
 - Do keep application-only intermediate structs out of the domain package.
 
 - Do not mutate borrowed external state deeply from application helpers.

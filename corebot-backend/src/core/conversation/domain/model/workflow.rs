@@ -55,7 +55,16 @@ impl Workflow {
     }
 
     /// Return a new workflow with one validated slot value applied.
-    pub fn with_slot(&self, slot_name: SlotName, value: SlotValue) -> Result<Workflow, SlotError> {
+    pub fn into_slot(
+        mut self,
+        slot_name: SlotName,
+        value: SlotValue,
+    ) -> Result<Workflow, SlotError> {
+        self.set_slot(slot_name, value)?;
+        Ok(self)
+    }
+
+    pub fn set_slot(&mut self, slot_name: SlotName, value: SlotValue) -> Result<(), SlotError> {
         let expected_type = if slot_name == SlotName::Confirmation {
             SlotType::Boolean
         } else {
@@ -69,9 +78,8 @@ impl Workflow {
                 })?
         };
 
-        let mut updated_workflow = self.clone();
-        updated_workflow.slots = self.slots.with_slot(slot_name, expected_type, value)?;
-        Ok(updated_workflow)
+        self.slots.set_slot(slot_name, expected_type, value)?;
+        Ok(())
     }
 
     /// True when all data slots are filled but confirmation is not yet.
@@ -161,21 +169,21 @@ mod tests {
     #[test]
     fn slots_advance_in_order() {
         let mut wf = book_workflow()
-            .with_slot(SlotName::Name, SlotValue::Text("Alice".into()))
+            .into_slot(SlotName::Name, SlotValue::Text("Alice".into()))
             .unwrap();
         assert!(
             matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::Date)
         );
 
         wf = wf
-            .with_slot(SlotName::Date, SlotValue::Date("2026-06-01".into()))
+            .into_slot(SlotName::Date, SlotValue::Date("2026-06-01".into()))
             .unwrap();
         assert!(
             matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::Time)
         );
 
         wf = wf
-            .with_slot(SlotName::Time, SlotValue::Time("19:00".into()))
+            .into_slot(SlotName::Time, SlotValue::Time("19:00".into()))
             .unwrap();
         assert!(
             matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::People)
@@ -185,13 +193,13 @@ mod tests {
     #[test]
     fn confirmation_only_after_all_data() {
         let wf = book_workflow()
-            .with_slot(SlotName::Name, SlotValue::Text("Alice".into()))
+            .into_slot(SlotName::Name, SlotValue::Text("Alice".into()))
             .unwrap()
-            .with_slot(SlotName::Date, SlotValue::Date("2026-06-01".into()))
+            .into_slot(SlotName::Date, SlotValue::Date("2026-06-01".into()))
             .unwrap()
-            .with_slot(SlotName::Time, SlotValue::Time("19:00".into()))
+            .into_slot(SlotName::Time, SlotValue::Time("19:00".into()))
             .unwrap()
-            .with_slot(SlotName::People, SlotValue::Number(4))
+            .into_slot(SlotName::People, SlotValue::Number(4))
             .unwrap();
 
         assert!(wf.is_ready_for_confirmation());
@@ -204,15 +212,15 @@ mod tests {
     #[test]
     fn complete_after_confirmation() {
         let wf = book_workflow()
-            .with_slot(SlotName::Name, SlotValue::Text("Alice".into()))
+            .into_slot(SlotName::Name, SlotValue::Text("Alice".into()))
             .unwrap()
-            .with_slot(SlotName::Date, SlotValue::Date("2026-06-01".into()))
+            .into_slot(SlotName::Date, SlotValue::Date("2026-06-01".into()))
             .unwrap()
-            .with_slot(SlotName::Time, SlotValue::Time("19:00".into()))
+            .into_slot(SlotName::Time, SlotValue::Time("19:00".into()))
             .unwrap()
-            .with_slot(SlotName::People, SlotValue::Number(4))
+            .into_slot(SlotName::People, SlotValue::Number(4))
             .unwrap()
-            .with_slot(SlotName::Confirmation, SlotValue::Boolean(true))
+            .into_slot(SlotName::Confirmation, SlotValue::Boolean(true))
             .unwrap();
 
         assert!(wf.next_required_slot().is_none());
@@ -222,7 +230,7 @@ mod tests {
     fn unknown_slot_rejected() {
         assert!(
             book_workflow()
-                .with_slot(SlotName::Allergen, SlotValue::Text("blue".into()))
+                .into_slot(SlotName::Allergen, SlotValue::Text("blue".into()))
                 .is_err()
         );
     }
@@ -231,7 +239,7 @@ mod tests {
     fn wrong_type_rejected() {
         assert!(
             book_workflow()
-                .with_slot(SlotName::People, SlotValue::Text("four".into()))
+                .into_slot(SlotName::People, SlotValue::Text("four".into()))
                 .is_err()
         );
     }

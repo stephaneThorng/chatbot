@@ -113,7 +113,7 @@ impl I18nKey {
 }
 
 /// Handler-owned policy used by the conversation core to route and process an intent.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct IntentPolicy {
     pub id: IntentId,
     pub kind: IntentKind,

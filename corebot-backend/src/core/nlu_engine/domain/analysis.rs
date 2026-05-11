@@ -1,7 +1,7 @@
 use crate::core::conversation::domain::model::slot::EntityType;
 
 /// Runtime context attached to an utterance before model inference.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct InferenceContext {
     pub lang: String,
     pub domain: String,
@@ -10,28 +10,28 @@ pub struct InferenceContext {
 
 /// Preprocessed input string sent to the model, with the prefix length needed to
 /// map token offsets back to the raw user text.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct TaggedInput {
     pub text: String,
     pub prefix_length: usize,
 }
 
 /// Primary intent selected from the model output.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct NluIntent {
     pub name: String,
     pub confidence: f32,
 }
 
 /// Ranked intent candidate with its probability-like confidence.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct NluIntentCandidate {
     pub name: String,
     pub confidence: f32,
 }
 
 /// Decoded entity span mapped back to the raw user text.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct NluEntity {
     pub entity_type: EntityType,
     pub value: String,
@@ -42,7 +42,7 @@ pub struct NluEntity {
 }
 
 /// Token-level NER label kept for debugging and observability.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct NerTokenLabel {
     pub token: String,
     pub label: String,
@@ -51,7 +51,7 @@ pub struct NerTokenLabel {
 }
 
 /// Final NLU result returned to callers of the NLU engine.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct NluAnalysis {
     pub processed_text: String,
     pub intent: NluIntent,

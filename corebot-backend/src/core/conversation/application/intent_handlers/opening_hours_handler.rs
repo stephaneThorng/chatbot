@@ -32,14 +32,13 @@ impl<D: DomainGatewayPort + Send + Sync> IntentHandler for OpeningHoursIntentHan
 
     fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let _ = (
-            input.conversation,
+            &input.conversation,
             input.analysis_intent,
             input.text,
-            input.conversation.lang.as_str(),
             input.analysis_entities,
         );
         StateHandlerResult {
-            updated_conversation: input.conversation.clone(),
+            updated_conversation: input.conversation,
             reply: self.domain_gateway.get_opening_hours(),
             handled_intent: self.intent(),
         }

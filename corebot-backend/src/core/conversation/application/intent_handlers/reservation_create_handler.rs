@@ -101,7 +101,7 @@ mod tests {
     }
 
     fn handle(
-        conversation: &Conversation,
+        conversation: Conversation,
         intent: IntentId,
         entities: Vec<NluEntity>,
     ) -> StateHandlerResult {
@@ -117,7 +117,7 @@ mod tests {
     fn idle_workflow_prompts_for_first_missing_slot() {
         let conversation = Conversation::new(DomainType::Restaurant);
 
-        let result = handle(&conversation, IntentId::ReservationCreate, vec![]);
+        let result = handle(conversation, IntentId::ReservationCreate, vec![]);
 
         assert_eq!(result.reply, "What name should I use for the reservation?");
         assert!(result.updated_conversation.has_active_workflow());
@@ -128,7 +128,7 @@ mod tests {
         let conversation = Conversation::new(DomainType::Restaurant);
 
         let result = handle(
-            &conversation,
+            conversation,
             IntentId::ReservationCreate,
             vec![
                 entity(EntityType::Person, "Alice"),
@@ -150,7 +150,7 @@ mod tests {
         let conversation = Conversation::new(DomainType::Restaurant);
 
         let result = handle(
-            &conversation,
+            conversation,
             IntentId::ReservationCreate,
             vec![
                 entity(EntityType::Person, "Alice"),
@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn negative_confirmation_keeps_workflow_open_for_changes() {
         let conversation = handle(
-            &Conversation::new(DomainType::Restaurant),
+            Conversation::new(DomainType::Restaurant),
             IntentId::ReservationCreate,
             vec![
                 entity(EntityType::Person, "Alice"),
@@ -180,7 +180,7 @@ mod tests {
         )
         .updated_conversation;
 
-        let result = handle(&conversation, IntentId::Negative, vec![]);
+        let result = handle(conversation, IntentId::Negative, vec![]);
 
         assert_eq!(result.reply, "Okay. What would you like to change?");
         assert!(result.updated_conversation.has_active_workflow());
@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn updated_slot_reasks_for_confirmation() {
         let conversation = handle(
-            &Conversation::new(DomainType::Restaurant),
+            Conversation::new(DomainType::Restaurant),
             IntentId::ReservationCreate,
             vec![
                 entity(EntityType::Person, "Alice"),
@@ -201,7 +201,7 @@ mod tests {
         .updated_conversation;
 
         let result = handle(
-            &conversation,
+            conversation,
             IntentId::Negative,
             vec![entity(EntityType::PeopleCount, "5 people")],
         );
@@ -220,7 +220,7 @@ mod tests {
     #[test]
     fn affirmative_confirmation_completes_workflow() {
         let conversation = handle(
-            &Conversation::new(DomainType::Restaurant),
+            Conversation::new(DomainType::Restaurant),
             IntentId::ReservationCreate,
             vec![
                 entity(EntityType::Person, "Alice"),
@@ -231,7 +231,7 @@ mod tests {
         )
         .updated_conversation;
 
-        let result = handle(&conversation, IntentId::Affirmative, vec![]);
+        let result = handle(conversation, IntentId::Affirmative, vec![]);
 
         assert_eq!(result.reply, "Your reservation request is confirmed.");
         assert!(result.updated_conversation.is_idle());

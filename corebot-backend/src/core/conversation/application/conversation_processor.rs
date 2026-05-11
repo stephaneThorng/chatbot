@@ -69,19 +69,20 @@ impl ConversationProcessor {
     /// Informational intents go through handlers or static catalog replies.
     pub fn process(
         &self,
-        conversation: &Conversation,
+        conversation: Conversation,
         message: &str,
         analysis: NluAnalysis,
     ) -> StateHandlerResult {
         // get intent_registry or return unknown response because of unmatching domain
         let Some(intent_registry) = self.handlers_for(conversation.domain) else {
+            let reply = self.render_system_text(
+                "echo_intent",
+                conversation.lang.as_str(),
+                &[("intent".to_string(), analysis.intent.name)],
+            );
             return StateHandlerResult {
-                updated_conversation: conversation.clone(),
-                reply: self.render_system_text(
-                    "echo_intent",
-                    &conversation.lang,
-                    &[("intent".to_string(), analysis.intent.name)],
-                ),
+                updated_conversation: conversation,
+                reply,
                 handled_intent: IntentId::Unknown("unknown".to_string()),
             };
         };
@@ -89,23 +90,34 @@ impl ConversationProcessor {
         let analysis_intent = IntentId::from(&analysis.intent.name);
         let analysis_entities = analysis.entities;
         let analysis_policy = intent_registry.find_policy(&analysis_intent);
+        if let Some(workflow) = conversation.active_workflow() {
+            let handler = intent_registry
+                .get(&workflow.intent)
+                .expect("workflow handler must exist for active workflow");
+            return handler.handle(IntentHandlerInput {
+                conversation,
+                analysis_intent: &analysis_intent,
+                text: message,
+                analysis_entities: &analysis_entities,
+            });
+        }
 
-        if let Some(result) = self.process_workflow_turn(
-            intent_registry,
-            conversation,
-            &analysis_intent,
-            message,
-            &analysis_entities,
-            analysis_policy.as_ref(),
-        ) {
-            return result;
+        if analysis_policy.is_some_and(|policy| policy.kind == IntentKind::Workflow) {
+            let handler = intent_registry
+                .get(&analysis_intent)
+                .expect("workflow handler must exist for workflow policy");
+            return handler.handle(IntentHandlerInput {
+                conversation,
+                analysis_intent: &analysis_intent,
+                text: message,
+                analysis_entities: &analysis_entities,
+            });
         }
 
         self.process_idle_intent(
             intent_registry,
             conversation,
-            &conversation.lang,
-            &analysis_intent,
+            analysis_intent,
             message,
             &analysis_entities,
         )
@@ -114,76 +126,43 @@ impl ConversationProcessor {
     fn process_idle_intent(
         &self,
         intent_handlers: &IntentHandlerRegistry,
-        conversation: &Conversation,
-        lang: &str,
-        intent: &IntentId,
+        conversation: Conversation,
+        intent: IntentId,
         message: &str,
         entities: &[NluEntity],
     ) -> StateHandlerResult {
-        if let Some(handler) = intent_handlers.get(intent) {
+        if let Some(handler) = intent_handlers.get(&intent) {
             return handler.handle(IntentHandlerInput {
                 conversation,
-                analysis_intent: intent,
+                analysis_intent: &intent,
                 text: message,
                 analysis_entities: entities,
             });
         }
 
-        if intent == &IntentId::Cancel {
+        if intent == IntentId::Cancel {
+            let reply = self.render_system_text(
+                "no_active_workflow_to_cancel",
+                conversation.lang.as_str(),
+                &[],
+            );
             return StateHandlerResult {
-                updated_conversation: conversation.clone(),
-                reply: self.render_system_text("no_active_workflow_to_cancel", lang, &[]),
-                handled_intent: intent.clone(),
+                updated_conversation: conversation,
+                reply,
+                handled_intent: intent,
             };
         }
 
+        let reply = self.render_system_text(
+            "echo_intent",
+            conversation.lang.as_str(),
+            &[("intent".to_string(), intent.as_str().to_string())],
+        );
         StateHandlerResult {
-            updated_conversation: conversation.clone(),
-            reply: self.render_system_text(
-                "echo_intent",
-                lang,
-                &[("intent".to_string(), intent.as_str().to_string())],
-            ),
-            handled_intent: intent.clone(),
+            updated_conversation: conversation,
+            reply,
+            handled_intent: intent,
         }
-    }
-
-    fn process_workflow_turn(
-        &self,
-        intent_handlers: &IntentHandlerRegistry,
-        conversation: &Conversation,
-        analysis_intent: &IntentId,
-        message: &str,
-        analysis_entities: &[NluEntity],
-        analysis_policy: Option<&crate::core::conversation::domain::intent::IntentPolicy>,
-    ) -> Option<StateHandlerResult> {
-        let handler_intent =
-            self.workflow_handler_intent(conversation, analysis_intent, analysis_policy)?;
-
-        let handler = intent_handlers.get(&handler_intent)?;
-        Some(handler.handle(IntentHandlerInput {
-            conversation,
-            analysis_intent,
-            text: message,
-            analysis_entities,
-        }))
-    }
-
-    fn workflow_handler_intent(
-        &self,
-        conversation: &Conversation,
-        analysis_intent: &IntentId,
-        analysis_policy: Option<&crate::core::conversation::domain::intent::IntentPolicy>,
-    ) -> Option<IntentId> {
-        if let Some(workflow) = conversation.active_workflow() {
-            return Some(workflow.intent.clone());
-        }
-
-        if analysis_policy.is_some_and(|policy| policy.kind == IntentKind::Workflow) {
-            return Some(analysis_intent.clone());
-        }
-
-        None
     }
 
     fn translate_key(&self, key: &str, lang: &str) -> String {
@@ -276,7 +255,7 @@ mod tests {
         let conversation = Conversation::new(DomainType::Restaurant);
 
         let result = processor().process(
-            &conversation,
+            conversation.clone(),
             "tell me about ramen",
             analysis(
                 "ask_menu_item_details",
@@ -294,7 +273,7 @@ mod tests {
         let conversation = Conversation::new(DomainType::Restaurant);
 
         let result = processor().process(
-            &conversation,
+            conversation.clone(),
             "tell me about a dish",
             analysis("ask_menu_item_details", vec![]),
         );
@@ -312,7 +291,7 @@ mod tests {
         let conversation = Conversation::new(DomainType::Restaurant);
 
         let result = processor().process(
-            &conversation,
+            conversation.clone(),
             "book",
             analysis("reservation_create", vec![]),
         );
@@ -327,7 +306,7 @@ mod tests {
         let conversation = Conversation::new(DomainType::Restaurant);
 
         let result = processor().process(
-            &conversation,
+            conversation.clone(),
             "cancel my booking",
             analysis("reservation_cancel", vec![]),
         );
@@ -342,7 +321,7 @@ mod tests {
         let conversation = Conversation::new(DomainType::Restaurant);
 
         let result = processor().process(
-            &conversation,
+            conversation.clone(),
             "cancel ABC123",
             analysis(
                 "reservation_cancel",
@@ -364,12 +343,12 @@ mod tests {
         let p = processor();
 
         let start = p.process(
-            &conversation,
+            conversation.clone(),
             "book",
             analysis("reservation_create", vec![]),
         );
         let reply = p.process(
-            &start.updated_conversation,
+            start.updated_conversation,
             "what are your hours",
             analysis("ask_opening_hours", vec![]),
         );
@@ -384,7 +363,7 @@ mod tests {
         let conversation = Conversation::new(DomainType::Restaurant);
 
         let result = processor().process(
-            &conversation,
+            conversation.clone(),
             "surprise",
             analysis("not_in_catalog", vec![]),
         );

@@ -33,7 +33,7 @@ impl ConversationRepositoryPort for InMemoryConversationRepository {
             message: "Failed to acquire write lock".to_string(),
         })?;
 
-        store.insert(conversation.id.clone(), conversation.clone());
+        store.insert(conversation.id, conversation.clone());
         Ok(())
     }
 
@@ -64,7 +64,7 @@ mod tests {
     fn save_and_load_conversation() {
         let repo = InMemoryConversationRepository::new();
         let conv = Conversation::new(DomainType::Restaurant);
-        let conv_id = conv.id.clone();
+        let conv_id = conv.id;
 
         repo.save(&conv).unwrap();
         let loaded = repo.load(&conv_id).unwrap();
@@ -84,7 +84,7 @@ mod tests {
     fn delete_removes_conversation() {
         let repo = InMemoryConversationRepository::new();
         let conv = Conversation::new(DomainType::Restaurant);
-        let conv_id = conv.id.clone();
+        let conv_id = conv.id;
 
         repo.save(&conv).unwrap();
         repo.delete(&conv_id).unwrap();

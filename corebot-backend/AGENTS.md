@@ -48,7 +48,7 @@
 ## Architecture Do / Don't
 
 - Do keep application orchestration thin. Route first, then delegate to one owner of the behavior.
-- Do return updated domain values from domain-owned `with_*` methods when state changes.
+- Do return updated domain values from domain-owned `into_*` methods when state changes.
 - Do keep intermediate application objects such as routing inputs or slot-update collections out of `domain/`.
 - Do let the owning domain object update its nested state. `Conversation` updates `Workflow`; `Workflow` updates `SlotBag`.
 - Do make workflow handlers the single execution path for workflow turns handled in application code.

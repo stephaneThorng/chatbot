@@ -83,7 +83,7 @@ When a behavior appears to need multiple layers, split it explicitly:
 - Do keep `HandleConversationUseCase` as a thin orchestration trunk.
 - Do keep `ConversationProcessor` as a router that chooses one path for the turn.
 - Do let workflow handlers own workflow-turn execution in the application layer.
-- Do model state changes with explicit returned values such as `with_started_workflow`, `with_workflow_slot`, and `with_slot`.
+- Do model state changes with explicit returned values such as `into_started_workflow`, `into_workflow_slot`, and `into_slot`.
 - Do keep nested state ownership explicit: `Conversation` owns workflow replacement and `Workflow` owns slot replacement.
 - Do keep typed backend concepts in enums rather than ad hoc strings when the labels are Rust-owned.
 

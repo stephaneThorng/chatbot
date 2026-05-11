@@ -35,7 +35,7 @@ where
         let raw_text = command.text;
         let context = InferenceContext::new(command.lang, command.domain, command.task);
         let tagged_input = TaggedInput::build(&raw_text, &context);
-        let inference = self.runtime.run(tagged_input.clone())?;
+        let inference = self.runtime.run(&tagged_input)?;
         decode_nlu_analysis(
             tagged_input,
             &raw_text,
@@ -53,21 +53,19 @@ mod tests {
     use std::sync::Arc;
     use std::sync::Mutex;
 
+    use super::*;
     use crate::core::nlu_engine::application::nlu_artifacts::{
         ContractLabels, LabelMaps, OnnxContract,
     };
     use crate::core::nlu_engine::application::nlu_model_inference::{
         NluModelInference, OnnxModelOutput,
     };
-    use crate::core::nlu_engine::domain::analysis::TaggedInput;
-
-    use super::*;
 
     #[derive(Clone)]
     struct CapturingRuntime {
         contract: OnnxContract,
         label_maps: LabelMaps,
-        last_input: Arc<Mutex<Option<TaggedInput>>>,
+        last_input: Arc<Mutex<Option<(String, usize)>>>,
     }
 
     impl CapturingRuntime {
@@ -94,7 +92,7 @@ mod tests {
             }
         }
 
-        fn last_tagged_input(&self) -> TaggedInput {
+        fn last_tagged_input(&self) -> (String, usize) {
             self.last_input.lock().unwrap().as_ref().unwrap().clone()
         }
     }
@@ -108,8 +106,8 @@ mod tests {
             &self.label_maps
         }
 
-        fn run(&self, input: TaggedInput) -> Result<NluModelInference, NluRuntimeError> {
-            *self.last_input.lock().unwrap() = Some(input);
+        fn run(&self, input: &TaggedInput) -> Result<NluModelInference, NluRuntimeError> {
+            *self.last_input.lock().unwrap() = Some((input.text.clone(), input.prefix_length));
             Ok(NluModelInference {
                 tokens: vec![
                     "[LANG=en]".to_string(),
@@ -139,10 +137,10 @@ mod tests {
             })
             .unwrap();
 
-        let tagged_input = runtime.last_tagged_input();
-        assert_eq!(tagged_input.text, "[LANG=en] [DOMAIN=restaurant] Hello");
-        assert_eq!(tagged_input.prefix_length, 30);
-        assert_eq!(analysis.processed_text, tagged_input.text);
+        let (tagged_text, prefix_length) = runtime.last_tagged_input();
+        assert_eq!(tagged_text, "[LANG=en] [DOMAIN=restaurant] Hello");
+        assert_eq!(prefix_length, 30);
+        assert_eq!(analysis.processed_text, tagged_text);
         assert_eq!(analysis.intent.name, "greet");
     }
 }

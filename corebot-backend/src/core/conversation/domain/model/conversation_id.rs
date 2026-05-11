@@ -7,7 +7,7 @@ use uuid::Uuid;
 ///
 /// This value object prevents mixing conversation identifiers with unrelated
 /// UUIDs and keeps repository contracts explicit.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ConversationId(Uuid);
 
 impl ConversationId {

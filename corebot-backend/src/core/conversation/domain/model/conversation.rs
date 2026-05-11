@@ -31,7 +31,7 @@ pub enum ConversationState {
     Workflow(Workflow),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum StartWorkflowError {
     NotAWorkflowIntent,
     ActiveWorkflowAlreadyExists,
@@ -56,55 +56,53 @@ impl Conversation {
         }
     }
 
-    pub fn with_started_workflow(
-        &self,
+    pub fn into_started_workflow(
+        mut self,
         policy: &IntentPolicy,
     ) -> Result<Conversation, StartWorkflowError> {
         match policy.kind {
             IntentKind::Informational => Err(StartWorkflowError::NotAWorkflowIntent),
-            IntentKind::Workflow => match &self.state {
-                ConversationState::Idle => {
-                    let mut updated_conversation = self.clone();
-                    updated_conversation.state =
-                        ConversationState::Workflow(Workflow::from_policy(policy));
-                    Ok(updated_conversation)
-                }
-                ConversationState::Workflow(_) => {
-                    Err(StartWorkflowError::ActiveWorkflowAlreadyExists)
-                }
-            },
+            IntentKind::Workflow if self.has_active_workflow() => {
+                Err(StartWorkflowError::ActiveWorkflowAlreadyExists)
+            }
+            IntentKind::Workflow => {
+                self.state = ConversationState::Workflow(Workflow::from_policy(policy));
+                Ok(self)
+            }
         }
     }
 
-    pub fn with_cancelled_workflow(&self) -> Conversation {
-        let mut updated_conversation = self.clone();
-        updated_conversation.state = ConversationState::Idle;
-        updated_conversation
+    pub fn into_cancelled_workflow(mut self) -> Conversation {
+        self.state = ConversationState::Idle;
+        self
     }
 
-    pub fn with_completed_workflow(&self) -> Conversation {
-        let mut updated_conversation = self.clone();
-        updated_conversation.state = ConversationState::Idle;
-        updated_conversation
+    pub fn into_completed_workflow(mut self) -> Conversation {
+        self.state = ConversationState::Idle;
+        self
     }
 
-    pub fn with_confirmed_workflow(&self) -> Result<Conversation, SlotError> {
-        self.with_workflow_slot(SlotName::Confirmation, SlotValue::Boolean(true))
+    pub fn into_confirmed_workflow(self) -> Result<Conversation, SlotError> {
+        self.into_workflow_slot(SlotName::Confirmation, SlotValue::Boolean(true))
     }
 
-    pub fn with_workflow_slot(
-        &self,
+    pub fn into_workflow_slot(
+        mut self,
         slot_name: SlotName,
         value: SlotValue,
     ) -> Result<Conversation, SlotError> {
-        match &self.state {
-            ConversationState::Idle => Ok(self.clone()),
-            ConversationState::Workflow(workflow) => {
-                let updated_workflow = workflow.with_slot(slot_name, value)?;
-                let mut updated_conversation = self.clone();
-                updated_conversation.state = ConversationState::Workflow(updated_workflow);
-                Ok(updated_conversation)
-            }
+        self.set_workflow_slot(slot_name, value)?;
+        Ok(self)
+    }
+
+    pub fn set_workflow_slot(
+        &mut self,
+        slot_name: SlotName,
+        value: SlotValue,
+    ) -> Result<(), SlotError> {
+        match &mut self.state {
+            ConversationState::Idle => Ok(()),
+            ConversationState::Workflow(workflow) => workflow.set_slot(slot_name, value),
         }
     }
 
@@ -180,7 +178,8 @@ mod tests {
     fn start_book_workflow_from_idle() {
         let conv = Conversation::new(DomainType::Restaurant);
         let updated = conv
-            .with_started_workflow(&workflow_policy(IntentId::ReservationCreate))
+            .clone()
+            .into_started_workflow(&workflow_policy(IntentId::ReservationCreate))
             .unwrap();
 
         assert!(updated.has_active_workflow());
@@ -190,10 +189,10 @@ mod tests {
     #[test]
     fn cannot_start_workflow_during_workflow() {
         let conv = Conversation::new(DomainType::Restaurant)
-            .with_started_workflow(&workflow_policy(IntentId::ReservationCreate))
+            .into_started_workflow(&workflow_policy(IntentId::ReservationCreate))
             .unwrap();
 
-        let result = conv.with_started_workflow(&workflow_policy(IntentId::ReservationCancel));
+        let result = conv.into_started_workflow(&workflow_policy(IntentId::ReservationCancel));
 
         assert_eq!(
             result.unwrap_err(),
@@ -204,10 +203,10 @@ mod tests {
     #[test]
     fn cancel_returns_to_idle() {
         let conv = Conversation::new(DomainType::Restaurant)
-            .with_started_workflow(&workflow_policy(IntentId::ReservationCreate))
+            .into_started_workflow(&workflow_policy(IntentId::ReservationCreate))
             .unwrap();
 
-        let updated = conv.with_cancelled_workflow();
+        let updated = conv.clone().into_cancelled_workflow();
 
         assert!(updated.is_idle());
         assert!(conv.has_active_workflow());
@@ -216,12 +215,12 @@ mod tests {
     #[test]
     fn cancel_then_start_new_workflow() {
         let conv = Conversation::new(DomainType::Restaurant)
-            .with_started_workflow(&workflow_policy(IntentId::ReservationCreate))
+            .into_started_workflow(&workflow_policy(IntentId::ReservationCreate))
             .unwrap()
-            .with_cancelled_workflow();
+            .into_cancelled_workflow();
 
         let updated = conv
-            .with_started_workflow(&workflow_policy(IntentId::ReservationCancel))
+            .into_started_workflow(&workflow_policy(IntentId::ReservationCancel))
             .unwrap();
 
         assert!(updated.has_active_workflow());
@@ -230,7 +229,9 @@ mod tests {
     #[test]
     fn informational_intent_cannot_start_workflow() {
         let conv = Conversation::new(DomainType::Restaurant);
-        let result = conv.with_started_workflow(&informational_policy(IntentId::AskMenuGeneral));
+        let result = conv
+            .clone()
+            .into_started_workflow(&informational_policy(IntentId::AskMenuGeneral));
 
         assert_eq!(result.unwrap_err(), StartWorkflowError::NotAWorkflowIntent);
         assert!(conv.is_idle());
@@ -245,11 +246,12 @@ mod tests {
     #[test]
     fn workflow_slot_update_returns_updated_conversation() {
         let conv = Conversation::new(DomainType::Restaurant)
-            .with_started_workflow(&workflow_policy(IntentId::ReservationCreate))
+            .into_started_workflow(&workflow_policy(IntentId::ReservationCreate))
             .unwrap();
 
         let updated = conv
-            .with_workflow_slot(SlotName::Name, SlotValue::Text("Alice".to_string()))
+            .clone()
+            .into_workflow_slot(SlotName::Name, SlotValue::Text("Alice".to_string()))
             .unwrap();
 
         assert_eq!(
@@ -268,10 +270,10 @@ mod tests {
     #[test]
     fn workflow_slot_update_reports_invalid_slot() {
         let conv = Conversation::new(DomainType::Restaurant)
-            .with_started_workflow(&workflow_policy(IntentId::ReservationCreate))
+            .into_started_workflow(&workflow_policy(IntentId::ReservationCreate))
             .unwrap();
 
-        let result = conv.with_workflow_slot(SlotName::Name, SlotValue::Text(String::new()));
+        let result = conv.into_workflow_slot(SlotName::Name, SlotValue::Text(String::new()));
 
         assert_eq!(result.unwrap_err().slot, SlotName::Name);
     }
@@ -279,7 +281,7 @@ mod tests {
     #[test]
     fn detect_task_returns_workflow_task_while_collecting_slots() {
         let conversation = Conversation::new(DomainType::Restaurant)
-            .with_started_workflow(&workflow_policy(IntentId::ReservationCreate))
+            .into_started_workflow(&workflow_policy(IntentId::ReservationCreate))
             .unwrap();
 
         assert_eq!(conversation.detect_task(), Some(NluTask::ReservationCreate));
@@ -288,9 +290,9 @@ mod tests {
     #[test]
     fn detect_task_returns_choice_when_ready_for_confirmation() {
         let conversation = Conversation::new(DomainType::Restaurant)
-            .with_started_workflow(&workflow_policy(IntentId::ReservationCreate))
+            .into_started_workflow(&workflow_policy(IntentId::ReservationCreate))
             .unwrap()
-            .with_workflow_slot(SlotName::Name, SlotValue::Text("Alice".to_string()))
+            .into_workflow_slot(SlotName::Name, SlotValue::Text("Alice".to_string()))
             .unwrap();
 
         assert_eq!(conversation.detect_task(), Some(NluTask::Choice));

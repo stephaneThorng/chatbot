@@ -21,7 +21,6 @@ pub fn decode_nlu_analysis(
     let ranked_intents = ranked_intents(&outputs.intent_logits, contract)?;
     let primary_intent = ranked_intents
         .first()
-        .cloned()
         .ok_or_else(|| NluRuntimeError::Onnx("model returned no intent scores".to_string()))?;
 
     let ner_label_count = contract.labels.ner.len();

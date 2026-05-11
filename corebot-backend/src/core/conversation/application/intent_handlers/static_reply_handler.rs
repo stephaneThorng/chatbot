@@ -33,9 +33,10 @@ impl IntentHandler for StaticReplyIntentHandler {
     }
 
     fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
+        let reply = t!(self.reply_key, locale = input.conversation.lang.as_str()).to_string();
         StateHandlerResult {
-            updated_conversation: input.conversation.clone(),
-            reply: t!(self.reply_key, locale = input.conversation.lang.as_str()).to_string(),
+            updated_conversation: input.conversation,
+            reply,
             handled_intent: self.intent(),
         }
     }

@@ -84,10 +84,10 @@ impl OnnxNluRuntime {
         }
     }
 
-    fn encode_input(&self, input: TaggedInput) -> Result<EncodedInput, NluRuntimeError> {
+    fn encode_input(&self, input: &TaggedInput) -> Result<EncodedInput, NluRuntimeError> {
         let mut encoding = self
             .tokenizer
-            .encode(input.text, true)
+            .encode(input.text.as_str(), true)
             .map_err(|error| NluRuntimeError::Tokenizer(error.to_string()))?;
         if encoding.len() > self.contract.max_length {
             encoding.truncate(self.contract.max_length, 0, TruncationDirection::Right);
@@ -156,7 +156,7 @@ impl NluModelRuntimePort for OnnxNluRuntime {
         &self.label_maps
     }
 
-    fn run(&self, input: TaggedInput) -> Result<NluModelInference, NluRuntimeError> {
+    fn run(&self, input: &TaggedInput) -> Result<NluModelInference, NluRuntimeError> {
         let input = self.encode_input(input)?;
         let outputs = self.run_model(&input)?;
         Ok(NluModelInference {

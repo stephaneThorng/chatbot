@@ -46,7 +46,7 @@ where
 
         let process_result = self
             .processor
-            .process(&conversation, &command.message, analysis);
+            .process(conversation, &command.message, analysis);
 
         let _ = self
             .conversation_repository
@@ -96,7 +96,7 @@ where
                 return (conversation, conversation_id.to_string());
             }
 
-            let mut conversation = Conversation::with_id(conversation_id.clone(), self.domain);
+            let mut conversation = Conversation::with_id(conversation_id, self.domain);
             conversation.lang = self.language_detector.detect(message);
             return (conversation, conversation_id.to_string());
         }
@@ -198,7 +198,7 @@ mod tests {
             self.store
                 .write()
                 .unwrap()
-                .insert(conversation.id.clone(), conversation.clone());
+                .insert(conversation.id, conversation.clone());
             Ok(())
         }
 
