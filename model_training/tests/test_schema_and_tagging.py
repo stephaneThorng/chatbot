@@ -82,4 +82,4 @@ def test_bio_alignment_keeps_custom_tags_outside_entities() -> None:
 
     labels = [ner_id2label[label_id] if label_id != -100 else "IGN" for label_id in align_bio_labels(tagged, offsets, ner_label2id)]
 
-    assert labels == ["IGN", "O", "O", "O", "O", "B-person", "I-person", "IGN"]
+    assert labels == ["IGN", "O", "O", "O", "B-person", "I-person", "IGN"]

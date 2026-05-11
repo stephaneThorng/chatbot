@@ -72,6 +72,12 @@ def write_jsonl(path: str | Path, rows: list[dict[str, Any]]) -> None:
 def validate_examples(examples: list[TrainingExample], config: dict[str, Any]) -> None:
     intent_labels = set(config["intents"]["labels"])
     entity_labels = set(config["entities"]["labels"])
+    intent_labels_by_domain = {
+        domain: set(labels) for domain, labels in config["intents"].get("domains", {}).items()
+    }
+    entity_labels_by_domain = {
+        domain: set(labels) for domain, labels in config["entities"].get("domains", {}).items()
+    }
     languages = set(config["tags"]["languages"])
     domains = set(config["tags"]["domains"])
     tasks = set(config["tags"]["tasks"])
@@ -88,6 +94,10 @@ def validate_examples(examples: list[TrainingExample], config: dict[str, Any]) -
             raise DatasetValidationError(f"{prefix}: unsupported domain {example.domain!r}")
         if example.intent not in intent_labels:
             raise DatasetValidationError(f"{prefix}: unsupported intent {example.intent!r}")
+        if example.domain in intent_labels_by_domain and example.intent not in intent_labels_by_domain[example.domain]:
+            raise DatasetValidationError(
+                f"{prefix}: intent {example.intent!r} is not allowed for domain {example.domain!r}"
+            )
         if example.task is not None and example.task not in tasks:
             raise DatasetValidationError(f"{prefix}: unsupported task {example.task!r}")
         if example.task == "WF_RESERVATION_CREATE" and example.intent not in {
@@ -121,6 +131,10 @@ def validate_examples(examples: list[TrainingExample], config: dict[str, Any]) -
         for entity in sorted(example.entities, key=lambda value: (value.start, value.end)):
             if entity.type not in entity_labels:
                 raise DatasetValidationError(f"{prefix}: unsupported entity type {entity.type!r}")
+            if example.domain in entity_labels_by_domain and entity.type not in entity_labels_by_domain[example.domain]:
+                raise DatasetValidationError(
+                    f"{prefix}: entity {entity.type!r} is not allowed for domain {example.domain!r}"
+                )
             if entity.start < 0 or entity.end <= entity.start or entity.end > len(example.text):
                 raise DatasetValidationError(f"{prefix}: invalid span {entity.start}:{entity.end}")
             if entity.start < previous_end:

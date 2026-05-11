@@ -10,7 +10,15 @@ pub enum EntityType {
     PeopleCount,
     ReservationReference,
     MenuItem,
+    PriceItem,
+    Location,
+    Phone,
+    Email,
     Allergen,
+    Facility,
+    PaymentMethod,
+    PriceComparator,
+    PriceAmount,
     DietaryRequirement,
     Unknown(String),
 }
@@ -24,7 +32,15 @@ impl EntityType {
             "people_count" => Self::PeopleCount,
             "reservation_reference" => Self::ReservationReference,
             "menu_item" => Self::MenuItem,
+            "price_item" => Self::PriceItem,
+            "location" => Self::Location,
+            "phone" => Self::Phone,
+            "email" => Self::Email,
             "allergen" => Self::Allergen,
+            "facility" => Self::Facility,
+            "payment_method" => Self::PaymentMethod,
+            "price_comparator" => Self::PriceComparator,
+            "price_amount" => Self::PriceAmount,
             "dietary_requirement" => Self::DietaryRequirement,
             value => Self::Unknown(value.to_string()),
         }
@@ -38,6 +54,33 @@ mod tests {
     #[test]
     fn known_entity_label_maps_to_typed_variant() {
         assert_eq!(EntityType::from("menu_item"), EntityType::MenuItem);
+    }
+
+    #[test]
+    fn restaurant_dataset_entity_labels_map_to_typed_variants() {
+        for label in [
+            "person",
+            "date",
+            "time",
+            "people_count",
+            "reservation_reference",
+            "menu_item",
+            "price_item",
+            "location",
+            "phone",
+            "email",
+            "allergen",
+            "facility",
+            "payment_method",
+            "price_comparator",
+            "price_amount",
+            "dietary_requirement",
+        ] {
+            assert!(
+                !matches!(EntityType::from(label), EntityType::Unknown(_)),
+                "{label} should map to a typed EntityType"
+            );
+        }
     }
 
     #[test]

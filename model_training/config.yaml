@@ -23,6 +23,7 @@ tags:
     - id
   domains:
     - restaurant
+  future_domains:
     - hotel
   tasks:
     - WF_RESERVATION_CREATE
@@ -30,6 +31,31 @@ tags:
     - WF_CHOICE
 
 intents:
+  domains:
+    restaurant:
+      - reservation_create
+      - reservation_cancel
+      - cancel
+      - check_reservation
+      - ask_opening_hours
+      - ask_menu_general
+      - ask_menu_dietary
+      - ask_menu_item_details
+      - ask_location
+      - ask_contact
+      - ask_payment_methods
+      - ask_price
+      - ask_takeaway_delivery
+      - ask_event
+      - ask_facilities
+      - ask_accessibility
+      - ask_entertainment
+      - greeting
+      - thanks
+      - goodbye
+      - affirmative
+      - negative
+      - unknown
   labels:
     - reservation_create
     - reservation_cancel
@@ -80,6 +106,24 @@ intents:
     unknown: 1.0
 
 entities:
+  domains:
+    restaurant:
+      - person
+      - date
+      - time
+      - people_count
+      - menu_item
+      - price_item
+      - location
+      - phone
+      - email
+      - dietary_requirement
+      - allergen
+      - facility
+      - payment_method
+      - reservation_reference
+      - price_comparator
+      - price_amount
   labels:
     - person
     - date
@@ -95,3 +139,5 @@ entities:
     - facility
     - payment_method
     - reservation_reference
+    - price_comparator
+    - price_amount

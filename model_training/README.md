@@ -28,11 +28,57 @@ Rows outside an active workflow omit `task`, so the input starts with `[LANG=...
 
 ## Commands
 
-From this folder:
+## Setup
+
+Use Python 3.12 for the training environment. The project dependencies include
+PyTorch, Transformers, ONNX export tools, and pytest.
+
+From the repository root:
+
+```powershell
+cd model_training
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+If `py -3.12` is not available, install Python 3.12 from
+https://www.python.org/downloads/windows/ and enable "Add python.exe to PATH"
+during installation.
+
+After activation, confirm the environment:
+
+```powershell
+python --version
+python -m pytest --version
+```
+
+## Dataset Generation
+
+From `model_training` with the virtual environment active:
 
 ```powershell
 python generate_dataset.py
 python -m pytest tests
+```
+
+Generation writes deterministic JSONL files under `data/restaurant/`:
+
+- `train.jsonl`
+- `validation.jsonl`
+- `eval.jsonl`
+
+The generator should produce about 5000 total examples across English and
+Indonesian. The tests verify row count, no duplicate texts per
+`domain/lang/task/intent`, entity spans, `REST-...` reservation references,
+conversation date examples, and structured price conditions.
+
+## Training
+
+From `model_training` with the virtual environment active:
+
+```powershell
 python train.py
 python evaluate.py --model-dir outputs/restaurant_xlmr
 ```

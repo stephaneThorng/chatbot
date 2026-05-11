@@ -7,6 +7,7 @@ use super::intent_handlers::menu_item_details_handler::MenuItemDetailsIntentHand
 use super::intent_handlers::opening_hours_handler::OpeningHoursIntentHandler;
 use super::intent_handlers::reservation_cancel_handler::ReservationCancelIntentHandler;
 use super::intent_handlers::reservation_create_handler::ReservationCreateIntentHandler;
+use super::intent_handlers::restaurant_information_handler::RestaurantInformationIntentHandler;
 use super::intent_handlers::static_reply_handler::StaticReplyIntentHandler;
 use super::port::outbound::domain_gateway_port::DomainGatewayPort;
 use crate::core::conversation::domain::model::conversation::Conversation;
@@ -30,6 +31,38 @@ impl ConversationProcessor {
             Box::new(ReservationCancelIntentHandler),
             Box::new(OpeningHoursIntentHandler::new(domain_gateway)),
             Box::new(MenuItemDetailsIntentHandler),
+            Box::new(RestaurantInformationIntentHandler::new(
+                IntentId::AskMenuGeneral,
+            )),
+            Box::new(RestaurantInformationIntentHandler::new(
+                IntentId::AskMenuDietary,
+            )),
+            Box::new(RestaurantInformationIntentHandler::new(
+                IntentId::AskLocation,
+            )),
+            Box::new(RestaurantInformationIntentHandler::new(
+                IntentId::AskContact,
+            )),
+            Box::new(RestaurantInformationIntentHandler::new(
+                IntentId::AskPaymentMethods,
+            )),
+            Box::new(RestaurantInformationIntentHandler::new(IntentId::AskPrice)),
+            Box::new(RestaurantInformationIntentHandler::new(
+                IntentId::AskTakeawayDelivery,
+            )),
+            Box::new(RestaurantInformationIntentHandler::new(IntentId::AskEvent)),
+            Box::new(RestaurantInformationIntentHandler::new(
+                IntentId::AskFacilities,
+            )),
+            Box::new(RestaurantInformationIntentHandler::new(
+                IntentId::AskAccessibility,
+            )),
+            Box::new(RestaurantInformationIntentHandler::new(
+                IntentId::AskEntertainment,
+            )),
+            Box::new(RestaurantInformationIntentHandler::new(
+                IntentId::CheckReservation,
+            )),
             Box::new(StaticReplyIntentHandler::new(
                 IntentId::Greeting,
                 "intent.greeting.reply",
@@ -335,6 +368,89 @@ mod tests {
         );
         assert!(result.updated_conversation.has_active_workflow());
         assert!(conversation.is_idle());
+    }
+
+    #[test]
+    fn price_condition_returns_deterministic_reply() {
+        let conversation = Conversation::new(DomainType::Restaurant);
+
+        let result = processor().process(
+            conversation.clone(),
+            "do you have meals under 20 euros",
+            analysis(
+                "ask_price",
+                vec![
+                    entity(EntityType::PriceComparator, "under"),
+                    entity(EntityType::PriceAmount, "20 euros"),
+                ],
+            ),
+        );
+
+        assert_eq!(
+            result.reply,
+            "I can help identify options under 20 euros when prices are available."
+        );
+        assert!(result.updated_conversation.is_idle());
+        assert!(conversation.is_idle());
+    }
+
+    #[test]
+    fn restaurant_informational_intents_are_handled_without_echo_fallback() {
+        let handled_intents = [
+            (
+                "ask_menu_general",
+                "Here is the restaurant menu information.",
+            ),
+            ("ask_menu_dietary", "I can help with dietary menu options."),
+            (
+                "ask_location",
+                "The restaurant address information is available.",
+            ),
+            (
+                "ask_contact",
+                "The restaurant contact information is available.",
+            ),
+            (
+                "ask_payment_methods",
+                "The restaurant accepts common payment methods.",
+            ),
+            (
+                "ask_price",
+                "I can help with restaurant pricing information.",
+            ),
+            (
+                "ask_takeaway_delivery",
+                "Takeaway and delivery information is available.",
+            ),
+            ("ask_event", "The restaurant can provide event information."),
+            (
+                "ask_facilities",
+                "I can help with restaurant facility information.",
+            ),
+            (
+                "ask_accessibility",
+                "The restaurant can provide accessibility information.",
+            ),
+            (
+                "ask_entertainment",
+                "The restaurant can provide entertainment information.",
+            ),
+            (
+                "check_reservation",
+                "Please provide a reservation reference so I can check it.",
+            ),
+        ];
+
+        for (intent, expected_reply) in handled_intents {
+            let result = processor().process(
+                Conversation::new(DomainType::Restaurant),
+                "",
+                analysis(intent, vec![]),
+            );
+
+            assert_eq!(result.reply, expected_reply);
+            assert!(result.updated_conversation.is_idle());
+        }
     }
 
     #[test]
