@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use crate::core::conversation::domain::model::slot::EntityType;
 use crate::core::nlu_engine::application::nlu_artifacts::{LabelMaps, OnnxContract};
 use crate::core::nlu_engine::application::nlu_model_inference::OnnxModelOutput;
-use crate::core::nlu_engine::application::port::outbound::nlu_model_runtime_trait::NluRuntimeError;
+use crate::core::nlu_engine::application::port::outbound::nlu_model_runtime_port::NluRuntimeError;
 use crate::core::nlu_engine::domain::analysis::{
     NerTokenLabel, NluAnalysis, NluEntity, NluIntent, NluIntentCandidate, TaggedInput,
 };

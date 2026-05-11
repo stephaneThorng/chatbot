@@ -1,27 +1,25 @@
-use std::sync::Arc;
-
-use crate::core::conversation::application::port::outbound::nlp_analyzer_trait::NlpEngineGatewayPort;
+use crate::core::conversation::application::port::outbound::nlp_engine_gateway_port::NlpEngineGatewayPort;
 use crate::core::conversation::domain::domain_type::DomainType;
 use crate::core::conversation::domain::model::intent::NluTask;
 use crate::core::nlu_engine::application::AnalyzeTextCommand;
-use crate::core::nlu_engine::application::port::inbound::analyze_text_trait::AnalyzeTextPort;
+use crate::core::nlu_engine::application::port::inbound::analyze_text_usecase::AnalyzeTextUseCase;
 use crate::core::nlu_engine::domain::analysis::{NluAnalysis, NluIntent};
 
 /// Outbound gateway from `conversation` to the `nlu_engine` application input port.
-pub struct NluEngineGateway {
-    nlu_engine_analyzer: Arc<dyn AnalyzeTextPort>,
+pub struct NluEngineGateway<A: AnalyzeTextUseCase> {
+    nlu_engine_gateway: A,
 }
 
-impl NluEngineGateway {
+impl<A: AnalyzeTextUseCase> NluEngineGateway<A> {
     /// Creates the gateway with the target NLU input port implementation.
-    pub fn new(analyzer: Arc<dyn AnalyzeTextPort>) -> Self {
+    pub fn new(analyzer: A) -> Self {
         Self {
-            nlu_engine_analyzer: analyzer,
+            nlu_engine_gateway: analyzer,
         }
     }
 }
 
-impl NlpEngineGatewayPort for NluEngineGateway {
+impl<A: AnalyzeTextUseCase> NlpEngineGatewayPort for NluEngineGateway<A> {
     fn analyze(
         &self,
         text: &str,
@@ -29,7 +27,7 @@ impl NlpEngineGatewayPort for NluEngineGateway {
         domain: DomainType,
         task: Option<NluTask>,
     ) -> NluAnalysis {
-        self.nlu_engine_analyzer
+        self.nlu_engine_gateway
             .analyze(AnalyzeTextCommand {
                 text: text.to_string(),
                 lang: lang.to_string(),

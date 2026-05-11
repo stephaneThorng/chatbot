@@ -16,7 +16,7 @@ pub enum NluRuntimeError {
 }
 
 /// Output port implemented by concrete NLU runtimes such as ONNX Runtime.
-pub trait NluModelRuntimePort: Send + Sync {
+pub trait NluModelRuntimePort {
     /// Returns the loaded ONNX contract used to validate output shapes and labels.
     fn contract(&self) -> &OnnxContract;
 

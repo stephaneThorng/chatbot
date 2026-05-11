@@ -1,3 +1,3 @@
-pub trait LanguageDetectorPort: Send + Sync {
+pub trait LanguageDetectorPort {
     fn detect(&self, text: &str) -> String;
 }

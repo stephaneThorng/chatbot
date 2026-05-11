@@ -1,1 +1,1 @@
-pub mod conversation_trait;
+pub mod conversation_usecase;

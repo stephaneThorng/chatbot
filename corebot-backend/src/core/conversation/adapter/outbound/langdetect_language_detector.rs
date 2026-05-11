@@ -1,6 +1,6 @@
 use langdetect_rs::detector_factory::DetectorFactory;
 
-use crate::core::conversation::application::port::outbound::language_detector_trait::LanguageDetectorPort;
+use crate::core::conversation::application::port::outbound::language_detector_port::LanguageDetectorPort;
 
 pub struct LangdetectLanguageDetector {
     detector: DetectorFactory,

@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use rust_i18n::t;
 
@@ -9,7 +8,7 @@ use super::intent_handlers::opening_hours_handler::OpeningHoursIntentHandler;
 use super::intent_handlers::reservation_cancel_handler::ReservationCancelIntentHandler;
 use super::intent_handlers::reservation_create_handler::ReservationCreateIntentHandler;
 use super::intent_handlers::static_reply_handler::StaticReplyIntentHandler;
-use super::port::outbound::domain_gateway_trait::DomainGatewayPort;
+use super::port::outbound::domain_gateway_port::DomainGatewayPort;
 use crate::core::conversation::domain::model::conversation::Conversation;
 use crate::core::conversation::domain::model::domain_type::DomainType;
 use crate::core::conversation::domain::model::intent::{IntentId, IntentKind};
@@ -25,25 +24,25 @@ pub struct ConversationProcessor {
 }
 
 impl ConversationProcessor {
-    pub fn new(domain_gateway: Arc<dyn DomainGatewayPort>) -> Self {
-        let restaurant_handlers: Vec<Arc<dyn super::intent_handler::IntentHandler>> = vec![
-            Arc::new(ReservationCreateIntentHandler),
-            Arc::new(ReservationCancelIntentHandler),
-            Arc::new(OpeningHoursIntentHandler::new(domain_gateway)),
-            Arc::new(MenuItemDetailsIntentHandler),
-            Arc::new(StaticReplyIntentHandler::new(
+    pub fn new<D: DomainGatewayPort + Send + Sync + 'static>(domain_gateway: D) -> Self {
+        let restaurant_handlers: Vec<Box<dyn super::intent_handler::IntentHandler>> = vec![
+            Box::new(ReservationCreateIntentHandler),
+            Box::new(ReservationCancelIntentHandler),
+            Box::new(OpeningHoursIntentHandler::new(domain_gateway)),
+            Box::new(MenuItemDetailsIntentHandler),
+            Box::new(StaticReplyIntentHandler::new(
                 IntentId::Greeting,
                 "intent.greeting.reply",
             )),
-            Arc::new(StaticReplyIntentHandler::new(
+            Box::new(StaticReplyIntentHandler::new(
                 IntentId::Thanks,
                 "intent.thanks.reply",
             )),
-            Arc::new(StaticReplyIntentHandler::new(
+            Box::new(StaticReplyIntentHandler::new(
                 IntentId::Goodbye,
                 "intent.goodbye.reply",
             )),
-            Arc::new(StaticReplyIntentHandler::new(
+            Box::new(StaticReplyIntentHandler::new(
                 IntentId::Unknown("unknown".to_string()),
                 "intent.unknown.reply",
             )),
@@ -229,7 +228,7 @@ fn system_text_i18n_key(key: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::conversation::application::port::outbound::domain_gateway_trait::DomainGatewayPort;
+    use crate::core::conversation::application::port::outbound::domain_gateway_port::DomainGatewayPort;
     use crate::core::conversation::domain::model::domain_type::DomainType;
     use crate::core::conversation::domain::slot::EntityType;
     use crate::core::nlu_engine::domain::analysis::{
@@ -245,7 +244,7 @@ mod tests {
     }
 
     fn processor() -> ConversationProcessor {
-        ConversationProcessor::new(Arc::new(StubDomainGateway))
+        ConversationProcessor::new(StubDomainGateway)
     }
 
     fn analysis(intent_name: &'static str, entities: Vec<NluEntity>) -> NluAnalysis {

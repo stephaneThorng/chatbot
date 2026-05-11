@@ -3,7 +3,7 @@ use crate::core::conversation::domain::conversation_id::ConversationId;
 
 /// Outbound port - persistence interface for conversations.
 /// Implementations are in adapter/outbound/.
-pub trait ConversationRepositoryPort: Send + Sync {
+pub trait ConversationRepositoryPort {
     /// Save or update a conversation.
     fn save(&self, conversation: &Conversation) -> Result<(), RepositoryError>;
 

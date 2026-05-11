@@ -1,1 +1,1 @@
-pub mod analyze_text_trait;
+pub mod analyze_text_usecase;

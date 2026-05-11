@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use rust_i18n::t;
 
@@ -293,11 +292,11 @@ pub struct SlotUpdate {
 
 /// Lookup table for application-level intent handlers.
 pub struct IntentHandlerRegistry {
-    handlers: HashMap<IntentId, Arc<dyn IntentHandler>>,
+    handlers: HashMap<IntentId, Box<dyn IntentHandler>>,
 }
 
 impl IntentHandlerRegistry {
-    pub fn new(handlers: Vec<Arc<dyn IntentHandler>>) -> Self {
+    pub fn new(handlers: Vec<Box<dyn IntentHandler>>) -> Self {
         Self {
             handlers: handlers
                 .into_iter()
@@ -307,7 +306,7 @@ impl IntentHandlerRegistry {
     }
 
     pub fn get(&self, intent: &IntentId) -> Option<&dyn IntentHandler> {
-        self.handlers.get(intent).map(Arc::as_ref)
+        self.handlers.get(intent).map(Box::as_ref)
     }
 
     pub fn find_policy(&self, intent: &IntentId) -> Option<IntentPolicy> {
@@ -349,7 +348,7 @@ mod tests {
 
     #[test]
     fn registry_resolves_known_intent_handler() {
-        let registry = IntentHandlerRegistry::new(vec![Arc::new(StubHandler)]);
+        let registry = IntentHandlerRegistry::new(vec![Box::new(StubHandler)]);
 
         assert!(registry.get(&IntentId::AskOpeningHours).is_some());
         assert!(registry.get(&IntentId::Greeting).is_none());
@@ -357,7 +356,7 @@ mod tests {
 
     #[test]
     fn registry_resolves_known_intent_policy() {
-        let registry = IntentHandlerRegistry::new(vec![Arc::new(StubHandler)]);
+        let registry = IntentHandlerRegistry::new(vec![Box::new(StubHandler)]);
 
         let policy = registry.find_policy(&IntentId::AskOpeningHours).unwrap();
 

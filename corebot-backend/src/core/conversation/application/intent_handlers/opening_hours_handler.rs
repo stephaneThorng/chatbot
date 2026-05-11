@@ -1,22 +1,20 @@
-use std::sync::Arc;
-
 use crate::core::conversation::application::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
-use crate::core::conversation::application::port::outbound::domain_gateway_trait::DomainGatewayPort;
+use crate::core::conversation::application::port::outbound::domain_gateway_port::DomainGatewayPort;
 use crate::core::conversation::domain::model::intent::{IntentId, IntentKind, IntentPolicy};
 
-pub struct OpeningHoursIntentHandler {
-    domain_gateway: Arc<dyn DomainGatewayPort>,
+pub struct OpeningHoursIntentHandler<D: DomainGatewayPort> {
+    domain_gateway: D,
 }
 
-impl OpeningHoursIntentHandler {
-    pub fn new(domain_gateway: Arc<dyn DomainGatewayPort>) -> Self {
+impl<D: DomainGatewayPort> OpeningHoursIntentHandler<D> {
+    pub fn new(domain_gateway: D) -> Self {
         Self { domain_gateway }
     }
 }
 
-impl IntentHandler for OpeningHoursIntentHandler {
+impl<D: DomainGatewayPort + Send + Sync> IntentHandler for OpeningHoursIntentHandler<D> {
     fn intent(&self) -> IntentId {
         IntentId::AskOpeningHours
     }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use crate::core::conversation::application::port::outbound::conversation_repository::{
+use crate::core::conversation::application::port::outbound::conversation_repository_port::{
     ConversationRepositoryPort, RepositoryError,
 };
 use crate::core::conversation::domain::conversation::Conversation;

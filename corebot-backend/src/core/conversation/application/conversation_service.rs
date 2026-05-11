@@ -1,13 +1,12 @@
 use std::str::FromStr;
-use std::sync::Arc;
 
 use super::conversation_command::{HandleConversationCommand, HandleConversationResult};
 use super::conversation_processor::ConversationProcessor;
-use super::port::inbound::conversation_trait::HandleConversationPort;
-use super::port::outbound::conversation_repository::ConversationRepositoryPort;
-use super::port::outbound::domain_gateway_trait::DomainGatewayPort;
-use super::port::outbound::language_detector_trait::LanguageDetectorPort;
-use super::port::outbound::nlp_analyzer_trait::NlpEngineGatewayPort;
+use super::port::inbound::conversation_usecase::HandleConversationUseCase;
+use super::port::outbound::conversation_repository_port::ConversationRepositoryPort;
+use super::port::outbound::domain_gateway_port::DomainGatewayPort;
+use super::port::outbound::language_detector_port::LanguageDetectorPort;
+use super::port::outbound::nlp_engine_gateway_port::NlpEngineGatewayPort;
 use crate::core::conversation::domain::conversation::Conversation;
 use crate::core::conversation::domain::conversation_id::ConversationId;
 use crate::core::conversation::domain::domain_type::DomainType;
@@ -16,15 +15,25 @@ use crate::core::conversation::domain::domain_type::DomainType;
 ///
 /// It stays intentionally thin: session lifecycle, NLU call, conversation
 /// processing delegation, persistence, and response assembly.
-pub struct HandleConversationUseCase {
+pub struct HandleConversationService<N, R, L>
+where
+    N: NlpEngineGatewayPort,
+    R: ConversationRepositoryPort,
+    L: LanguageDetectorPort,
+{
     domain: DomainType,
-    nlu_engine_gateway: Arc<dyn NlpEngineGatewayPort>,
-    conversation_repository: Arc<dyn ConversationRepositoryPort>,
-    language_detector: Arc<dyn LanguageDetectorPort>,
+    nlu_engine_gateway: N,
+    conversation_repository: R,
+    language_detector: L,
     processor: ConversationProcessor,
 }
 
-impl HandleConversationPort for HandleConversationUseCase {
+impl<N, R, L> HandleConversationUseCase for HandleConversationService<N, R, L>
+where
+    N: NlpEngineGatewayPort,
+    R: ConversationRepositoryPort,
+    L: LanguageDetectorPort,
+{
     fn handle_message(&self, command: HandleConversationCommand) -> HandleConversationResult {
         let (conversation, session_id) =
             self.load_or_create_conversation(command.session_id.as_deref(), &command.message);
@@ -50,13 +59,18 @@ impl HandleConversationPort for HandleConversationUseCase {
     }
 }
 
-impl HandleConversationUseCase {
-    pub fn new(
+impl<N, R, L> HandleConversationService<N, R, L>
+where
+    N: NlpEngineGatewayPort,
+    R: ConversationRepositoryPort,
+    L: LanguageDetectorPort,
+{
+    pub fn new<D: DomainGatewayPort + Send + Sync + 'static>(
         domain: DomainType,
-        domain_gateway: Arc<dyn DomainGatewayPort>,
-        nlu_engine_gateway: Arc<dyn NlpEngineGatewayPort>,
-        conversation_repository: Arc<dyn ConversationRepositoryPort>,
-        language_detector: Arc<dyn LanguageDetectorPort>,
+        domain_gateway: D,
+        nlu_engine_gateway: N,
+        conversation_repository: R,
+        language_detector: L,
     ) -> Self {
         Self {
             domain,
@@ -98,23 +112,26 @@ impl HandleConversationUseCase {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::sync::Arc;
+    use std::sync::Mutex;
     use std::sync::RwLock;
 
-    use crate::core::conversation::application::port::outbound::conversation_repository::RepositoryError;
+    use crate::core::conversation::application::port::outbound::conversation_repository_port::RepositoryError;
     use crate::core::conversation::domain::model::intent::NluTask;
     use crate::core::conversation::domain::slot::EntityType;
     use crate::core::nlu_engine::domain::analysis::{
         NerTokenLabel, NluAnalysis, NluEntity, NluIntent, NluIntentCandidate,
     };
 
+    #[derive(Clone)]
     struct StubDomainGateway {
-        calls: std::sync::Mutex<u32>,
+        calls: Arc<Mutex<u32>>,
     }
 
     impl StubDomainGateway {
         fn new() -> Self {
             Self {
-                calls: std::sync::Mutex::new(0),
+                calls: Arc::new(Mutex::new(0)),
             }
         }
 
@@ -130,16 +147,17 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
     struct StubLanguageDetector {
-        lang: std::sync::Mutex<String>,
-        calls: std::sync::Mutex<u32>,
+        lang: Arc<Mutex<String>>,
+        calls: Arc<Mutex<u32>>,
     }
 
     impl StubLanguageDetector {
         fn new(lang: &str) -> Self {
             Self {
-                lang: std::sync::Mutex::new(lang.to_string()),
-                calls: std::sync::Mutex::new(0),
+                lang: Arc::new(Mutex::new(lang.to_string())),
+                calls: Arc::new(Mutex::new(0)),
             }
         }
 
@@ -155,16 +173,17 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
     struct StubConversationRepository {
-        store: RwLock<HashMap<ConversationId, Conversation>>,
-        save_calls: std::sync::Mutex<u32>,
+        store: Arc<RwLock<HashMap<ConversationId, Conversation>>>,
+        save_calls: Arc<Mutex<u32>>,
     }
 
     impl StubConversationRepository {
         fn new() -> Self {
             Self {
-                store: RwLock::new(HashMap::new()),
-                save_calls: std::sync::Mutex::new(0),
+                store: Arc::new(RwLock::new(HashMap::new())),
+                save_calls: Arc::new(Mutex::new(0)),
             }
         }
 
@@ -193,20 +212,21 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
     struct StubNlpAnalyzer {
-        responses: std::sync::Mutex<Vec<NluAnalysis>>,
-        tasks: std::sync::Mutex<Vec<Option<String>>>,
-        langs: std::sync::Mutex<Vec<String>>,
-        domains: std::sync::Mutex<Vec<String>>,
+        responses: Arc<Mutex<Vec<NluAnalysis>>>,
+        tasks: Arc<Mutex<Vec<Option<String>>>>,
+        langs: Arc<Mutex<Vec<String>>>,
+        domains: Arc<Mutex<Vec<String>>>,
     }
 
     impl StubNlpAnalyzer {
         fn new(responses: Vec<NluAnalysis>) -> Self {
             Self {
-                responses: std::sync::Mutex::new(responses.into_iter().rev().collect()),
-                tasks: std::sync::Mutex::new(vec![]),
-                langs: std::sync::Mutex::new(vec![]),
-                domains: std::sync::Mutex::new(vec![]),
+                responses: Arc::new(Mutex::new(responses.into_iter().rev().collect())),
+                tasks: Arc::new(Mutex::new(vec![])),
+                langs: Arc::new(Mutex::new(vec![])),
+                domains: Arc::new(Mutex::new(vec![])),
             }
         }
 
@@ -273,26 +293,32 @@ mod tests {
         }
     }
 
+    type TestUseCase = HandleConversationService<
+        StubNlpAnalyzer,
+        StubConversationRepository,
+        StubLanguageDetector,
+    >;
+
     struct UseCaseParts {
-        use_case: HandleConversationUseCase,
-        repo: Arc<StubConversationRepository>,
-        detector: Arc<StubLanguageDetector>,
-        domain_gateway: Arc<StubDomainGateway>,
+        use_case: TestUseCase,
+        repo: StubConversationRepository,
+        detector: StubLanguageDetector,
+        domain_gateway: StubDomainGateway,
     }
 
-    fn make_use_case(analyzer: Arc<StubNlpAnalyzer>) -> UseCaseParts {
+    fn make_use_case(analyzer: StubNlpAnalyzer) -> UseCaseParts {
         make_use_case_for_domain(DomainType::Restaurant, analyzer, "en")
     }
 
     fn make_use_case_for_domain(
         domain: DomainType,
-        analyzer: Arc<StubNlpAnalyzer>,
+        analyzer: StubNlpAnalyzer,
         lang: &str,
     ) -> UseCaseParts {
-        let repo = Arc::new(StubConversationRepository::new());
-        let detector = Arc::new(StubLanguageDetector::new(lang));
-        let domain_gateway = Arc::new(StubDomainGateway::new());
-        let use_case = HandleConversationUseCase::new(
+        let repo = StubConversationRepository::new();
+        let detector = StubLanguageDetector::new(lang);
+        let domain_gateway = StubDomainGateway::new();
+        let use_case = HandleConversationService::new(
             domain,
             domain_gateway.clone(),
             analyzer,
@@ -317,7 +343,7 @@ mod tests {
     #[test]
     fn handle_message_reuses_provided_session_id() {
         let session_id = ConversationId::new().to_string();
-        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![analysis("greeting", vec![])]));
+        let analyzer = StubNlpAnalyzer::new(vec![analysis("greeting", vec![])]);
         let parts = make_use_case(analyzer);
 
         let result = parts
@@ -329,7 +355,7 @@ mod tests {
 
     #[test]
     fn handle_message_generates_session_id_when_none() {
-        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![analysis("greeting", vec![])]));
+        let analyzer = StubNlpAnalyzer::new(vec![analysis("greeting", vec![])]);
 
         let result = make_use_case(analyzer)
             .use_case
@@ -340,10 +366,7 @@ mod tests {
 
     #[test]
     fn dynamic_domain_response_calls_restaurant_gateway() {
-        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![analysis(
-            "ask_opening_hours",
-            vec![],
-        )]));
+        let analyzer = StubNlpAnalyzer::new(vec![analysis("ask_opening_hours", vec![])]);
         let parts = make_use_case(analyzer);
 
         let result = parts.use_case.handle_message(make_command("hours", None));
@@ -354,7 +377,7 @@ mod tests {
 
     #[test]
     fn active_workflow_uses_derived_task_and_prompts_next_slot() {
-        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![
+        let analyzer = StubNlpAnalyzer::new(vec![
             analysis(
                 "reservation_create",
                 vec![
@@ -367,7 +390,7 @@ mod tests {
                 "reservation_create",
                 vec![entity(EntityType::PeopleCount, "4 people")],
             ),
-        ]));
+        ]);
         let parts = make_use_case(analyzer.clone());
 
         let start = parts.use_case.handle_message(make_command("book", None));
@@ -388,7 +411,7 @@ mod tests {
 
     #[test]
     fn ready_for_confirmation_uses_choice_task() {
-        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![
+        let analyzer = StubNlpAnalyzer::new(vec![
             analysis(
                 "reservation_create",
                 vec![
@@ -399,7 +422,7 @@ mod tests {
                 ],
             ),
             analysis("affirmative", vec![]),
-        ]));
+        ]);
         let parts = make_use_case(analyzer.clone());
 
         let start = parts.use_case.handle_message(make_command("book", None));
@@ -420,13 +443,13 @@ mod tests {
 
     #[test]
     fn cancel_intent_cancels_active_workflow() {
-        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![
+        let analyzer = StubNlpAnalyzer::new(vec![
             analysis(
                 "reservation_create",
                 vec![entity(EntityType::Person, "Jean Martin")],
             ),
             analysis("cancel", vec![]),
-        ]));
+        ]);
         let parts = make_use_case(analyzer);
 
         let start = parts.use_case.handle_message(make_command("book", None));
@@ -439,14 +462,14 @@ mod tests {
 
     #[test]
     fn renderer_returns_indonesian_localized_prompt() {
-        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![analysis(
+        let analyzer = StubNlpAnalyzer::new(vec![analysis(
             "reservation_create",
             vec![
                 entity(EntityType::Person, "Budi Santoso"),
                 entity(EntityType::Date, "besok"),
                 entity(EntityType::Time, "jam 7 malam"),
             ],
-        )]));
+        )]);
         let parts = make_use_case_for_domain(DomainType::Restaurant, analyzer.clone(), "id");
 
         let result = parts
@@ -459,7 +482,7 @@ mod tests {
 
     #[test]
     fn injected_domain_is_forwarded_to_nlu() {
-        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![analysis("greeting", vec![])]));
+        let analyzer = StubNlpAnalyzer::new(vec![analysis("greeting", vec![])]);
         let parts = make_use_case_for_domain(DomainType::Hotel, analyzer.clone(), "en");
 
         let result = parts.use_case.handle_message(make_command("hello", None));
@@ -470,10 +493,10 @@ mod tests {
 
     #[test]
     fn language_detector_is_used_only_for_new_sessions() {
-        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![
+        let analyzer = StubNlpAnalyzer::new(vec![
             analysis("greeting", vec![]),
             analysis("thanks", vec![]),
-        ]));
+        ]);
         let parts = make_use_case_for_domain(DomainType::Restaurant, analyzer.clone(), "id");
 
         let first = parts.use_case.handle_message(make_command("halo", None));
@@ -486,10 +509,10 @@ mod tests {
 
     #[test]
     fn existing_session_preserves_stored_language() {
-        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![
+        let analyzer = StubNlpAnalyzer::new(vec![
             analysis("greeting", vec![]),
             analysis("thanks", vec![]),
-        ]));
+        ]);
         let parts = make_use_case_for_domain(DomainType::Restaurant, analyzer.clone(), "id");
 
         let first = parts.use_case.handle_message(make_command("halo", None));
@@ -506,10 +529,7 @@ mod tests {
 
     #[test]
     fn repository_save_is_called_after_transition() {
-        let analyzer = Arc::new(StubNlpAnalyzer::new(vec![analysis(
-            "reservation_create",
-            vec![],
-        )]));
+        let analyzer = StubNlpAnalyzer::new(vec![analysis("reservation_create", vec![])]);
         let parts = make_use_case(analyzer);
 
         let _ = parts.use_case.handle_message(make_command("book", None));

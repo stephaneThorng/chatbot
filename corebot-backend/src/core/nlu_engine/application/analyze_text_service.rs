@@ -1,28 +1,35 @@
-use std::sync::Arc;
-
 use crate::core::nlu_engine::application::nlu_analysis_decoder::{
     decode_nlu_analysis, validate_artifacts,
 };
 use crate::core::nlu_engine::domain::analysis::{InferenceContext, NluAnalysis, TaggedInput};
 
 use super::analyze_text_command::AnalyzeTextCommand;
-use super::port::inbound::analyze_text_trait::AnalyzeTextPort;
-use super::port::outbound::nlu_model_runtime_trait::{NluModelRuntimePort, NluRuntimeError};
+use super::port::inbound::analyze_text_usecase::AnalyzeTextUseCase;
+use super::port::outbound::nlu_model_runtime_port::{NluModelRuntimePort, NluRuntimeError};
 
 /// Application use case that orchestrates tagged-input construction, runtime
 /// execution, and decoding into a domain `NluAnalysis`.
-pub struct AnalyzeTextUseCase {
-    runtime: Arc<dyn NluModelRuntimePort>,
+pub struct AnalyzeTextService<R>
+where
+    R: NluModelRuntimePort,
+{
+    runtime: R,
 }
 
-impl AnalyzeTextUseCase {
+impl<R> AnalyzeTextService<R>
+where
+    R: NluModelRuntimePort,
+{
     /// Creates the use case with the runtime port implementation to call.
-    pub fn new(runtime: Arc<dyn NluModelRuntimePort>) -> Self {
+    pub fn new(runtime: R) -> Self {
         Self { runtime }
     }
 }
 
-impl AnalyzeTextPort for AnalyzeTextUseCase {
+impl<R> AnalyzeTextUseCase for AnalyzeTextService<R>
+where
+    R: NluModelRuntimePort,
+{
     fn analyze(&self, command: AnalyzeTextCommand) -> Result<NluAnalysis, NluRuntimeError> {
         validate_artifacts(self.runtime.contract(), self.runtime.label_maps())?;
         let raw_text = command.text;
@@ -43,6 +50,7 @@ impl AnalyzeTextPort for AnalyzeTextUseCase {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use std::sync::Mutex;
 
     use crate::core::nlu_engine::application::nlu_artifacts::{
@@ -55,10 +63,11 @@ mod tests {
 
     use super::*;
 
+    #[derive(Clone)]
     struct CapturingRuntime {
         contract: OnnxContract,
         label_maps: LabelMaps,
-        last_input: Mutex<Option<TaggedInput>>,
+        last_input: Arc<Mutex<Option<TaggedInput>>>,
     }
 
     impl CapturingRuntime {
@@ -81,7 +90,7 @@ mod tests {
                     ner_label2id: [("O".to_string(), 0)].into_iter().collect(),
                     ner_id2label: [("0".to_string(), "O".to_string())].into_iter().collect(),
                 },
-                last_input: Mutex::new(None),
+                last_input: Arc::new(Mutex::new(None)),
             }
         }
 
@@ -118,8 +127,8 @@ mod tests {
 
     #[test]
     fn usecase_builds_tagged_input_before_running_model() {
-        let runtime = Arc::new(CapturingRuntime::new());
-        let usecase = AnalyzeTextUseCase::new(runtime.clone());
+        let runtime = CapturingRuntime::new();
+        let usecase = AnalyzeTextService::new(runtime.clone());
 
         let analysis = usecase
             .analyze(AnalyzeTextCommand {

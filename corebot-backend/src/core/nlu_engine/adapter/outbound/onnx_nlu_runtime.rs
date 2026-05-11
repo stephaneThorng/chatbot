@@ -12,7 +12,7 @@ use crate::core::nlu_engine::application::nlu_artifacts::{LabelMaps, OnnxContrac
 use crate::core::nlu_engine::application::nlu_model_inference::{
     NluModelInference, OnnxModelOutput,
 };
-use crate::core::nlu_engine::application::port::outbound::nlu_model_runtime_trait::{
+use crate::core::nlu_engine::application::port::outbound::nlu_model_runtime_port::{
     NluModelRuntimePort, NluRuntimeError,
 };
 use crate::core::nlu_engine::domain::analysis::TaggedInput;
