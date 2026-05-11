@@ -2,6 +2,7 @@ use axum::Router;
 use std::sync::Arc;
 
 use corebot_backend::core::conversation::adapter::inbound::web::routes::conversation_routes_with_use_case;
+use corebot_backend::core::conversation::adapter::outbound::english_date_resolver::EnglishDateResolver;
 use corebot_backend::core::conversation::adapter::outbound::in_memory_conversation_repository::InMemoryConversationRepository;
 use corebot_backend::core::conversation::adapter::outbound::langdetect_language_detector::LangdetectLanguageDetector;
 use corebot_backend::core::conversation::adapter::outbound::nlu_engine_gateway::NluEngineGateway;
@@ -16,7 +17,8 @@ const BIND_ADDRESS: &str = "0.0.0.0:3000";
 
 #[tokio::main]
 async fn main() {
-    let gateway = RestaurantDomainGateway::new(RestaurantAdapter);
+    let gateway = RestaurantDomainGateway::new(RestaurantAdapter::new());
+    let date_resolver = Arc::new(EnglishDateResolver);
     let runtime = OnnxNluRuntime::from_env()
         .unwrap_or_else(|error| panic!("Failed to initialize ONNX NLU runtime: {error}"));
     let nlu_use_case = AnalyzeTextService::new(runtime);
@@ -26,6 +28,7 @@ async fn main() {
     let use_case = Arc::new(HandleConversationService::new(
         DomainType::Restaurant,
         gateway,
+        date_resolver,
         analyzer,
         conversation_repository,
         language_detector,

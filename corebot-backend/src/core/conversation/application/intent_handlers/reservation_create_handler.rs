@@ -1,12 +1,24 @@
+use std::sync::Arc;
+use chrono::Local;
+
 use crate::core::conversation::application::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult, WorkflowPostProcessResult,
 };
+use crate::core::conversation::domain::date_resolver::{DateResolveError, DateResolver};
 use crate::core::conversation::domain::model::intent::{
     IntentId, IntentKind, IntentPolicy, NluTask, i18n_key,
 };
-use crate::core::conversation::domain::slot::{EntityType, SlotDefinition, SlotName, SlotType};
+use crate::core::conversation::domain::slot::{EntityType, SlotDefinition, SlotName, SlotType, SlotValue};
 
-pub struct ReservationCreateIntentHandler;
+pub struct ReservationCreateIntentHandler {
+    date_resolver: Arc<dyn DateResolver>,
+}
+
+impl ReservationCreateIntentHandler {
+    pub fn new(date_resolver: Arc<dyn DateResolver>) -> Self {
+        Self { date_resolver }
+    }
+}
 
 impl IntentHandler for ReservationCreateIntentHandler {
     fn intent(&self) -> IntentId {
@@ -59,9 +71,28 @@ impl IntentHandler for ReservationCreateIntentHandler {
 
     fn post_process(
         &self,
-        _lang: &str,
-        _conversation: &crate::core::conversation::domain::conversation::Conversation,
+        lang: &str,
+        conversation: &crate::core::conversation::domain::conversation::Conversation,
     ) -> WorkflowPostProcessResult {
+        // Resolve and validate the date slot if present.
+        if let Some(workflow) = conversation.active_workflow() {
+            if let Some(SlotValue::Date(raw_date)) = workflow.slot_value(SlotName::Date) {
+                let today = Local::now().date_naive();
+                match self.date_resolver.resolve(raw_date, today) {
+                    Ok(_) => {} // date is valid and in the future
+                    Err(DateResolveError::PastDate(_)) => {
+                        return WorkflowPostProcessResult::Failed {
+                            reply: rust_i18n::t!("workflow.reservation_create.past_date.error", locale = lang).to_string(),
+                        };
+                    }
+                    Err(DateResolveError::Unparseable) => {
+                        return WorkflowPostProcessResult::Failed {
+                            reply: rust_i18n::t!("workflow.reservation_create.past_date.error", locale = lang).to_string(),
+                        };
+                    }
+                }
+            }
+        }
         WorkflowPostProcessResult::Succeeded { reply: None }
     }
 }
@@ -83,6 +114,7 @@ fn required_slot(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use super::*;
     use crate::core::conversation::domain::conversation::Conversation;
     use crate::core::conversation::domain::domain_type::DomainType;
@@ -105,7 +137,14 @@ mod tests {
         intent: IntentId,
         entities: Vec<NluEntity>,
     ) -> StateHandlerResult {
-        ReservationCreateIntentHandler.handle(IntentHandlerInput {
+        use crate::core::conversation::domain::date_resolver::DateResolver;
+        struct AlwaysOk;
+        impl DateResolver for AlwaysOk {
+            fn resolve(&self, _raw: &str, today: chrono::NaiveDate) -> Result<chrono::NaiveDate, crate::core::conversation::domain::date_resolver::DateResolveError> {
+                Ok(today + chrono::Duration::days(1))
+            }
+        }
+        ReservationCreateIntentHandler::new(Arc::new(AlwaysOk)).handle(IntentHandlerInput {
             conversation,
             analysis_intent: &intent,
             text: "",

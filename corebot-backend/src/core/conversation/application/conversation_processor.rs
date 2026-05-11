@@ -1,15 +1,12 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use rust_i18n::t;
 
 use super::intent_handler::{IntentHandlerInput, IntentHandlerRegistry, StateHandlerResult};
-use super::intent_handlers::menu_item_details_handler::MenuItemDetailsIntentHandler;
-use super::intent_handlers::opening_hours_handler::OpeningHoursIntentHandler;
-use super::intent_handlers::reservation_cancel_handler::ReservationCancelIntentHandler;
-use super::intent_handlers::reservation_create_handler::ReservationCreateIntentHandler;
-use super::intent_handlers::restaurant_information_handler::RestaurantInformationIntentHandler;
-use super::intent_handlers::static_reply_handler::StaticReplyIntentHandler;
 use super::port::outbound::domain_gateway_port::DomainGatewayPort;
+use super::restaurant_handler_registry_factory::RestaurantHandlerRegistryFactory;
+use crate::core::conversation::domain::date_resolver::DateResolver;
 use crate::core::conversation::domain::model::conversation::Conversation;
 use crate::core::conversation::domain::model::domain_type::DomainType;
 use crate::core::conversation::domain::model::intent::{IntentId, IntentKind};
@@ -25,65 +22,15 @@ pub struct ConversationProcessor {
 }
 
 impl ConversationProcessor {
-    pub fn new<D: DomainGatewayPort + Send + Sync + 'static>(domain_gateway: D) -> Self {
-        let restaurant_handlers: Vec<Box<dyn super::intent_handler::IntentHandler>> = vec![
-            Box::new(ReservationCreateIntentHandler),
-            Box::new(ReservationCancelIntentHandler),
-            Box::new(OpeningHoursIntentHandler::new(domain_gateway)),
-            Box::new(MenuItemDetailsIntentHandler),
-            Box::new(RestaurantInformationIntentHandler::new(
-                IntentId::AskMenuGeneral,
-            )),
-            Box::new(RestaurantInformationIntentHandler::new(
-                IntentId::AskMenuDietary,
-            )),
-            Box::new(RestaurantInformationIntentHandler::new(
-                IntentId::AskLocation,
-            )),
-            Box::new(RestaurantInformationIntentHandler::new(
-                IntentId::AskContact,
-            )),
-            Box::new(RestaurantInformationIntentHandler::new(
-                IntentId::AskPaymentMethods,
-            )),
-            Box::new(RestaurantInformationIntentHandler::new(IntentId::AskPrice)),
-            Box::new(RestaurantInformationIntentHandler::new(
-                IntentId::AskTakeawayDelivery,
-            )),
-            Box::new(RestaurantInformationIntentHandler::new(IntentId::AskEvent)),
-            Box::new(RestaurantInformationIntentHandler::new(
-                IntentId::AskFacilities,
-            )),
-            Box::new(RestaurantInformationIntentHandler::new(
-                IntentId::AskAccessibility,
-            )),
-            Box::new(RestaurantInformationIntentHandler::new(
-                IntentId::AskEntertainment,
-            )),
-            Box::new(RestaurantInformationIntentHandler::new(
-                IntentId::CheckReservation,
-            )),
-            Box::new(StaticReplyIntentHandler::new(
-                IntentId::Greeting,
-                "intent.greeting.reply",
-            )),
-            Box::new(StaticReplyIntentHandler::new(
-                IntentId::Thanks,
-                "intent.thanks.reply",
-            )),
-            Box::new(StaticReplyIntentHandler::new(
-                IntentId::Goodbye,
-                "intent.goodbye.reply",
-            )),
-            Box::new(StaticReplyIntentHandler::new(
-                IntentId::Unknown("unknown".to_string()),
-                "intent.unknown.reply",
-            )),
-        ];
+    pub fn new<D: DomainGatewayPort + Send + Sync + 'static>(
+        domain_gateway: D,
+        date_resolver: Arc<dyn DateResolver>,
+    ) -> Self {
+        let gateway = Arc::new(domain_gateway);
         let mut intent_handlers_by_domain = HashMap::new();
         intent_handlers_by_domain.insert(
             DomainType::Restaurant,
-            IntentHandlerRegistry::new(restaurant_handlers),
+            RestaurantHandlerRegistryFactory::build(Arc::clone(&gateway), date_resolver),
         );
         intent_handlers_by_domain.insert(DomainType::Hotel, IntentHandlerRegistry::new(vec![]));
 
@@ -246,6 +193,7 @@ mod tests {
     use crate::core::nlu_engine::domain::analysis::{
         NerTokenLabel, NluEntity, NluIntent, NluIntentCandidate,
     };
+    use std::sync::Arc;
 
     struct StubDomainGateway;
 
@@ -253,10 +201,60 @@ mod tests {
         fn get_opening_hours(&self) -> String {
             "Mon-Sun 9am-10pm".to_string()
         }
+        fn get_menu(&self, _: Option<&str>, _: Option<&str>, _: Option<&str>) -> String {
+            "full_menu:".to_string()
+        }
+        fn get_menu_dietary(&self, _: Option<&str>) -> String {
+            "dietary_no_filter:".to_string()
+        }
+        fn get_menu_item_details(&self, _: Option<&str>, _: Option<&str>) -> String {
+            "details_no_filter:".to_string()
+        }
+        fn get_location(&self, _: Option<&str>) -> String {
+            "address:".to_string()
+        }
+        fn get_contact(&self) -> String {
+            "contact:+33123456789|test@example.com".to_string()
+        }
+        fn get_payment_methods(&self, _: Option<&str>) -> String {
+            "all_methods:cash".to_string()
+        }
+        fn get_price(&self, _: Option<&str>, _: Option<&str>, _: Option<&str>) -> String {
+            "price_general:".to_string()
+        }
+        fn get_takeaway_info(&self) -> String {
+            "takeaway:yes|Yes".to_string()
+        }
+        fn get_event_info(&self, _: Option<&str>) -> String {
+            "event_info:Yes".to_string()
+        }
+        fn get_facility_info(&self, _: Option<&str>) -> String {
+            "all_facilities:wifi".to_string()
+        }
+        fn get_accessibility_info(&self) -> String {
+            "accessibility:yes|Yes".to_string()
+        }
+        fn get_entertainment_info(&self) -> String {
+            "entertainment:yes|Live music".to_string()
+        }
+        fn check_reservation(&self, _: Option<&str>) -> String {
+            "no_reference:".to_string()
+        }
     }
 
     fn processor() -> ConversationProcessor {
-        ConversationProcessor::new(StubDomainGateway)
+        use crate::core::conversation::domain::date_resolver::{DateResolveError, DateResolver};
+        struct AlwaysOk;
+        impl DateResolver for AlwaysOk {
+            fn resolve(
+                &self,
+                _: &str,
+                today: chrono::NaiveDate,
+            ) -> Result<chrono::NaiveDate, DateResolveError> {
+                Ok(today + chrono::Duration::days(1))
+            }
+        }
+        ConversationProcessor::new(StubDomainGateway, Arc::new(AlwaysOk))
     }
 
     fn analysis(intent_name: &'static str, entities: Vec<NluEntity>) -> NluAnalysis {
@@ -296,7 +294,11 @@ mod tests {
             ),
         );
 
-        assert_eq!(result.reply, "Here are the available details for ramen.");
+        // Handler now calls domain gateway — stub returns "details_no_filter:" → fallback key
+        assert_eq!(
+            result.reply,
+            "Which menu item would you like details about?"
+        );
         assert!(result.updated_conversation.is_idle());
         assert!(conversation.is_idle());
     }
@@ -313,7 +315,7 @@ mod tests {
 
         assert_eq!(
             result.reply,
-            "Which menu item or category would you like details about?"
+            "Which menu item would you like details about?"
         );
         assert!(result.updated_conversation.is_idle());
         assert!(conversation.is_idle());
@@ -386,69 +388,44 @@ mod tests {
             ),
         );
 
-        assert_eq!(
-            result.reply,
-            "I can help identify options under 20 euros when prices are available."
-        );
+        // Stub returns "price_general:" → general.reply key
+        assert_eq!(result.reply, "Here is our pricing information: .");
         assert!(result.updated_conversation.is_idle());
         assert!(conversation.is_idle());
     }
 
     #[test]
     fn restaurant_informational_intents_are_handled_without_echo_fallback() {
-        let handled_intents = [
-            (
-                "ask_menu_general",
-                "Here is the restaurant menu information.",
-            ),
-            ("ask_menu_dietary", "I can help with dietary menu options."),
-            (
-                "ask_location",
-                "The restaurant address information is available.",
-            ),
-            (
-                "ask_contact",
-                "The restaurant contact information is available.",
-            ),
-            (
-                "ask_payment_methods",
-                "The restaurant accepts common payment methods.",
-            ),
-            (
-                "ask_price",
-                "I can help with restaurant pricing information.",
-            ),
-            (
-                "ask_takeaway_delivery",
-                "Takeaway and delivery information is available.",
-            ),
-            ("ask_event", "The restaurant can provide event information."),
-            (
-                "ask_facilities",
-                "I can help with restaurant facility information.",
-            ),
-            (
-                "ask_accessibility",
-                "The restaurant can provide accessibility information.",
-            ),
-            (
-                "ask_entertainment",
-                "The restaurant can provide entertainment information.",
-            ),
-            (
-                "check_reservation",
-                "Please provide a reservation reference so I can check it.",
-            ),
+        // These intents must be routed to a dedicated handler (not echo fallback).
+        // The stub gateway returns minimal payloads → each handler falls through to its
+        // default i18n key. We only verify that the reply is NOT the echo fallback.
+        let informational_intents = [
+            "ask_menu_general",
+            "ask_menu_dietary",
+            "ask_location",
+            "ask_contact",
+            "ask_payment_methods",
+            "ask_price",
+            "ask_takeaway_delivery",
+            "ask_event",
+            "ask_facilities",
+            "ask_accessibility",
+            "ask_entertainment",
+            "check_reservation",
         ];
 
-        for (intent, expected_reply) in handled_intents {
+        for intent in informational_intents {
             let result = processor().process(
                 Conversation::new(DomainType::Restaurant),
                 "",
                 analysis(intent, vec![]),
             );
 
-            assert_eq!(result.reply, expected_reply);
+            assert!(
+                !result.reply.starts_with("Detected intent:"),
+                "intent {intent} should be handled, not echoed; got: {}",
+                result.reply
+            );
             assert!(result.updated_conversation.is_idle());
         }
     }

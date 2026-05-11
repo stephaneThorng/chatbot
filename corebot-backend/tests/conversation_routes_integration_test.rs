@@ -9,6 +9,7 @@ use corebot_backend::core::conversation::adapter::outbound::restaurant_domain_ga
 use corebot_backend::core::conversation::application::conversation_service::HandleConversationService;
 use corebot_backend::core::conversation::application::port::outbound::language_detector_port::LanguageDetectorPort;
 use corebot_backend::core::conversation::application::port::outbound::nlp_engine_gateway_port::NlpEngineGatewayPort;
+use corebot_backend::core::conversation::domain::date_resolver::{DateResolveError, DateResolver};
 use corebot_backend::core::conversation::domain::domain_type::DomainType;
 use corebot_backend::core::conversation::domain::model::intent::NluTask;
 use corebot_backend::core::nlu_engine::domain::analysis::{NluAnalysis, NluIntent};
@@ -17,8 +18,27 @@ use corebot_backend::core::restaurant::application::port::inbound::restaurant_tr
 struct StubRestaurantPort;
 
 impl RestaurantPort for StubRestaurantPort {
-    fn get_opening_hours(&self) -> String {
-        "Not implemented yet".to_string()
+    fn get_opening_hours(&self) -> String { "Mon-Sun 9am-10pm".to_string() }
+    fn get_menu(&self, _: Option<&str>, _: Option<&str>, _: Option<&str>) -> String { "full_menu:stub".to_string() }
+    fn get_menu_dietary(&self, _: Option<&str>) -> String { "dietary_no_filter:".to_string() }
+    fn get_menu_item_details(&self, _: Option<&str>, _: Option<&str>) -> String { "details_no_filter:".to_string() }
+    fn get_location(&self, _: Option<&str>) -> String { "address:stub".to_string() }
+    fn get_contact(&self) -> String { "contact:+33123456789|test@example.com".to_string() }
+    fn get_payment_methods(&self, _: Option<&str>) -> String { "all_methods:cash".to_string() }
+    fn get_price(&self, _: Option<&str>, _: Option<&str>, _: Option<&str>) -> String { "price_general:stub".to_string() }
+    fn get_takeaway_info(&self) -> String { "takeaway:yes|stub".to_string() }
+    fn get_event_info(&self, _: Option<&str>) -> String { "event_info:stub".to_string() }
+    fn get_facility_info(&self, _: Option<&str>) -> String { "all_facilities:wifi".to_string() }
+    fn get_accessibility_info(&self) -> String { "accessibility:yes|stub".to_string() }
+    fn get_entertainment_info(&self) -> String { "entertainment:yes|stub".to_string() }
+    fn check_reservation(&self, _: Option<&str>) -> String { "no_reference:".to_string() }
+}
+
+struct StubDateResolver;
+
+impl DateResolver for StubDateResolver {
+    fn resolve(&self, _: &str, today: chrono::NaiveDate) -> Result<chrono::NaiveDate, DateResolveError> {
+        Ok(today + chrono::Duration::days(1))
     }
 }
 
@@ -58,12 +78,14 @@ impl LanguageDetectorPort for StubLanguageDetector {
 
 fn make_server(intent_name: &'static str) -> TestServer {
     let gateway = RestaurantDomainGateway::new(StubRestaurantPort);
+    let date_resolver = Arc::new(StubDateResolver);
     let analyzer = StubNlpAnalyzer { intent_name };
     let repository = InMemoryConversationRepository::new();
     let language_detector = StubLanguageDetector;
     let use_case = Arc::new(HandleConversationService::new(
         DomainType::Restaurant,
         gateway,
+        date_resolver,
         analyzer,
         repository,
         language_detector,
@@ -83,7 +105,7 @@ async fn post_send_message_returns_200_with_session_id() {
     response.assert_status_ok();
     let body = response.json::<serde_json::Value>();
     assert!(body["session_id"].as_str().is_some_and(|s| !s.is_empty()));
-    assert_eq!(body["reply"], "Not implemented yet");
+    assert_eq!(body["reply"], "Mon-Sun 9am-10pm");
 }
 
 #[tokio::test]

@@ -1,4 +1,5 @@
 use std::str::FromStr;
+use std::sync::Arc;
 
 use super::conversation_command::{HandleConversationCommand, HandleConversationResult};
 use super::conversation_processor::ConversationProcessor;
@@ -9,6 +10,7 @@ use super::port::outbound::language_detector_port::LanguageDetectorPort;
 use super::port::outbound::nlp_engine_gateway_port::NlpEngineGatewayPort;
 use crate::core::conversation::domain::conversation::Conversation;
 use crate::core::conversation::domain::conversation_id::ConversationId;
+use crate::core::conversation::domain::date_resolver::DateResolver;
 use crate::core::conversation::domain::domain_type::DomainType;
 
 /// Use case that handles one user message in a conversation session.
@@ -68,6 +70,7 @@ where
     pub fn new<D: DomainGatewayPort + Send + Sync + 'static>(
         domain: DomainType,
         domain_gateway: D,
+        date_resolver: Arc<dyn DateResolver>,
         nlu_engine_gateway: N,
         conversation_repository: R,
         language_detector: L,
@@ -77,7 +80,7 @@ where
             nlu_engine_gateway,
             conversation_repository,
             language_detector,
-            processor: ConversationProcessor::new(domain_gateway),
+            processor: ConversationProcessor::new(domain_gateway, date_resolver),
         }
     }
 
@@ -145,6 +148,19 @@ mod tests {
             *self.calls.lock().unwrap() += 1;
             "Mon-Sun 9am-10pm".to_string()
         }
+        fn get_menu(&self, _: Option<&str>, _: Option<&str>, _: Option<&str>) -> String { "full_menu:".to_string() }
+        fn get_menu_dietary(&self, _: Option<&str>) -> String { "dietary_no_filter:".to_string() }
+        fn get_menu_item_details(&self, _: Option<&str>, _: Option<&str>) -> String { "details_no_filter:".to_string() }
+        fn get_location(&self, _: Option<&str>) -> String { "address:".to_string() }
+        fn get_contact(&self) -> String { "contact:+33123456789|test@example.com".to_string() }
+        fn get_payment_methods(&self, _: Option<&str>) -> String { "all_methods:cash".to_string() }
+        fn get_price(&self, _: Option<&str>, _: Option<&str>, _: Option<&str>) -> String { "price_general:".to_string() }
+        fn get_takeaway_info(&self) -> String { "takeaway:yes|Yes".to_string() }
+        fn get_event_info(&self, _: Option<&str>) -> String { "event_info:Yes".to_string() }
+        fn get_facility_info(&self, _: Option<&str>) -> String { "all_facilities:wifi".to_string() }
+        fn get_accessibility_info(&self) -> String { "accessibility:yes|Yes".to_string() }
+        fn get_entertainment_info(&self) -> String { "entertainment:yes|Live music".to_string() }
+        fn check_reservation(&self, _: Option<&str>) -> String { "no_reference:".to_string() }
     }
 
     #[derive(Clone)]
@@ -315,12 +331,20 @@ mod tests {
         analyzer: StubNlpAnalyzer,
         lang: &str,
     ) -> UseCaseParts {
+        use crate::core::conversation::domain::date_resolver::{DateResolver, DateResolveError};
+        struct AlwaysOk;
+        impl DateResolver for AlwaysOk {
+            fn resolve(&self, _: &str, today: chrono::NaiveDate) -> Result<chrono::NaiveDate, DateResolveError> {
+                Ok(today + chrono::Duration::days(1))
+            }
+        }
         let repo = StubConversationRepository::new();
         let detector = StubLanguageDetector::new(lang);
         let domain_gateway = StubDomainGateway::new();
         let use_case = HandleConversationService::new(
             domain,
             domain_gateway.clone(),
+            Arc::new(AlwaysOk),
             analyzer,
             repo.clone(),
             detector.clone(),

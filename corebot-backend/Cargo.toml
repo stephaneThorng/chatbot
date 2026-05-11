@@ -15,6 +15,7 @@ thiserror = "2.0.12"
 tokenizers = { version = "0.22.1", default-features = false, features = ["fancy-regex"] }
 langdetect-rs = "0.2.3"
 rust-i18n = "4.0.0"
+chrono = "0.4"
 
 [package.metadata.i18n]
 available-locales = ["en", "id"]
