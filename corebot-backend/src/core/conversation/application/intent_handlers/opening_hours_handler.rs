@@ -1,20 +1,22 @@
 use crate::core::conversation::application::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
-use crate::core::conversation::application::port::outbound::domain_gateway_port::DomainGatewayPort;
+use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
 use crate::core::conversation::domain::model::intent::{IntentId, IntentKind, IntentPolicy};
 
-pub struct OpeningHoursIntentHandler<D: DomainGatewayPort> {
-    domain_gateway: D,
+pub struct OpeningHoursIntentHandler<P: RestaurantInformationPort + ?Sized> {
+    information_port: std::sync::Arc<P>,
 }
 
-impl<D: DomainGatewayPort> OpeningHoursIntentHandler<D> {
-    pub fn new(domain_gateway: D) -> Self {
-        Self { domain_gateway }
+impl<P: RestaurantInformationPort + ?Sized> OpeningHoursIntentHandler<P> {
+    pub fn new(information_port: std::sync::Arc<P>) -> Self {
+        Self { information_port }
     }
 }
 
-impl<D: DomainGatewayPort + Send + Sync> IntentHandler for OpeningHoursIntentHandler<D> {
+impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
+    for OpeningHoursIntentHandler<P>
+{
     fn intent(&self) -> IntentId {
         IntentId::AskOpeningHours
     }
@@ -39,7 +41,7 @@ impl<D: DomainGatewayPort + Send + Sync> IntentHandler for OpeningHoursIntentHan
         );
         StateHandlerResult {
             updated_conversation: input.conversation,
-            reply: self.domain_gateway.get_opening_hours(),
+            reply: self.information_port.get_opening_hours(),
             handled_intent: self.intent(),
         }
     }

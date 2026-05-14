@@ -41,7 +41,14 @@ def main() -> None:
 
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
     model_config = AutoConfig.from_pretrained(model_dir)
-    model = MultiTaskNluModel.from_pretrained(model_dir, config=model_config)
+    setattr(model_config, "_attn_implementation", "eager")
+    setattr(model_config, "_attn_implementation_internal", "eager")
+    setattr(model_config, "attn_implementation", "eager")
+    model = MultiTaskNluModel.from_pretrained(
+        model_dir,
+        config=model_config,
+        attn_implementation="eager",
+    )
     contract = build_export_contract(config)
 
     export_model_to_onnx(

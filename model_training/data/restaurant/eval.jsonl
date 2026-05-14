@@ -1,56 +1,28 @@
-{"domain": "restaurant", "entities": [], "intent": "unknown", "lang": "en", "task": "WF_RESERVATION_CREATE", "text": "What is the weather?"}
-{"domain": "restaurant", "entities": [{"end": 68, "start": 57, "type": "reservation_reference"}], "intent": "check_reservation", "lang": "en", "text": "could you tell me do I have a reservation with reference REST-A1B2C3"}
-{"domain": "restaurant", "entities": [], "intent": "ask_accessibility", "lang": "id", "text": "bisa jelaskan Apakah aksesnya ramah disabilitas? ya"}
-{"domain": "restaurant", "entities": [], "intent": "affirmative", "lang": "id", "task": "WF_CHOICE", "text": "baik Ya silakan ya"}
-{"domain": "restaurant", "entities": [{"end": 8, "start": 0, "type": "people_count"}], "intent": "reservation_create", "lang": "id", "task": "WF_RESERVATION_CREATE", "text": "12 orang untuk makan malam"}
-{"domain": "restaurant", "entities": [], "intent": "unknown", "lang": "en", "task": "WF_RESERVATION_CANCEL", "text": "Actually, maybe later please"}
-{"domain": "restaurant", "entities": [], "intent": "cancel", "lang": "en", "task": "WF_RESERVATION_CANCEL", "text": "cancel this flow"}
-{"domain": "restaurant", "entities": [], "intent": "goodbye", "lang": "en", "text": "Please Bye ."}
-{"domain": "restaurant", "entities": [], "intent": "unknown", "lang": "en", "text": "OK, play some music for now"}
-{"domain": "restaurant", "entities": [{"end": 20, "start": 12, "type": "price_comparator"}, {"end": 29, "start": 21, "type": "price_amount"}], "intent": "ask_menu_general", "lang": "id", "text": "Ada makanan di bawah 100 ribu?."}
-{"domain": "restaurant", "entities": [], "intent": "ask_payment_methods", "lang": "en", "text": "I want to know can I split the bill today"}
-{"domain": "restaurant", "entities": [{"end": 33, "start": 25, "type": "price_comparator"}, {"end": 41, "start": 34, "type": "price_amount"}], "intent": "ask_price", "lang": "id", "text": "tolong Apa yang harganya di bawah 75 ribu?."}
-{"domain": "restaurant", "entities": [{"end": 45, "start": 35, "type": "dietary_requirement"}], "intent": "ask_menu_dietary", "lang": "en", "text": "could you tell me which dishes are vegetarian"}
-{"domain": "restaurant", "entities": [{"end": 28, "start": 17, "type": "reservation_reference"}], "intent": "check_reservation", "lang": "id", "text": "Bisa cek booking REST-BOOK42? untuk malam ini"}
-{"domain": "restaurant", "entities": [{"end": 25, "start": 15, "type": "menu_item"}], "intent": "ask_menu_item_details", "lang": "en", "text": "What is in the kids pasta?"}
-{"domain": "restaurant", "entities": [], "intent": "ask_payment_methods", "lang": "id", "text": "tolong Bisa pisah tagihan? hari ini"}
-{"domain": "restaurant", "entities": [{"end": 40, "start": 28, "type": "price_item"}], "intent": "ask_price", "lang": "en", "text": "I want to know how much the tasting menu is"}
-{"domain": "restaurant", "entities": [], "intent": "cancel", "lang": "id", "task": "WF_RESERVATION_CREATE", "text": "tolong lupakan permintaan ini"}
-{"domain": "restaurant", "entities": [{"end": 42, "start": 31, "type": "date"}], "intent": "ask_opening_hours", "lang": "id", "text": "bisa jelaskan Jam berapa tutup Senin depan?."}
-{"domain": "restaurant", "entities": [{"end": 16, "start": 9, "type": "facility"}], "intent": "ask_facilities", "lang": "en", "text": "Is there parking near your restaurant?."}
-{"domain": "restaurant", "entities": [], "intent": "unknown", "lang": "id", "task": "WF_RESERVATION_CANCEL", "text": "Saya butuh taksi"}
-{"domain": "restaurant", "entities": [{"end": 30, "start": 19, "type": "reservation_reference"}], "intent": "reservation_cancel", "lang": "en", "task": "WF_RESERVATION_CANCEL", "text": "cancel reservation REST-ABC123"}
-{"domain": "restaurant", "entities": [{"end": 44, "start": 36, "type": "location"}], "intent": "ask_location", "lang": "en", "text": "I want to know whether you are near downtown please"}
-{"domain": "restaurant", "entities": [], "intent": "greeting", "lang": "id", "text": "sebenarnya Halo tim restoran."}
-{"domain": "restaurant", "entities": [{"end": 35, "start": 30, "type": "date"}, {"end": 51, "start": 40, "type": "time"}, {"end": 65, "start": 58, "type": "people_count"}, {"end": 88, "start": 76, "type": "person"}], "intent": "reservation_create", "lang": "id", "text": "saya ingin saya mau reservasi besok jam pukul 20:15 untuk 1 orang atas nama Budi Santoso ya"}
-{"domain": "restaurant", "entities": [], "intent": "ask_takeaway_delivery", "lang": "en", "text": "I want to know whether you deliver to nearby addresses"}
-{"domain": "restaurant", "entities": [], "intent": "ask_entertainment", "lang": "en", "text": "I want to know whether there is a DJ on weekends today"}
-{"domain": "restaurant", "entities": [], "intent": "unknown", "lang": "id", "task": "WF_RESERVATION_CREATE", "text": "sekarang Mungkin nanti dulu"}
-{"domain": "restaurant", "entities": [{"end": 21, "start": 11, "type": "location"}], "intent": "ask_event", "lang": "id", "text": "tolong Ada pusat kota untuk acara? untuk malam ini"}
-{"domain": "restaurant", "entities": [], "intent": "cancel", "lang": "en", "task": "WF_RESERVATION_CREATE", "text": "stop the current request."}
-{"domain": "restaurant", "entities": [{"end": 30, "start": 20, "type": "facility"}], "intent": "ask_facilities", "lang": "id", "text": "saya ingin tahu Ada kursi bayi?."}
-{"domain": "restaurant", "entities": [], "intent": "negative", "lang": "id", "task": "WF_CHOICE", "text": "sebenarnya Salah dulu"}
-{"domain": "restaurant", "entities": [], "intent": "affirmative", "lang": "en", "task": "WF_CHOICE", "text": "Now, i confirm thanks"}
-{"domain": "restaurant", "entities": [{"end": 26, "start": 15, "type": "person"}, {"end": 32, "start": 27, "type": "date"}], "intent": "reservation_cancel", "lang": "id", "task": "WF_RESERVATION_CANCEL", "text": "bisa atas nama Siti Aminah Jumat sekarang"}
-{"domain": "restaurant", "entities": [{"end": 33, "start": 24, "type": "people_count"}, {"end": 45, "start": 34, "type": "date"}, {"end": 54, "start": 49, "type": "time"}, {"end": 71, "start": 61, "type": "person"}], "intent": "reservation_create", "lang": "en", "task": "WF_RESERVATION_CREATE", "text": "Please book a table for 12 people next Monday at 19:00 under Lena Smith if available"}
-{"domain": "restaurant", "entities": [{"end": 30, "start": 13, "type": "date"}, {"end": 39, "start": 34, "type": "time"}], "intent": "ask_opening_hours", "lang": "en", "text": "Are you open on August 23 2026 at 20:30? please"}
-{"domain": "restaurant", "entities": [], "intent": "negative", "lang": "en", "task": "WF_CHOICE", "text": "Actually, i do not confirm thanks"}
-{"domain": "restaurant", "entities": [{"end": 12, "start": 4, "type": "people_count"}, {"end": 20, "start": 13, "type": "date"}, {"end": 28, "start": 24, "type": "time"}], "intent": "reservation_create", "lang": "en", "text": "for 1 person June 12 at noon for dinner"}
-{"domain": "restaurant", "entities": [{"end": 21, "start": 10, "type": "reservation_reference"}], "intent": "reservation_cancel", "lang": "id", "text": "referensi REST-9X8Y7Z"}
-{"domain": "restaurant", "entities": [{"end": 34, "start": 22, "type": "location"}], "intent": "ask_location", "lang": "id", "text": "Apakah restoran dekat dekat sungai?."}
-{"domain": "restaurant", "entities": [], "intent": "cancel", "lang": "id", "task": "WF_RESERVATION_CANCEL", "text": "lupakan permintaan ini ya"}
-{"domain": "restaurant", "entities": [], "intent": "ask_takeaway_delivery", "lang": "id", "text": "Apakah takeaway tersedia?"}
-{"domain": "restaurant", "entities": [{"end": 33, "start": 23, "type": "menu_item"}, {"end": 50, "start": 45, "type": "allergen"}], "intent": "ask_menu_item_details", "lang": "id", "text": "saya ingin tahu Apakah pasta anak mengandung telur? hari ini"}
-{"domain": "restaurant", "entities": [], "intent": "thanks", "lang": "id", "text": "baik Terima kasih ya ya"}
-{"domain": "restaurant", "entities": [{"end": 29, "start": 19, "type": "person"}, {"end": 39, "start": 30, "type": "date"}], "intent": "reservation_cancel", "lang": "en", "text": "Please it is under Noah Davis on July 8"}
-{"domain": "restaurant", "entities": [], "intent": "ask_entertainment", "lang": "id", "text": "saya ingin tahu Ada karaoke malam ini? ya"}
-{"domain": "restaurant", "entities": [], "intent": "ask_event", "lang": "en", "text": "I want to know whether you host birthday parties"}
-{"domain": "restaurant", "entities": [], "intent": "thanks", "lang": "en", "text": "Please Thank you thanks"}
-{"domain": "restaurant", "entities": [], "intent": "goodbye", "lang": "id", "text": "baik Sampai bertemu lagi terima kasih"}
-{"domain": "restaurant", "entities": [{"end": 39, "start": 27, "type": "dietary_requirement"}], "intent": "ask_menu_dietary", "lang": "id", "text": "bisa jelaskan Ada hidangan rendah garam?"}
-{"domain": "restaurant", "entities": [], "intent": "ask_accessibility", "lang": "en", "text": "Please, can a stroller enter easily?"}
-{"domain": "restaurant", "entities": [{"end": 30, "start": 11, "type": "email"}], "intent": "ask_contact", "lang": "id", "text": "Email saya booking@example.com ya"}
-{"domain": "restaurant", "entities": [], "intent": "greeting", "lang": "en", "text": "Hey there for now"}
-{"domain": "restaurant", "entities": [{"end": 35, "start": 19, "type": "email"}], "intent": "ask_contact", "lang": "en", "text": "Please My email is maya@example.com today"}
-{"domain": "restaurant", "entities": [{"end": 31, "start": 27, "type": "price_comparator"}, {"end": 34, "start": 32, "type": "price_amount"}], "intent": "ask_menu_general", "lang": "en", "text": "Please, do you have dishes over 10?"}
-{"domain": "restaurant", "entities": [], "intent": "unknown", "lang": "id", "text": "baik Bisa pesankan tiket pesawat? terima kasih"}
+{"domain": "restaurant", "entities": [{"end": 10, "start": 0, "type": "date"}], "intent": "reservation_create", "lang": "en", "text": "23/08/2026"}
+{"domain": "restaurant", "entities": [{"end": 2, "start": 0, "type": "people_count"}], "intent": "reservation_create", "lang": "en", "task": "WF_RESERVATION_CREATE", "text": "10"}
+{"domain": "restaurant", "entities": [{"end": 26, "start": 15, "type": "reservation_reference"}], "intent": "reservation_cancel", "lang": "en", "text": "cancel booking REST-7F4K2A"}
+{"domain": "restaurant", "entities": [{"end": 14, "start": 4, "type": "date"}], "intent": "reservation_cancel", "lang": "en", "task": "WF_RESERVATION_CANCEL", "text": "for 23/08/2026"}
+{"domain": "restaurant", "entities": [], "intent": "cancel", "lang": "en", "task": "WF_RESERVATION_CREATE", "text": "abort this request"}
+{"domain": "restaurant", "entities": [], "intent": "cancel", "lang": "en", "task": "WF_RESERVATION_CANCEL", "text": "cancel the current flow"}
+{"domain": "restaurant", "entities": [{"end": 31, "start": 20, "type": "reservation_reference"}], "intent": "check_reservation", "lang": "en", "text": "can i check booking REST-7F4K2A"}
+{"domain": "restaurant", "entities": [{"end": 23, "start": 13, "type": "date"}, {"end": 32, "start": 27, "type": "time"}], "intent": "ask_opening_hours", "lang": "en", "text": "are you open 2026-08-23 at 19:00"}
+{"domain": "restaurant", "entities": [{"end": 25, "start": 14, "type": "price_item"}], "intent": "ask_menu_general", "lang": "en", "text": "can i see the family menu"}
+{"domain": "restaurant", "entities": [{"end": 25, "start": 14, "type": "dietary_requirement"}], "intent": "ask_menu_dietary", "lang": "en", "text": "are there any gluten-free meals"}
+{"domain": "restaurant", "entities": [{"end": 20, "start": 9, "type": "menu_item"}, {"end": 33, "start": 29, "type": "allergen"}], "intent": "ask_menu_item_details", "lang": "en", "text": "does the beef burger contain eggs"}
+{"domain": "restaurant", "entities": [{"end": 26, "start": 15, "type": "location"}], "intent": "ask_location", "lang": "en", "text": "are you around city center"}
+{"domain": "restaurant", "entities": [{"end": 40, "start": 21, "type": "email"}], "intent": "ask_contact", "lang": "en", "text": "can i contact you at booking@example.com"}
+{"domain": "restaurant", "entities": [{"end": 17, "start": 13, "type": "payment_method"}], "intent": "ask_payment_methods", "lang": "en", "text": "can i pay by cash"}
+{"domain": "restaurant", "entities": [{"end": 24, "start": 19, "type": "price_comparator"}, {"end": 28, "start": 25, "type": "price_amount"}], "intent": "ask_price", "lang": "en", "text": "do you have dishes below $45"}
+{"domain": "restaurant", "entities": [], "intent": "ask_takeaway_delivery", "lang": "en", "text": "can i collect an order"}
+{"domain": "restaurant", "entities": [{"end": 23, "start": 15, "type": "location"}], "intent": "ask_event", "lang": "en", "text": "can i book the downtown for a private dinner"}
+{"domain": "restaurant", "entities": [{"end": 22, "start": 10, "type": "facility"}], "intent": "ask_facilities", "lang": "en", "text": "can i use bike parking"}
+{"domain": "restaurant", "entities": [], "intent": "ask_accessibility", "lang": "en", "text": "can strollers get in easily"}
+{"domain": "restaurant", "entities": [], "intent": "ask_entertainment", "lang": "en", "text": "do you have a music program"}
+{"domain": "restaurant", "entities": [], "intent": "greeting", "lang": "en", "text": "good afternoon"}
+{"domain": "restaurant", "entities": [], "intent": "thanks", "lang": "en", "text": "great, thanks"}
+{"domain": "restaurant", "entities": [], "intent": "goodbye", "lang": "en", "text": "bye and thanks"}
+{"domain": "restaurant", "entities": [], "intent": "affirmative", "lang": "en", "task": "WF_CHOICE", "text": "correct"}
+{"domain": "restaurant", "entities": [], "intent": "negative", "lang": "en", "task": "WF_CHOICE", "text": "i do not confirm"}
+{"domain": "restaurant", "entities": [], "intent": "unknown", "lang": "en", "text": "can you dance"}
+{"domain": "restaurant", "entities": [], "intent": "unknown", "lang": "en", "task": "WF_RESERVATION_CREATE", "text": "can you drive me home"}
+{"domain": "restaurant", "entities": [], "intent": "unknown", "lang": "en", "task": "WF_RESERVATION_CANCEL", "text": "how is traffic"}

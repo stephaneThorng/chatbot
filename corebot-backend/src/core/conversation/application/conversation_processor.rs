@@ -1,59 +1,40 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use rust_i18n::t;
 
 use super::intent_handler::{IntentHandlerInput, IntentHandlerRegistry, StateHandlerResult};
-use super::port::outbound::domain_gateway_port::DomainGatewayPort;
-use super::restaurant_handler_registry_factory::RestaurantHandlerRegistryFactory;
-use crate::core::conversation::domain::date_resolver::DateResolver;
 use crate::core::conversation::domain::model::conversation::Conversation;
 use crate::core::conversation::domain::model::domain_type::DomainType;
 use crate::core::conversation::domain::model::intent::{IntentId, IntentKind};
 use crate::core::nlu_engine::domain::analysis::{NluAnalysis, NluEntity};
 
 /// Application service that routes one decoded NLU turn to the right conversation path.
-///
-/// Workflow turns are delegated to the matching workflow handler. Idle
-/// informational turns are delegated to stateless intent handlers and keep the
-/// conversation idle.
 pub struct ConversationProcessor {
     intent_handlers: HashMap<DomainType, IntentHandlerRegistry>,
 }
 
 impl ConversationProcessor {
-    pub fn new<D: DomainGatewayPort + Send + Sync + 'static>(
-        domain_gateway: D,
-        date_resolver: Arc<dyn DateResolver>,
+    pub fn new(
+        restaurant_registry: IntentHandlerRegistry,
+        hotel_registry: IntentHandlerRegistry,
     ) -> Self {
-        let gateway = Arc::new(domain_gateway);
-        let mut intent_handlers_by_domain = HashMap::new();
-        intent_handlers_by_domain.insert(
-            DomainType::Restaurant,
-            RestaurantHandlerRegistryFactory::build(Arc::clone(&gateway), date_resolver),
-        );
-        intent_handlers_by_domain.insert(DomainType::Hotel, IntentHandlerRegistry::new(vec![]));
+        let mut intent_handlers = HashMap::new();
+        intent_handlers.insert(DomainType::Restaurant, restaurant_registry);
+        intent_handlers.insert(DomainType::Hotel, hotel_registry);
 
-        Self {
-            intent_handlers: intent_handlers_by_domain,
-        }
+        Self { intent_handlers }
     }
 
     fn handlers_for(&self, domain: DomainType) -> Option<&IntentHandlerRegistry> {
         self.intent_handlers.get(&domain)
     }
 
-    /// Processes one user turn after NLU inference.
-    ///
-    /// Active workflows and workflow-starting intents go through the FSM.
-    /// Informational intents go through handlers or static catalog replies.
     pub fn process(
         &self,
         conversation: Conversation,
         message: &str,
         analysis: NluAnalysis,
     ) -> StateHandlerResult {
-        // get intent_registry or return unknown response because of unmatching domain
         let Some(intent_registry) = self.handlers_for(conversation.domain) else {
             let reply = self.render_system_text(
                 "echo_intent",
@@ -186,75 +167,111 @@ fn system_text_i18n_key(key: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::core::conversation::application::port::outbound::domain_gateway_port::DomainGatewayPort;
-    use crate::core::conversation::domain::model::domain_type::DomainType;
-    use crate::core::conversation::domain::slot::EntityType;
-    use crate::core::nlu_engine::domain::analysis::{
-        NerTokenLabel, NluEntity, NluIntent, NluIntentCandidate,
-    };
     use std::sync::Arc;
 
-    struct StubDomainGateway;
+    use super::*;
+    use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
+    use crate::core::conversation::application::port::outbound::restaurant_queries::{
+        EventQuery, FacilityQuery, LocationQuery, MenuDietaryQuery, MenuItemDetailsQuery,
+        MenuQuery, PaymentMethodQuery, PriceQuery, ReservationCreateQuery, ReservationLookupQuery,
+    };
+    use crate::core::conversation::application::port::outbound::restaurant_reservation_port::RestaurantReservationPort;
+    use crate::core::conversation::application::restaurant_handler_registry_factory::{
+        RestaurantConversationDependencies, RestaurantHandlerRegistryFactory,
+    };
+    use crate::core::conversation::domain::date_resolver::{DateResolveError, DateResolver};
+    use crate::core::conversation::domain::model::domain_type::DomainType;
+    use crate::core::conversation::domain::slot::EntityType;
+    use crate::core::nlu_engine::domain::analysis::{NerTokenLabel, NluIntent, NluIntentCandidate};
 
-    impl DomainGatewayPort for StubDomainGateway {
+    struct StubInformationPort;
+
+    impl RestaurantInformationPort for StubInformationPort {
         fn get_opening_hours(&self) -> String {
             "Mon-Sun 9am-10pm".to_string()
         }
-        fn get_menu(&self, _: Option<&str>, _: Option<&str>, _: Option<&str>) -> String {
+
+        fn find_menu(&self, _: MenuQuery) -> String {
             "full_menu:".to_string()
         }
-        fn get_menu_dietary(&self, _: Option<&str>) -> String {
+
+        fn find_menu_dietary(&self, _: MenuDietaryQuery) -> String {
             "dietary_no_filter:".to_string()
         }
-        fn get_menu_item_details(&self, _: Option<&str>, _: Option<&str>) -> String {
+
+        fn find_menu_item_details(&self, _: MenuItemDetailsQuery) -> String {
             "details_no_filter:".to_string()
         }
-        fn get_location(&self, _: Option<&str>) -> String {
+
+        fn find_location(&self, _: LocationQuery) -> String {
             "address:".to_string()
         }
+
         fn get_contact(&self) -> String {
             "contact:+33123456789|test@example.com".to_string()
         }
-        fn get_payment_methods(&self, _: Option<&str>) -> String {
+
+        fn find_payment_methods(&self, _: PaymentMethodQuery) -> String {
             "all_methods:cash".to_string()
         }
-        fn get_price(&self, _: Option<&str>, _: Option<&str>, _: Option<&str>) -> String {
+
+        fn find_price(&self, _: PriceQuery) -> String {
             "price_general:".to_string()
         }
+
         fn get_takeaway_info(&self) -> String {
             "takeaway:yes|Yes".to_string()
         }
-        fn get_event_info(&self, _: Option<&str>) -> String {
+
+        fn find_event_info(&self, _: EventQuery) -> String {
             "event_info:Yes".to_string()
         }
-        fn get_facility_info(&self, _: Option<&str>) -> String {
+
+        fn find_facility_info(&self, _: FacilityQuery) -> String {
             "all_facilities:wifi".to_string()
         }
+
         fn get_accessibility_info(&self) -> String {
             "accessibility:yes|Yes".to_string()
         }
+
         fn get_entertainment_info(&self) -> String {
             "entertainment:yes|Live music".to_string()
         }
-        fn check_reservation(&self, _: Option<&str>) -> String {
-            "no_reference:".to_string()
+    }
+
+    struct StubReservationPort;
+
+    impl RestaurantReservationPort for StubReservationPort {
+        fn create_reservation(&self, _: ReservationCreateQuery) -> String {
+            "created:REST-NEW123".to_string()
+        }
+
+        fn check_reservation(&self, _: ReservationLookupQuery) -> String {
+            "no_reference_or_name:".to_string()
+        }
+    }
+
+    struct AlwaysOk;
+
+    impl DateResolver for AlwaysOk {
+        fn resolve(
+            &self,
+            _: &str,
+            today: chrono::NaiveDate,
+        ) -> Result<chrono::NaiveDate, DateResolveError> {
+            Ok(today + chrono::Duration::days(1))
         }
     }
 
     fn processor() -> ConversationProcessor {
-        use crate::core::conversation::domain::date_resolver::{DateResolveError, DateResolver};
-        struct AlwaysOk;
-        impl DateResolver for AlwaysOk {
-            fn resolve(
-                &self,
-                _: &str,
-                today: chrono::NaiveDate,
-            ) -> Result<chrono::NaiveDate, DateResolveError> {
-                Ok(today + chrono::Duration::days(1))
-            }
-        }
-        ConversationProcessor::new(StubDomainGateway, Arc::new(AlwaysOk))
+        let restaurant_registry =
+            RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
+                information_port: Arc::new(StubInformationPort),
+                reservation_port: Arc::new(StubReservationPort),
+                date_resolver: Arc::new(AlwaysOk),
+            });
+        ConversationProcessor::new(restaurant_registry, IntentHandlerRegistry::new(vec![]))
     }
 
     fn analysis(intent_name: &'static str, entities: Vec<NluEntity>) -> NluAnalysis {
@@ -294,7 +311,6 @@ mod tests {
             ),
         );
 
-        // Handler now calls domain gateway — stub returns "details_no_filter:" → fallback key
         assert_eq!(
             result.reply,
             "Which menu item would you like details about?"
@@ -388,7 +404,6 @@ mod tests {
             ),
         );
 
-        // Stub returns "price_general:" → general.reply key
         assert_eq!(result.reply, "Here is our pricing information: .");
         assert!(result.updated_conversation.is_idle());
         assert!(conversation.is_idle());
@@ -396,9 +411,6 @@ mod tests {
 
     #[test]
     fn restaurant_informational_intents_are_handled_without_echo_fallback() {
-        // These intents must be routed to a dedicated handler (not echo fallback).
-        // The stub gateway returns minimal payloads → each handler falls through to its
-        // default i18n key. We only verify that the reply is NOT the echo fallback.
         let informational_intents = [
             "ask_menu_general",
             "ask_menu_dietary",
@@ -433,14 +445,14 @@ mod tests {
     #[test]
     fn active_workflow_ignores_informational_handler_routing() {
         let conversation = Conversation::new(DomainType::Restaurant);
-        let p = processor();
+        let processor = processor();
 
-        let start = p.process(
+        let start = processor.process(
             conversation.clone(),
             "book",
             analysis("reservation_create", vec![]),
         );
-        let reply = p.process(
+        let reply = processor.process(
             start.updated_conversation,
             "what are your hours",
             analysis("ask_opening_hours", vec![]),

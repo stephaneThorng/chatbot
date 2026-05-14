@@ -17,4 +17,3 @@ pub enum DateResolveError {
     /// The resolved date falls strictly before today.
     PastDate(NaiveDate),
 }
-

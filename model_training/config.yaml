@@ -20,7 +20,6 @@ data:
 tags:
   languages:
     - en
-    - id
   domains:
     - restaurant
   future_domains:
@@ -98,11 +97,11 @@ intents:
     ask_facilities: 1.0
     ask_accessibility: 1.0
     ask_entertainment: 1.0
-    greeting: 0.5
-    thanks: 0.5
-    goodbye: 0.5
-    affirmative: 2.0
-    negative: 2.0
+    greeting: 1.0
+    thanks: 1.0
+    goodbye: 1.4
+    affirmative: 1.3
+    negative: 1.8
     unknown: 1.0
 
 entities:

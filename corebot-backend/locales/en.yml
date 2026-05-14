@@ -73,8 +73,10 @@ intent.ask_accessibility.confirmed.reply: "%{info}"
 intent.ask_entertainment.reply: "The restaurant can provide entertainment information."
 intent.ask_entertainment.confirmed.reply: "%{info}"
 # check_reservation
-intent.check_reservation.reply: "Please provide a reservation reference so I can check it."
-intent.check_reservation.found.reply: "Reservation %{reference}: under %{name} on %{date} for %{people} people."
+intent.check_reservation.reply: "Please provide a reservation reference or the reservation name so I can check it."
+intent.check_reservation.found.reply: "Reservation %{reference}: under %{name} on %{date} at %{time} for %{people} people."
+intent.check_reservation.list.reply: "I found these reservations under %{name}: %{reservations}."
+intent.check_reservation.name_not_found.reply: "I couldn't find any reservations under %{name}."
 intent.check_reservation.not_found.reply: "I couldn't find a reservation with reference %{reference}."
 intent.check_reservation.reference.reply: "I can check reservation %{reference}."
 # system
@@ -92,8 +94,8 @@ workflow.reservation_create.slot.name.prompt: "What name should I use for the re
 workflow.reservation_create.slot.date.prompt: "What date would you like?"
 workflow.reservation_create.slot.time.prompt: "What time would you like?"
 workflow.reservation_create.slot.people.prompt: "For how many people?"
-workflow.reservation_create.confirmation.prompt: "I have the reservation details. Do you confirm this reservation?"
-workflow.reservation_create.completion.success: "Your reservation request is confirmed."
+workflow.reservation_create.confirmation.prompt: "I have the reservation details: %{name}, %{date} at %{time}, for %{people} people. Do you confirm this reservation?"
+workflow.reservation_create.completion.success: "Your reservation is confirmed for %{name}, %{date} at %{time}, for %{people} people. Your reference is %{reference}."
 workflow.reservation_create.update.prompt: "Okay. What would you like to change?"
 workflow.reservation_create.past_date.error: "That date is in the past. Please provide a future date."
 # reservation_cancel workflow

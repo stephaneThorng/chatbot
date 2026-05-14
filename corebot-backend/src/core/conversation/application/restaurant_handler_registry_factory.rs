@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use crate::core::conversation::application::intent_handler::{IntentHandler, IntentHandlerRegistry};
+use crate::core::conversation::application::intent_handler::{
+    IntentHandler, IntentHandlerRegistry,
+};
 use crate::core::conversation::application::intent_handlers::ask_accessibility_handler::AskAccessibilityIntentHandler;
 use crate::core::conversation::application::intent_handlers::ask_contact_handler::AskContactIntentHandler;
 use crate::core::conversation::application::intent_handlers::ask_entertainment_handler::AskEntertainmentIntentHandler;
@@ -18,48 +20,96 @@ use crate::core::conversation::application::intent_handlers::opening_hours_handl
 use crate::core::conversation::application::intent_handlers::reservation_cancel_handler::ReservationCancelIntentHandler;
 use crate::core::conversation::application::intent_handlers::reservation_create_handler::ReservationCreateIntentHandler;
 use crate::core::conversation::application::intent_handlers::static_reply_handler::StaticReplyIntentHandler;
-use crate::core::conversation::application::port::outbound::domain_gateway_port::DomainGatewayPort;
+use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
+use crate::core::conversation::application::port::outbound::restaurant_reservation_port::RestaurantReservationPort;
 use crate::core::conversation::domain::date_resolver::DateResolver;
 use crate::core::conversation::domain::model::intent::IntentId;
 
+pub struct RestaurantConversationDependencies<I, R>
+where
+    I: RestaurantInformationPort + Send + Sync + 'static,
+    R: RestaurantReservationPort + Send + Sync + 'static,
+{
+    pub information_port: Arc<I>,
+    pub reservation_port: Arc<R>,
+    pub date_resolver: Arc<dyn DateResolver>,
+}
+
 /// Builds the [`IntentHandlerRegistry`] for the restaurant domain.
 ///
-/// Accepts a shared gateway and date resolver so all handlers share the same
-/// backing data without extra allocation. Adding a new handler only requires
-/// registering it here — the processor and use case stay unchanged.
+/// Each handler receives the smallest outbound capability it needs. The
+/// registry stays the composition seam between `conversation` and `restaurant`.
 pub struct RestaurantHandlerRegistryFactory;
 
 impl RestaurantHandlerRegistryFactory {
-    pub fn build<D>(
-        gateway: Arc<D>,
-        date_resolver: Arc<dyn DateResolver>,
-    ) -> IntentHandlerRegistry
+    pub fn build<I, R>(deps: RestaurantConversationDependencies<I, R>) -> IntentHandlerRegistry
     where
-        D: DomainGatewayPort + Send + Sync + 'static,
+        I: RestaurantInformationPort + Send + Sync + 'static,
+        R: RestaurantReservationPort + Send + Sync + 'static,
     {
+        let RestaurantConversationDependencies {
+            information_port,
+            reservation_port,
+            date_resolver,
+        } = deps;
+
         let handlers: Vec<Box<dyn IntentHandler>> = vec![
-            Box::new(ReservationCreateIntentHandler::new(date_resolver)),
+            Box::new(ReservationCreateIntentHandler::new(
+                date_resolver,
+                Arc::clone(&reservation_port),
+            )),
             Box::new(ReservationCancelIntentHandler),
-            Box::new(OpeningHoursIntentHandler::new(Arc::clone(&gateway))),
-            Box::new(MenuItemDetailsIntentHandler::new(Arc::clone(&gateway))),
-            Box::new(AskMenuGeneralIntentHandler::new(Arc::clone(&gateway))),
-            Box::new(AskMenuDietaryIntentHandler::new(Arc::clone(&gateway))),
-            Box::new(AskLocationIntentHandler::new(Arc::clone(&gateway))),
-            Box::new(AskContactIntentHandler::new(Arc::clone(&gateway))),
-            Box::new(AskPaymentMethodsIntentHandler::new(Arc::clone(&gateway))),
-            Box::new(AskPriceIntentHandler::new(Arc::clone(&gateway))),
-            Box::new(AskTakeawayDeliveryIntentHandler::new(Arc::clone(&gateway))),
-            Box::new(AskEventIntentHandler::new(Arc::clone(&gateway))),
-            Box::new(AskFacilitiesIntentHandler::new(Arc::clone(&gateway))),
-            Box::new(AskAccessibilityIntentHandler::new(Arc::clone(&gateway))),
-            Box::new(AskEntertainmentIntentHandler::new(Arc::clone(&gateway))),
-            Box::new(CheckReservationIntentHandler::new(Arc::clone(&gateway))),
-            Box::new(StaticReplyIntentHandler::new(IntentId::Greeting, "intent.greeting.reply")),
-            Box::new(StaticReplyIntentHandler::new(IntentId::Thanks, "intent.thanks.reply")),
-            Box::new(StaticReplyIntentHandler::new(IntentId::Goodbye, "intent.goodbye.reply")),
-            Box::new(StaticReplyIntentHandler::new(IntentId::Unknown("unknown".to_string()), "intent.unknown.reply")),
+            Box::new(OpeningHoursIntentHandler::new(Arc::clone(
+                &information_port,
+            ))),
+            Box::new(MenuItemDetailsIntentHandler::new(Arc::clone(
+                &information_port,
+            ))),
+            Box::new(AskMenuGeneralIntentHandler::new(Arc::clone(
+                &information_port,
+            ))),
+            Box::new(AskMenuDietaryIntentHandler::new(Arc::clone(
+                &information_port,
+            ))),
+            Box::new(AskLocationIntentHandler::new(Arc::clone(&information_port))),
+            Box::new(AskContactIntentHandler::new(Arc::clone(&information_port))),
+            Box::new(AskPaymentMethodsIntentHandler::new(Arc::clone(
+                &information_port,
+            ))),
+            Box::new(AskPriceIntentHandler::new(Arc::clone(&information_port))),
+            Box::new(AskTakeawayDeliveryIntentHandler::new(Arc::clone(
+                &information_port,
+            ))),
+            Box::new(AskEventIntentHandler::new(Arc::clone(&information_port))),
+            Box::new(AskFacilitiesIntentHandler::new(Arc::clone(
+                &information_port,
+            ))),
+            Box::new(AskAccessibilityIntentHandler::new(Arc::clone(
+                &information_port,
+            ))),
+            Box::new(AskEntertainmentIntentHandler::new(Arc::clone(
+                &information_port,
+            ))),
+            Box::new(CheckReservationIntentHandler::new(Arc::clone(
+                &reservation_port,
+            ))),
+            Box::new(StaticReplyIntentHandler::new(
+                IntentId::Greeting,
+                "intent.greeting.reply",
+            )),
+            Box::new(StaticReplyIntentHandler::new(
+                IntentId::Thanks,
+                "intent.thanks.reply",
+            )),
+            Box::new(StaticReplyIntentHandler::new(
+                IntentId::Goodbye,
+                "intent.goodbye.reply",
+            )),
+            Box::new(StaticReplyIntentHandler::new(
+                IntentId::Unknown("unknown".to_string()),
+                "intent.unknown.reply",
+            )),
         ];
         IntentHandlerRegistry::new(handlers)
     }
 }
-

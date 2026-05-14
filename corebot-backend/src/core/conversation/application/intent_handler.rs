@@ -33,8 +33,14 @@ pub struct StateHandlerResult {
 }
 
 pub enum WorkflowPostProcessResult {
-    Succeeded { reply: Option<String> },
-    Failed { reply: String },
+    Succeeded {
+        updated_conversation: Conversation,
+        reply: Option<String>,
+    },
+    Failed {
+        updated_conversation: Conversation,
+        reply: String,
+    },
 }
 
 /// Stateless application component that handles one immediate intent.
@@ -83,7 +89,7 @@ pub trait IntentHandler: Send + Sync {
         }
 
         let extracted_updates =
-            self.extract_slot_updates(&updated_conversation, input.analysis_entities);
+            self.extract_slot_updates(&updated_conversation, input.text, input.analysis_entities);
         let update_result = self.apply_slot_updates(updated_conversation, extracted_updates);
         let updated_any_slot = update_result.updated_any_slot;
         let invalid_slot = update_result.invalid_slot;
@@ -113,19 +119,26 @@ pub trait IntentHandler: Send + Sync {
 
         match input.analysis_intent {
             IntentId::Affirmative if !updated_any_slot => {
-                match self.post_process(updated_conversation.lang.as_str(), &updated_conversation) {
-                    WorkflowPostProcessResult::Succeeded { reply } => {
+                let lang = updated_conversation.lang.clone();
+                match self.post_process(lang.as_str(), updated_conversation) {
+                    WorkflowPostProcessResult::Succeeded {
+                        mut updated_conversation,
+                        reply,
+                    } => {
+                        let lang = updated_conversation.lang.clone();
                         updated_conversation = updated_conversation.into_completed_workflow();
-                        let reply = reply.unwrap_or_else(|| {
-                            self.completion_reply(&policy, updated_conversation.lang.as_str())
-                        });
+                        let reply =
+                            reply.unwrap_or_else(|| self.completion_reply(&policy, lang.as_str()));
                         StateHandlerResult {
                             updated_conversation,
                             reply,
                             handled_intent: self.intent(),
                         }
                     }
-                    WorkflowPostProcessResult::Failed { reply } => StateHandlerResult {
+                    WorkflowPostProcessResult::Failed {
+                        updated_conversation,
+                        reply,
+                    } => StateHandlerResult {
                         updated_conversation,
                         reply,
                         handled_intent: self.intent(),
@@ -141,7 +154,7 @@ pub trait IntentHandler: Send + Sync {
                 }
             }
             _ => {
-                let reply = self.confirmation_prompt(&policy, updated_conversation.lang.as_str());
+                let reply = self.confirmation_prompt(&policy, &updated_conversation);
                 StateHandlerResult {
                     updated_conversation,
                     reply,
@@ -151,8 +164,11 @@ pub trait IntentHandler: Send + Sync {
         }
     }
 
-    fn post_process(&self, _lang: &str, _conversation: &Conversation) -> WorkflowPostProcessResult {
-        WorkflowPostProcessResult::Succeeded { reply: None }
+    fn post_process(&self, _lang: &str, conversation: Conversation) -> WorkflowPostProcessResult {
+        WorkflowPostProcessResult::Succeeded {
+            updated_conversation: conversation,
+            reply: None,
+        }
     }
 
     fn negative_prompt(&self, lang: &str) -> String {
@@ -161,14 +177,14 @@ pub trait IntentHandler: Send + Sync {
 
     fn next_slot_prompt(&self, conversation: &Conversation, policy: &IntentPolicy) -> String {
         let Some(workflow) = conversation.active_workflow() else {
-            return self.confirmation_prompt(policy, conversation.lang.as_str());
+            return self.confirmation_prompt(policy, conversation);
         };
         match workflow.next_required_slot() {
             Some(NextSlot::Data(definition)) => {
                 self.slot_prompt(policy, definition.name, conversation.lang.as_str())
             }
             Some(NextSlot::Confirmation) | None => {
-                self.confirmation_prompt(policy, conversation.lang.as_str())
+                self.confirmation_prompt(policy, conversation)
             }
         }
     }
@@ -189,12 +205,18 @@ pub trait IntentHandler: Send + Sync {
             })
     }
 
-    fn confirmation_prompt(&self, policy: &IntentPolicy, lang: &str) -> String {
+    fn confirmation_prompt(&self, policy: &IntentPolicy, conversation: &Conversation) -> String {
         policy
             .confirmation_prompt
             .as_ref()
-            .map(|key| t!(key.0.as_str(), locale = lang).to_string())
-            .unwrap_or_else(|| t!("system.confirm_generic", locale = lang).to_string())
+            .map(|key| t!(key.0.as_str(), locale = conversation.lang.as_str()).to_string())
+            .unwrap_or_else(|| {
+                t!(
+                    "system.confirm_generic",
+                    locale = conversation.lang.as_str()
+                )
+                .to_string()
+            })
     }
 
     fn completion_reply(&self, policy: &IntentPolicy, lang: &str) -> String {
@@ -208,6 +230,7 @@ pub trait IntentHandler: Send + Sync {
     fn extract_slot_updates(
         &self,
         conversation: &Conversation,
+        raw_text: &str,
         entities: &[NluEntity],
     ) -> SlotUpdateResult {
         let Some(workflow) = conversation.active_workflow() else {
@@ -236,6 +259,17 @@ pub trait IntentHandler: Send + Sync {
                     value: slot_value,
                 });
             }
+        }
+
+        if updates.is_empty()
+            && let Some(NextSlot::Data(next_slot)) = workflow.next_required_slot()
+            && next_slot.slot_type == SlotType::Number
+            && let Some(number) = self.parse_number_slot(raw_text)
+        {
+            updates.push(SlotUpdate {
+                slot_name: next_slot.name,
+                value: SlotValue::Number(number),
+            });
         }
 
         SlotUpdateResult { updates }

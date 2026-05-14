@@ -9,12 +9,7 @@ pub struct MenuItem {
 }
 
 impl MenuItem {
-    pub fn new(
-        name: &str,
-        dietary: &[&str],
-        allergens: &[&str],
-        price_euros: u32,
-    ) -> Self {
+    pub fn new(name: &str, dietary: &[&str], allergens: &[&str], price_euros: u32) -> Self {
         Self {
             name: name.to_string(),
             dietary: dietary.iter().map(|s| s.to_string()).collect(),
@@ -30,7 +25,9 @@ impl MenuItem {
 
     pub fn has_allergen(&self, allergen: &str) -> bool {
         let a = allergen.to_lowercase();
-        self.allergens.iter().any(|al| al.to_lowercase().contains(&a))
+        self.allergens
+            .iter()
+            .any(|al| al.to_lowercase().contains(&a))
     }
 }
 
@@ -39,17 +36,18 @@ pub struct Reservation {
     pub reference: String,
     pub name: String,
     pub date: String,
+    pub time: String,
     pub people_count: u32,
 }
 
 impl Reservation {
-    pub fn new(reference: &str, name: &str, date: &str, people_count: u32) -> Self {
+    pub fn new(reference: &str, name: &str, date: &str, time: &str, people_count: u32) -> Self {
         Self {
             reference: reference.to_string(),
             name: name.to_string(),
             date: date.to_string(),
+            time: time.to_string(),
             people_count,
         }
     }
 }
-

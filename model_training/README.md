@@ -4,7 +4,7 @@ Python-only NLU training project for one multi-task model:
 
 - intent classification
 - BIO NER
-- English and Indonesian
+- English
 - restaurant domain for v1
 - future `hotel` domain tag support
 
@@ -37,7 +37,6 @@ From the repository root:
 
 ```powershell
 cd model_training
-py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
@@ -69,10 +68,14 @@ Generation writes deterministic JSONL files under `data/restaurant/`:
 - `validation.jsonl`
 - `eval.jsonl`
 
-The generator should produce about 5000 total examples across English and
-Indonesian. The tests verify row count, no duplicate texts per
-`domain/lang/task/intent`, entity spans, `REST-...` reservation references,
-conversation date examples, and structured price conditions.
+The generator produces `1500` total English examples. The files are written in
+intent order, and `reservation_create` includes `0+` entity cases so the model
+can still detect booking intent from messages such as `book a reservation` or
+`please book a table for me`.
+
+The tests verify row count, no duplicate texts per `domain/lang/task/intent`,
+entity spans, `REST-...` reservation references, conversational date examples,
+structured price conditions, and sorted output.
 
 ## Training
 

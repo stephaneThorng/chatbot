@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -119,21 +120,43 @@ def export_model_to_onnx(
     wrapper = OnnxExportWrapper(model.eval())
     dummy_input_ids = torch.ones((1, max_length), dtype=torch.long)
     dummy_attention_mask = torch.ones((1, max_length), dtype=torch.long)
-    torch.onnx.export(
-        wrapper,
-        (dummy_input_ids, dummy_attention_mask),
-        str(output_path),
-        input_names=["input_ids", "attention_mask"],
-        output_names=["intent_logits", "ner_logits"],
-        dynamic_axes={
-            "input_ids": {0: "batch_size", 1: "sequence_length"},
-            "attention_mask": {0: "batch_size", 1: "sequence_length"},
-            "intent_logits": {0: "batch_size"},
-            "ner_logits": {0: "batch_size", 1: "sequence_length"},
-        },
-        opset_version=opset_version,
-        do_constant_folding=True,
-    )
+    with patched_transformers_sdpa_mask_for_onnx_export():
+        torch.onnx.export(
+            wrapper,
+            (dummy_input_ids, dummy_attention_mask),
+            str(output_path),
+            input_names=["input_ids", "attention_mask"],
+            output_names=["intent_logits", "ner_logits"],
+            dynamic_axes={
+                "input_ids": {0: "batch_size", 1: "sequence_length"},
+                "attention_mask": {0: "batch_size", 1: "sequence_length"},
+                "intent_logits": {0: "batch_size"},
+                "ner_logits": {0: "batch_size", 1: "sequence_length"},
+            },
+            opset_version=opset_version,
+            do_constant_folding=True,
+            dynamo=False,
+        )
+
+
+@contextmanager
+def patched_transformers_sdpa_mask_for_onnx_export():
+    from transformers import masking_utils
+
+    original_sdpa_mask = masking_utils.sdpa_mask
+
+    def patched_sdpa_mask(*args, **kwargs):
+        q_length = kwargs.get("q_length")
+        if isinstance(q_length, torch.Tensor) and q_length.dim() == 0:
+            kwargs["q_length"] = torch.arange(q_length, device=q_length.device)
+            kwargs.setdefault("q_offset", 0)
+        return original_sdpa_mask(*args, **kwargs)
+
+    masking_utils.sdpa_mask = patched_sdpa_mask
+    try:
+        yield
+    finally:
+        masking_utils.sdpa_mask = original_sdpa_mask
 
 
 def validate_onnx_export(

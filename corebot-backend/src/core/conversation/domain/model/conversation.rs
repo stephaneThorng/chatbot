@@ -18,6 +18,8 @@ pub struct Conversation {
     pub id: ConversationId,
     pub domain: DomainType,
     pub lang: String,
+    known_customer_name: Option<String>,
+    last_reservation_reference: Option<String>,
     pub state: ConversationState,
 }
 
@@ -43,6 +45,8 @@ impl Conversation {
             id: ConversationId::new(),
             domain,
             lang: "en".to_string(),
+            known_customer_name: None,
+            last_reservation_reference: None,
             state: ConversationState::Idle,
         }
     }
@@ -52,6 +56,8 @@ impl Conversation {
             id,
             domain,
             lang: "en".to_string(),
+            known_customer_name: None,
+            last_reservation_reference: None,
             state: ConversationState::Idle,
         }
     }
@@ -128,6 +134,22 @@ impl Conversation {
 
     pub fn is_idle(&self) -> bool {
         matches!(self.state, ConversationState::Idle)
+    }
+
+    pub fn known_customer_name(&self) -> Option<&str> {
+        self.known_customer_name.as_deref()
+    }
+
+    pub fn last_reservation_reference(&self) -> Option<&str> {
+        self.last_reservation_reference.as_deref()
+    }
+
+    pub fn remember_customer_name(&mut self, name: impl Into<String>) {
+        self.known_customer_name = Some(name.into());
+    }
+
+    pub fn remember_reservation_reference(&mut self, reference: impl Into<String>) {
+        self.last_reservation_reference = Some(reference.into());
     }
 }
 

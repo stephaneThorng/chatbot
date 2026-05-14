@@ -16,6 +16,8 @@ tokenizers = { version = "0.22.1", default-features = false, features = ["fancy-
 langdetect-rs = "0.2.3"
 rust-i18n = "4.0.0"
 chrono = "0.4"
+tower-http = { version = "0.6.6", features = ["cors"] }
+dotenvy = "0.15.7"
 
 [package.metadata.i18n]
 available-locales = ["en", "id"]

@@ -109,7 +109,7 @@ def main() -> None:
         learning_rate=float(training_config["learning_rate"]),
         weight_decay=float(training_config["weight_decay"]),
         warmup_ratio=float(training_config["warmup_ratio"]),
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         logging_steps=int(training_config["logging_steps"]),
         load_best_model_at_end=True,
@@ -124,7 +124,7 @@ def main() -> None:
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=validation_dataset,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         data_collator=NluDataCollator(tokenizer),
         compute_metrics=compute_intent_metrics,
     )

@@ -1,22 +1,15 @@
 use std::str::FromStr;
-use std::sync::Arc;
 
 use super::conversation_command::{HandleConversationCommand, HandleConversationResult};
 use super::conversation_processor::ConversationProcessor;
 use super::port::inbound::conversation_usecase::HandleConversationUseCase;
 use super::port::outbound::conversation_repository_port::ConversationRepositoryPort;
-use super::port::outbound::domain_gateway_port::DomainGatewayPort;
 use super::port::outbound::language_detector_port::LanguageDetectorPort;
 use super::port::outbound::nlp_engine_gateway_port::NlpEngineGatewayPort;
 use crate::core::conversation::domain::conversation::Conversation;
 use crate::core::conversation::domain::conversation_id::ConversationId;
-use crate::core::conversation::domain::date_resolver::DateResolver;
 use crate::core::conversation::domain::domain_type::DomainType;
 
-/// Use case that handles one user message in a conversation session.
-///
-/// It stays intentionally thin: session lifecycle, NLU call, conversation
-/// processing delegation, persistence, and response assembly.
 pub struct HandleConversationService<N, R, L>
 where
     N: NlpEngineGatewayPort,
@@ -45,6 +38,7 @@ where
             conversation.domain,
             conversation.detect_task(),
         );
+        self.log_nlu_analysis(&session_id, &command.message, &conversation, &analysis);
 
         let process_result = self
             .processor
@@ -67,10 +61,9 @@ where
     R: ConversationRepositoryPort,
     L: LanguageDetectorPort,
 {
-    pub fn new<D: DomainGatewayPort + Send + Sync + 'static>(
+    pub fn new(
         domain: DomainType,
-        domain_gateway: D,
-        date_resolver: Arc<dyn DateResolver>,
+        processor: ConversationProcessor,
         nlu_engine_gateway: N,
         conversation_repository: R,
         language_detector: L,
@@ -80,14 +73,10 @@ where
             nlu_engine_gateway,
             conversation_repository,
             language_detector,
-            processor: ConversationProcessor::new(domain_gateway, date_resolver),
+            processor,
         }
     }
 
-    /// Loads a stored conversation or creates a new one for the configured domain.
-    ///
-    /// Language detection runs only for new sessions so an existing conversation
-    /// keeps the language selected at its first turn.
     fn load_or_create_conversation(
         &self,
         session_id: Option<&str>,
@@ -109,17 +98,85 @@ where
         let session_id = conversation.id.to_string();
         (conversation, session_id)
     }
+
+    fn log_nlu_analysis(
+        &self,
+        session_id: &str,
+        message: &str,
+        conversation: &Conversation,
+        analysis: &crate::core::nlu_engine::domain::analysis::NluAnalysis,
+    ) {
+        if !debug_nlu_logging_enabled() {
+            return;
+        }
+
+        let task = conversation
+            .detect_task()
+            .map(|value| value.as_tag().to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let intents = if analysis.intents.is_empty() {
+            "-".to_string()
+        } else {
+            analysis
+                .intents
+                .iter()
+                .map(|intent| format!("{}:{:.3}", intent.name, intent.confidence))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let entities = if analysis.entities.is_empty() {
+            "-".to_string()
+        } else {
+            analysis
+                .entities
+                .iter()
+                .map(|entity| format!("{:?}={}", entity.entity_type, entity.value))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+
+        eprintln!(
+            "[nlu] session={session_id} domain={} lang={} task={} text={message:?} intent={}:{:.3} candidates=[{}] entities=[{}]",
+            conversation.domain.as_str(),
+            conversation.lang,
+            task,
+            analysis.intent.name,
+            analysis.intent.confidence,
+            intents,
+            entities,
+        );
+    }
+}
+
+fn debug_nlu_logging_enabled() -> bool {
+    matches!(
+        std::env::var("COREBOT_DEBUG_NLU"),
+        Ok(value) if matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::collections::HashMap;
-    use std::sync::Arc;
-    use std::sync::Mutex;
-    use std::sync::RwLock;
+    use std::sync::{Arc, Mutex, RwLock};
 
-    use crate::core::conversation::application::port::outbound::conversation_repository_port::RepositoryError;
+    use super::*;
+    use crate::core::conversation::application::intent_handler::IntentHandlerRegistry;
+    use crate::core::conversation::application::port::outbound::conversation_repository_port::{
+        ConversationRepositoryPort, RepositoryError,
+    };
+    use crate::core::conversation::application::port::outbound::language_detector_port::LanguageDetectorPort;
+    use crate::core::conversation::application::port::outbound::nlp_engine_gateway_port::NlpEngineGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
+    use crate::core::conversation::application::port::outbound::restaurant_queries::{
+        EventQuery, FacilityQuery, LocationQuery, MenuDietaryQuery, MenuItemDetailsQuery,
+        MenuQuery, PaymentMethodQuery, PriceQuery, ReservationCreateQuery, ReservationLookupQuery,
+    };
+    use crate::core::conversation::application::port::outbound::restaurant_reservation_port::RestaurantReservationPort;
+    use crate::core::conversation::application::restaurant_handler_registry_factory::{
+        RestaurantConversationDependencies, RestaurantHandlerRegistryFactory,
+    };
+    use crate::core::conversation::domain::date_resolver::{DateResolveError, DateResolver};
     use crate::core::conversation::domain::model::intent::NluTask;
     use crate::core::conversation::domain::slot::EntityType;
     use crate::core::nlu_engine::domain::analysis::{
@@ -127,11 +184,11 @@ mod tests {
     };
 
     #[derive(Clone)]
-    struct StubDomainGateway {
+    struct StubInformationPort {
         calls: Arc<Mutex<u32>>,
     }
 
-    impl StubDomainGateway {
+    impl StubInformationPort {
         fn new() -> Self {
             Self {
                 calls: Arc::new(Mutex::new(0)),
@@ -143,24 +200,72 @@ mod tests {
         }
     }
 
-    impl DomainGatewayPort for StubDomainGateway {
+    impl RestaurantInformationPort for StubInformationPort {
         fn get_opening_hours(&self) -> String {
             *self.calls.lock().unwrap() += 1;
             "Mon-Sun 9am-10pm".to_string()
         }
-        fn get_menu(&self, _: Option<&str>, _: Option<&str>, _: Option<&str>) -> String { "full_menu:".to_string() }
-        fn get_menu_dietary(&self, _: Option<&str>) -> String { "dietary_no_filter:".to_string() }
-        fn get_menu_item_details(&self, _: Option<&str>, _: Option<&str>) -> String { "details_no_filter:".to_string() }
-        fn get_location(&self, _: Option<&str>) -> String { "address:".to_string() }
-        fn get_contact(&self) -> String { "contact:+33123456789|test@example.com".to_string() }
-        fn get_payment_methods(&self, _: Option<&str>) -> String { "all_methods:cash".to_string() }
-        fn get_price(&self, _: Option<&str>, _: Option<&str>, _: Option<&str>) -> String { "price_general:".to_string() }
-        fn get_takeaway_info(&self) -> String { "takeaway:yes|Yes".to_string() }
-        fn get_event_info(&self, _: Option<&str>) -> String { "event_info:Yes".to_string() }
-        fn get_facility_info(&self, _: Option<&str>) -> String { "all_facilities:wifi".to_string() }
-        fn get_accessibility_info(&self) -> String { "accessibility:yes|Yes".to_string() }
-        fn get_entertainment_info(&self) -> String { "entertainment:yes|Live music".to_string() }
-        fn check_reservation(&self, _: Option<&str>) -> String { "no_reference:".to_string() }
+
+        fn find_menu(&self, _: MenuQuery) -> String {
+            "full_menu:".to_string()
+        }
+
+        fn find_menu_dietary(&self, _: MenuDietaryQuery) -> String {
+            "dietary_no_filter:".to_string()
+        }
+
+        fn find_menu_item_details(&self, _: MenuItemDetailsQuery) -> String {
+            "details_no_filter:".to_string()
+        }
+
+        fn find_location(&self, _: LocationQuery) -> String {
+            "address:".to_string()
+        }
+
+        fn get_contact(&self) -> String {
+            "contact:+33123456789|test@example.com".to_string()
+        }
+
+        fn find_payment_methods(&self, _: PaymentMethodQuery) -> String {
+            "all_methods:cash".to_string()
+        }
+
+        fn find_price(&self, _: PriceQuery) -> String {
+            "price_general:".to_string()
+        }
+
+        fn get_takeaway_info(&self) -> String {
+            "takeaway:yes|Yes".to_string()
+        }
+
+        fn find_event_info(&self, _: EventQuery) -> String {
+            "event_info:Yes".to_string()
+        }
+
+        fn find_facility_info(&self, _: FacilityQuery) -> String {
+            "all_facilities:wifi".to_string()
+        }
+
+        fn get_accessibility_info(&self) -> String {
+            "accessibility:yes|Yes".to_string()
+        }
+
+        fn get_entertainment_info(&self) -> String {
+            "entertainment:yes|Live music".to_string()
+        }
+    }
+
+    #[derive(Clone)]
+    struct StubReservationPort;
+
+    impl RestaurantReservationPort for StubReservationPort {
+        fn create_reservation(&self, _: ReservationCreateQuery) -> String {
+            "created:REST-NEW123".to_string()
+        }
+
+        fn check_reservation(&self, _: ReservationLookupQuery) -> String {
+            "no_reference_or_name:".to_string()
+        }
     }
 
     #[derive(Clone)]
@@ -271,7 +376,7 @@ mod tests {
             self.tasks
                 .lock()
                 .unwrap()
-                .push(task.map(|t| t.as_tag().to_string()));
+                .push(task.map(|current| current.as_tag().to_string()));
             self.langs.lock().unwrap().push(lang.to_string());
             self.domains
                 .lock()
@@ -282,6 +387,18 @@ mod tests {
                 .unwrap()
                 .pop()
                 .expect("missing stub NLU response")
+        }
+    }
+
+    struct AlwaysOk;
+
+    impl DateResolver for AlwaysOk {
+        fn resolve(
+            &self,
+            _: &str,
+            today: chrono::NaiveDate,
+        ) -> Result<chrono::NaiveDate, DateResolveError> {
+            Ok(today + chrono::Duration::days(1))
         }
     }
 
@@ -319,7 +436,7 @@ mod tests {
         use_case: TestUseCase,
         repo: StubConversationRepository,
         detector: StubLanguageDetector,
-        domain_gateway: StubDomainGateway,
+        information_port: StubInformationPort,
     }
 
     fn make_use_case(analyzer: StubNlpAnalyzer) -> UseCaseParts {
@@ -331,20 +448,21 @@ mod tests {
         analyzer: StubNlpAnalyzer,
         lang: &str,
     ) -> UseCaseParts {
-        use crate::core::conversation::domain::date_resolver::{DateResolver, DateResolveError};
-        struct AlwaysOk;
-        impl DateResolver for AlwaysOk {
-            fn resolve(&self, _: &str, today: chrono::NaiveDate) -> Result<chrono::NaiveDate, DateResolveError> {
-                Ok(today + chrono::Duration::days(1))
-            }
-        }
         let repo = StubConversationRepository::new();
         let detector = StubLanguageDetector::new(lang);
-        let domain_gateway = StubDomainGateway::new();
+        let information_port = StubInformationPort::new();
+        let reservation_port = StubReservationPort;
+        let restaurant_registry =
+            RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
+                information_port: Arc::new(information_port.clone()),
+                reservation_port: Arc::new(reservation_port),
+                date_resolver: Arc::new(AlwaysOk),
+            });
+        let processor =
+            ConversationProcessor::new(restaurant_registry, IntentHandlerRegistry::new(vec![]));
         let use_case = HandleConversationService::new(
             domain,
-            domain_gateway.clone(),
-            Arc::new(AlwaysOk),
+            processor,
             analyzer,
             repo.clone(),
             detector.clone(),
@@ -353,7 +471,7 @@ mod tests {
             use_case,
             repo,
             detector,
-            domain_gateway,
+            information_port,
         }
     }
 
@@ -396,7 +514,7 @@ mod tests {
         let result = parts.use_case.handle_message(make_command("hours", None));
 
         assert_eq!(result.reply, "Mon-Sun 9am-10pm");
-        assert_eq!(parts.domain_gateway.calls(), 1);
+        assert_eq!(parts.information_port.calls(), 1);
     }
 
     #[test]
@@ -425,7 +543,7 @@ mod tests {
         assert_eq!(start.reply, "For how many people?");
         assert_eq!(
             next.reply,
-            "I have the reservation details. Do you confirm this reservation?"
+            "I have the reservation details: Jean Martin, June 12 at 7pm, for 4 people. Do you confirm this reservation?"
         );
         let recorded = analyzer.recorded_tasks();
         assert_eq!(recorded.len(), 2);
@@ -456,9 +574,12 @@ mod tests {
 
         assert_eq!(
             start.reply,
-            "I have the reservation details. Do you confirm this reservation?"
+            "I have the reservation details: Jean Martin, June 12 at 7pm, for 4 people. Do you confirm this reservation?"
         );
-        assert_eq!(confirm.reply, "Your reservation request is confirmed.");
+        assert_eq!(
+            confirm.reply,
+            "Your reservation is confirmed for Jean Martin, June 12 at 7pm, for 4 people. Your reference is REST-NEW123."
+        );
         let recorded = analyzer.recorded_tasks();
         assert_eq!(recorded.len(), 2);
         assert!(recorded[0].is_none());

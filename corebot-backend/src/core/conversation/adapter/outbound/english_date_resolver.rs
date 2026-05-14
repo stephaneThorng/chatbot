@@ -20,8 +20,9 @@ pub struct EnglishDateResolver;
 
 impl DateResolver for EnglishDateResolver {
     fn resolve(&self, raw: &str, today: NaiveDate) -> Result<NaiveDate, DateResolveError> {
-        let s = raw.trim().to_lowercase();
-        let s = s.trim_start_matches("on ");
+        let s = raw.trim().to_lowercase().replace(',', " ");
+        let s = s.trim_start_matches("on ").trim();
+        let s = strip_weekday_prefix(s).unwrap_or(s);
 
         let date = resolve_relative(s, today)
             .or_else(|| resolve_iso(s))
@@ -35,6 +36,26 @@ impl DateResolver for EnglishDateResolver {
             Ok(date)
         }
     }
+}
+
+fn strip_weekday_prefix(s: &str) -> Option<&str> {
+    for weekday in [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+    ] {
+        if let Some(rest) = s.strip_prefix(weekday) {
+            let rest = rest.trim();
+            if !rest.is_empty() {
+                return Some(rest);
+            }
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -77,9 +98,8 @@ fn parse_weekday(s: &str) -> Option<Weekday> {
 /// Returns the next occurrence of `wd` after today (or next week if `force_next`).
 fn next_weekday(today: NaiveDate, wd: Weekday, force_next: bool) -> NaiveDate {
     let today_wd = today.weekday();
-    let days_ahead = (wd.num_days_from_monday() as i64
-        - today_wd.num_days_from_monday() as i64)
-        .rem_euclid(7);
+    let days_ahead =
+        (wd.num_days_from_monday() as i64 - today_wd.num_days_from_monday() as i64).rem_euclid(7);
     let days_ahead = if days_ahead == 0 || force_next {
         days_ahead + 7
     } else {
@@ -205,6 +225,11 @@ mod tests {
     }
 
     #[test]
+    fn weekday_day_month_parsed() {
+        assert_eq!(resolve("on Friday 17 July"), Ok(date(2026, 7, 17)));
+    }
+
+    #[test]
     fn past_date_returns_past_date_error() {
         assert_eq!(
             resolve("2025-01-01"),
@@ -214,7 +239,9 @@ mod tests {
 
     #[test]
     fn unparseable_returns_error() {
-        assert!(matches!(resolve("blahblah"), Err(DateResolveError::Unparseable)));
+        assert!(matches!(
+            resolve("blahblah"),
+            Err(DateResolveError::Unparseable)
+        ));
     }
 }
-

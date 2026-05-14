@@ -1,26 +1,73 @@
-use std::sync::Arc;
 use chrono::Local;
+use std::sync::Arc;
 
 use crate::core::conversation::application::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult, WorkflowPostProcessResult,
 };
+use crate::core::conversation::application::port::outbound::restaurant_queries::ReservationCreateQuery;
+use crate::core::conversation::application::port::outbound::restaurant_reservation_port::RestaurantReservationPort;
 use crate::core::conversation::domain::date_resolver::{DateResolveError, DateResolver};
+use crate::core::conversation::domain::model::conversation::Conversation;
 use crate::core::conversation::domain::model::intent::{
     IntentId, IntentKind, IntentPolicy, NluTask, i18n_key,
 };
-use crate::core::conversation::domain::slot::{EntityType, SlotDefinition, SlotName, SlotType, SlotValue};
+use crate::core::conversation::domain::slot::{
+    EntityType, SlotDefinition, SlotName, SlotType, SlotValue,
+};
 
-pub struct ReservationCreateIntentHandler {
+pub struct ReservationCreateIntentHandler<P: RestaurantReservationPort + ?Sized> {
     date_resolver: Arc<dyn DateResolver>,
+    reservation_port: Arc<P>,
 }
 
-impl ReservationCreateIntentHandler {
-    pub fn new(date_resolver: Arc<dyn DateResolver>) -> Self {
-        Self { date_resolver }
+impl<P: RestaurantReservationPort + ?Sized> ReservationCreateIntentHandler<P> {
+    pub fn new(date_resolver: Arc<dyn DateResolver>, reservation_port: Arc<P>) -> Self {
+        Self {
+            date_resolver,
+            reservation_port,
+        }
+    }
+
+    fn workflow_value<'a>(conversation: &'a Conversation, slot: SlotName) -> Option<&'a SlotValue> {
+        conversation
+            .active_workflow()
+            .and_then(|workflow| workflow.slot_value(slot))
+    }
+
+    fn workflow_text(conversation: &Conversation, slot: SlotName) -> String {
+        match Self::workflow_value(conversation, slot) {
+            Some(SlotValue::Text(value)) | Some(SlotValue::Date(value)) | Some(SlotValue::Time(value)) => {
+                value.clone()
+            }
+            Some(SlotValue::Number(value)) => value.to_string(),
+            Some(SlotValue::Boolean(value)) => value.to_string(),
+            None => String::new(),
+        }
+    }
+
+    fn workflow_people_count(conversation: &Conversation) -> u32 {
+        match Self::workflow_value(conversation, SlotName::People) {
+            Some(SlotValue::Number(value)) => *value,
+            _ => 0,
+        }
+    }
+
+    fn confirmation_summary(&self, conversation: &Conversation) -> String {
+        rust_i18n::t!(
+            "workflow.reservation_create.confirmation.prompt",
+            locale = conversation.lang.as_str(),
+            name = Self::workflow_text(conversation, SlotName::Name),
+            date = Self::workflow_text(conversation, SlotName::Date),
+            time = Self::workflow_text(conversation, SlotName::Time),
+            people = Self::workflow_people_count(conversation)
+        )
+        .to_string()
     }
 }
 
-impl IntentHandler for ReservationCreateIntentHandler {
+impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
+    for ReservationCreateIntentHandler<P>
+{
     fn intent(&self) -> IntentId {
         IntentId::ReservationCreate
     }
@@ -69,10 +116,14 @@ impl IntentHandler for ReservationCreateIntentHandler {
         rust_i18n::t!("workflow.reservation_create.update.prompt", locale = lang).to_string()
     }
 
+    fn confirmation_prompt(&self, _policy: &IntentPolicy, conversation: &Conversation) -> String {
+        self.confirmation_summary(conversation)
+    }
+
     fn post_process(
         &self,
         lang: &str,
-        conversation: &crate::core::conversation::domain::conversation::Conversation,
+        mut conversation: Conversation,
     ) -> WorkflowPostProcessResult {
         // Resolve and validate the date slot if present.
         if let Some(workflow) = conversation.active_workflow() {
@@ -82,18 +133,60 @@ impl IntentHandler for ReservationCreateIntentHandler {
                     Ok(_) => {} // date is valid and in the future
                     Err(DateResolveError::PastDate(_)) => {
                         return WorkflowPostProcessResult::Failed {
-                            reply: rust_i18n::t!("workflow.reservation_create.past_date.error", locale = lang).to_string(),
+                            updated_conversation: conversation,
+                            reply: rust_i18n::t!(
+                                "workflow.reservation_create.past_date.error",
+                                locale = lang
+                            )
+                            .to_string(),
                         };
                     }
                     Err(DateResolveError::Unparseable) => {
                         return WorkflowPostProcessResult::Failed {
-                            reply: rust_i18n::t!("workflow.reservation_create.past_date.error", locale = lang).to_string(),
+                            updated_conversation: conversation,
+                            reply: rust_i18n::t!(
+                                "workflow.reservation_create.past_date.error",
+                                locale = lang
+                            )
+                            .to_string(),
                         };
                     }
                 }
             }
         }
-        WorkflowPostProcessResult::Succeeded { reply: None }
+
+        let name = Self::workflow_text(&conversation, SlotName::Name);
+        let date = Self::workflow_text(&conversation, SlotName::Date);
+        let time = Self::workflow_text(&conversation, SlotName::Time);
+        let people_count = Self::workflow_people_count(&conversation);
+        let creation = self.reservation_port.create_reservation(ReservationCreateQuery {
+            name: name.clone(),
+            date: date.clone(),
+            time: time.clone(),
+            people_count,
+        });
+        let reference = creation
+            .strip_prefix("created:")
+            .unwrap_or(creation.as_str())
+            .to_string();
+        conversation.remember_customer_name(name.clone());
+        conversation.remember_reservation_reference(reference.clone());
+
+        WorkflowPostProcessResult::Succeeded {
+            updated_conversation: conversation,
+            reply: Some(
+                rust_i18n::t!(
+                    "workflow.reservation_create.completion.success",
+                    locale = lang,
+                    name = name,
+                    date = date,
+                    time = time,
+                    people = people_count,
+                    reference = reference
+                )
+                .to_string(),
+            ),
+        }
     }
 }
 
@@ -114,12 +207,27 @@ fn required_slot(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use super::*;
     use crate::core::conversation::domain::conversation::Conversation;
     use crate::core::conversation::domain::domain_type::DomainType;
     use crate::core::conversation::domain::slot::SlotValue;
     use crate::core::nlu_engine::domain::analysis::NluEntity;
+    use std::sync::Arc;
+
+    struct StubReservationPort;
+
+    impl RestaurantReservationPort for StubReservationPort {
+        fn create_reservation(&self, _: ReservationCreateQuery) -> String {
+            "created:REST-NEW123".to_string()
+        }
+
+        fn check_reservation(
+            &self,
+            _: crate::core::conversation::application::port::outbound::restaurant_queries::ReservationLookupQuery,
+        ) -> String {
+            "no_reference_or_name:".to_string()
+        }
+    }
 
     fn entity(entity_type: EntityType, value: &str) -> NluEntity {
         NluEntity {
@@ -140,11 +248,19 @@ mod tests {
         use crate::core::conversation::domain::date_resolver::DateResolver;
         struct AlwaysOk;
         impl DateResolver for AlwaysOk {
-            fn resolve(&self, _raw: &str, today: chrono::NaiveDate) -> Result<chrono::NaiveDate, crate::core::conversation::domain::date_resolver::DateResolveError> {
+            fn resolve(
+                &self,
+                _raw: &str,
+                today: chrono::NaiveDate,
+            ) -> Result<
+                chrono::NaiveDate,
+                crate::core::conversation::domain::date_resolver::DateResolveError,
+            > {
                 Ok(today + chrono::Duration::days(1))
             }
         }
-        ReservationCreateIntentHandler::new(Arc::new(AlwaysOk)).handle(IntentHandlerInput {
+        ReservationCreateIntentHandler::new(Arc::new(AlwaysOk), Arc::new(StubReservationPort))
+            .handle(IntentHandlerInput {
             conversation,
             analysis_intent: &intent,
             text: "",
@@ -201,7 +317,51 @@ mod tests {
 
         assert_eq!(
             result.reply,
-            "I have the reservation details. Do you confirm this reservation?"
+            "I have the reservation details: Alice, June 12 at 7pm, for 4 people. Do you confirm this reservation?"
+        );
+    }
+
+    #[test]
+    fn bare_numeric_reply_fills_people_slot_when_it_is_next() {
+        let conversation = handle(
+            Conversation::new(DomainType::Restaurant),
+            IntentId::ReservationCreate,
+            vec![
+                entity(EntityType::Person, "Alice"),
+                entity(EntityType::Date, "June 12"),
+                entity(EntityType::Time, "7pm"),
+            ],
+        )
+        .updated_conversation;
+
+        use crate::core::conversation::domain::date_resolver::DateResolver;
+        struct AlwaysOk;
+        impl DateResolver for AlwaysOk {
+            fn resolve(
+                &self,
+                _raw: &str,
+                today: chrono::NaiveDate,
+            ) -> Result<
+                chrono::NaiveDate,
+                crate::core::conversation::domain::date_resolver::DateResolveError,
+            > {
+                Ok(today + chrono::Duration::days(1))
+            }
+        }
+        let result =
+            ReservationCreateIntentHandler::new(Arc::new(AlwaysOk), Arc::new(StubReservationPort))
+                .handle(IntentHandlerInput {
+                conversation,
+                analysis_intent: &IntentId::ReservationCreate,
+                text: "10",
+                analysis_entities: &[],
+            });
+
+        let workflow = result.updated_conversation.active_workflow().unwrap();
+        assert_eq!(workflow.slot_value(SlotName::People), Some(&SlotValue::Number(10)));
+        assert_eq!(
+            result.reply,
+            "I have the reservation details: Alice, June 12 at 7pm, for 10 people. Do you confirm this reservation?"
         );
     }
 
@@ -247,7 +407,7 @@ mod tests {
 
         assert_eq!(
             result.reply,
-            "I have the reservation details. Do you confirm this reservation?"
+            "I have the reservation details: Alice, June 12 at 7pm, for 5 people. Do you confirm this reservation?"
         );
         let workflow = result.updated_conversation.active_workflow().unwrap();
         assert_eq!(
@@ -272,7 +432,18 @@ mod tests {
 
         let result = handle(conversation, IntentId::Affirmative, vec![]);
 
-        assert_eq!(result.reply, "Your reservation request is confirmed.");
+        assert_eq!(
+            result.reply,
+            "Your reservation is confirmed for Alice, June 12 at 7pm, for 4 people. Your reference is REST-NEW123."
+        );
         assert!(result.updated_conversation.is_idle());
+        assert_eq!(
+            result.updated_conversation.known_customer_name(),
+            Some("Alice")
+        );
+        assert_eq!(
+            result.updated_conversation.last_reservation_reference(),
+            Some("REST-NEW123")
+        );
     }
 }
