@@ -183,9 +183,7 @@ pub trait IntentHandler: Send + Sync {
             Some(NextSlot::Data(definition)) => {
                 self.slot_prompt(policy, definition.name, conversation.lang.as_str())
             }
-            Some(NextSlot::Confirmation) | None => {
-                self.confirmation_prompt(policy, conversation)
-            }
+            Some(NextSlot::Confirmation) | None => self.confirmation_prompt(policy, conversation),
         }
     }
 

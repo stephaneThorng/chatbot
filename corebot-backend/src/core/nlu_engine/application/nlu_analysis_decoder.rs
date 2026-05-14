@@ -214,6 +214,10 @@ fn decode_entities(
         };
 
         match (prefix, current_type.as_deref()) {
+            ("B", Some(active)) if active == entity_type => {
+                current_end = adjusted_end;
+                confidences.push(probabilities[label_index]);
+            }
             ("B", _) => {
                 flush_entity(
                     raw_text,
@@ -409,6 +413,44 @@ mod tests {
         assert_eq!(entities.len(), 1);
         assert_eq!(entities[0].entity_type, EntityType::Person);
         assert_eq!(entities[0].value, "Agus Wijaya");
+    }
+
+    #[test]
+    fn decode_entities_merges_repeated_b_labels_for_same_entity_type() {
+        let tokens = vec!["next".to_string(), "tu".to_string(), "esday".to_string()];
+        let offsets = vec![(0, 4), (5, 7), (7, 12)];
+        let label_maps = LabelMaps {
+            intent_label2id: Default::default(),
+            intent_id2label: Default::default(),
+            ner_label2id: Default::default(),
+            ner_id2label: [
+                ("0".to_string(), "O".to_string()),
+                ("1".to_string(), "B-date".to_string()),
+                ("2".to_string(), "I-date".to_string()),
+            ]
+            .into_iter()
+            .collect(),
+        };
+        let ner_logits = vec![
+            0.1, 2.0, 0.1, // next -> B-date
+            0.1, 2.0, 0.1, // tu -> B-date
+            0.1, 0.1, 2.0, // esday -> I-date
+        ];
+
+        let entities = decode_entities(
+            "next tuesday",
+            0,
+            &tokens,
+            &offsets,
+            &ner_logits,
+            3,
+            &label_maps,
+        )
+        .unwrap();
+
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].entity_type, EntityType::Date);
+        assert_eq!(entities[0].value, "next tuesday");
     }
 
     #[test]

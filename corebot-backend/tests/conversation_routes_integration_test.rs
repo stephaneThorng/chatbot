@@ -300,7 +300,8 @@ async fn post_send_message_returns_422_when_message_field_missing() {
 }
 
 #[tokio::test]
-async fn multi_turn_reservation_flow_returns_summary_reference_and_supports_check_without_reference() {
+async fn multi_turn_reservation_flow_returns_summary_reference_and_supports_check_without_reference()
+ {
     let server = make_scripted_server(vec![
         analysis("greeting", vec![]),
         analysis("reservation_create", vec![]),
@@ -330,14 +331,20 @@ async fn multi_turn_reservation_flow_returns_summary_reference_and_supports_chec
         .await
         .json::<serde_json::Value>();
     let session_id = hello["session_id"].as_str().unwrap().to_string();
-    assert_eq!(hello["reply"], "Hello! How can I help with the restaurant today?");
+    assert_eq!(
+        hello["reply"],
+        "Hello! How can I help with the restaurant today?"
+    );
 
     let start = server
         .post("/api/v1/conversation/send_message")
         .json(&json!({ "message": "i want to book", "session_id": session_id.clone() }))
         .await
         .json::<serde_json::Value>();
-    assert_eq!(start["reply"], "What name should I use for the reservation?");
+    assert_eq!(
+        start["reply"],
+        "What name should I use for the reservation?"
+    );
 
     let name = server
         .post("/api/v1/conversation/send_message")
@@ -369,7 +376,10 @@ async fn multi_turn_reservation_flow_returns_summary_reference_and_supports_chec
         .await
         .json::<serde_json::Value>();
     let confirmation_reply = confirm["reply"].as_str().unwrap();
-    assert!(confirmation_reply.contains("Your reservation is confirmed for Stephane, tomorrow at 7pm, for 4 people."));
+    assert!(
+        confirmation_reply
+            .contains("Your reservation is confirmed for Stephane, tomorrow at 7pm, for 4 people.")
+    );
     assert!(confirmation_reply.contains("Your reference is REST-00000B."));
 
     let check = server
@@ -386,8 +396,10 @@ async fn multi_turn_reservation_flow_returns_summary_reference_and_supports_chec
         .json(&json!({ "message": "where are you localized", "session_id": session_id }))
         .await
         .json::<serde_json::Value>();
-    assert!(location["reply"]
-        .as_str()
-        .unwrap()
-        .contains("12 Rue de la Paix"));
+    assert!(
+        location["reply"]
+            .as_str()
+            .unwrap()
+            .contains("12 Rue de la Paix")
+    );
 }

@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::Router;
@@ -26,7 +27,7 @@ const BIND_ADDRESS: &str = "0.0.0.0:3000";
 
 #[tokio::main]
 async fn main() {
-    let _ = dotenvy::dotenv();
+    log_environment(load_environment());
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -70,4 +71,58 @@ async fn main() {
     axum::serve(listener, app)
         .await
         .unwrap_or_else(|error| panic!("Server error: {error}"));
+}
+
+fn load_environment() -> Result<Option<PathBuf>, String> {
+    if let Ok(path) = dotenvy::dotenv() {
+        return Ok(Some(path));
+    }
+
+    let explicit_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(".env");
+    match dotenvy::from_path(&explicit_path) {
+        Ok(()) => Ok(Some(explicit_path)),
+        Err(dotenv_error) if explicit_path.exists() => Err(format!(
+            "failed to parse {}: {}",
+            explicit_path.display(),
+            dotenv_error
+        )),
+        Err(_) => Ok(None),
+    }
+}
+
+fn log_environment(env_result: Result<Option<PathBuf>, String>) {
+    match env_result {
+        Ok(Some(path)) => println!("[startup] loaded env from {}", path.display()),
+        Ok(None) => println!("[startup] no .env file loaded"),
+        Err(error) => println!("[startup] {}", error),
+    }
+
+    println!(
+        "[startup] COREBOT_DEBUG_NLU={}",
+        if debug_nlu_logging_enabled() {
+            "on"
+        } else {
+            "off"
+        }
+    );
+    println!(
+        "[startup] COREBOT_NLU_ONNX_DIR={}",
+        std::env::var("COREBOT_NLU_ONNX_DIR").unwrap_or_else(|_| "<unset>".to_string())
+    );
+}
+
+fn debug_nlu_logging_enabled() -> bool {
+    std::env::var("COREBOT_DEBUG_NLU")
+        .ok()
+        .as_deref()
+        .map(is_truthy_env_value)
+        .unwrap_or(false)
+}
+
+fn is_truthy_env_value(value: &str) -> bool {
+    let normalized = value.trim().trim_matches('\'').trim_matches('"');
+    matches!(
+        normalized.to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
 }

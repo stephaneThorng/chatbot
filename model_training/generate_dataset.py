@@ -266,15 +266,16 @@ def row(
     entities: list[tuple[str, str]] | None = None,
     task: str | None = None,
 ) -> dict[str, Any]:
+    normalized_text = normalize_text(text)
     payload: dict[str, Any] = {
-        "text": normalize_text(text),
-        "lang": LANG,
         "domain": "restaurant",
+        "lang": LANG,
         "intent": intent,
-        "entities": span_entities(normalize_text(text), entities or []),
     }
     if task is not None:
         payload["task"] = task
+    payload["entities"] = span_entities(normalized_text, entities or [])
+    payload["text"] = normalized_text
     return payload
 
 
@@ -1131,6 +1132,7 @@ def sort_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         key=lambda item: (
             order[item["intent"]],
             TASK_ORDER[item.get("task")],
+            len(item["entities"]),
             item["text"].lower(),
         ),
     )

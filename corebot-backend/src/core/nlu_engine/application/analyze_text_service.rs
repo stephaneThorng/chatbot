@@ -33,10 +33,20 @@ where
     fn analyze(&self, command: AnalyzeTextCommand) -> Result<NluAnalysis, NluRuntimeError> {
         validate_artifacts(self.runtime.contract(), self.runtime.label_maps())?;
         let raw_text = command.text;
-        let context = InferenceContext::new(command.lang, command.domain, command.task);
+        let lang = command.lang;
+        let domain = command.domain;
+        let task = command.task;
+        let context = InferenceContext::new(lang.clone(), domain.clone(), task.clone());
         let tagged_input = TaggedInput::build(&raw_text, &context);
+        log_nlu_engine_input(
+            &raw_text,
+            &lang,
+            &domain,
+            task.as_deref(),
+            &tagged_input.text,
+        );
         let inference = self.runtime.run(&tagged_input)?;
-        decode_nlu_analysis(
+        let analysis = decode_nlu_analysis(
             tagged_input,
             &raw_text,
             &inference.tokens,
@@ -44,8 +54,82 @@ where
             inference.outputs,
             self.runtime.contract(),
             self.runtime.label_maps(),
-        )
+        )?;
+        log_nlu_engine_output(&analysis);
+        Ok(analysis)
     }
+}
+
+fn debug_nlu_logging_enabled() -> bool {
+    std::env::var("COREBOT_DEBUG_NLU")
+        .ok()
+        .as_deref()
+        .map(is_truthy_env_value)
+        .unwrap_or(false)
+}
+
+fn is_truthy_env_value(value: &str) -> bool {
+    let normalized = value.trim().trim_matches('\'').trim_matches('"');
+    matches!(
+        normalized.to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
+fn log_nlu_engine_input(
+    raw_text: &str,
+    lang: &str,
+    domain: &str,
+    task: Option<&str>,
+    tagged_text: &str,
+) {
+    if !debug_nlu_logging_enabled() {
+        return;
+    }
+
+    println!(
+        "[nlu-engine][input] lang={} domain={} task={} raw={raw_text:?} tagged={tagged_text:?}",
+        lang,
+        domain,
+        task.unwrap_or("-"),
+    );
+}
+
+fn log_nlu_engine_output(analysis: &NluAnalysis) {
+    if !debug_nlu_logging_enabled() {
+        return;
+    }
+
+    let intents = if analysis.intents.is_empty() {
+        "-".to_string()
+    } else {
+        analysis
+            .intents
+            .iter()
+            .map(|intent| format!("{}:{:.3}", intent.name, intent.confidence))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let entities = if analysis.entities.is_empty() {
+        "-".to_string()
+    } else {
+        analysis
+            .entities
+            .iter()
+            .map(|entity| {
+                format!(
+                    "{:?}={}({}-{})",
+                    entity.entity_type, entity.value, entity.start, entity.end
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    println!(
+        "[nlu-engine][output] intent={}:{:.3} candidates=[{}] entities=[{}]",
+        analysis.intent.name, analysis.intent.confidence, intents, entities,
+    );
 }
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::{Datelike, Local, NaiveDate, Weekday};
 use std::sync::Arc;
 
 use crate::core::conversation::application::intent_handler::{
@@ -36,9 +36,9 @@ impl<P: RestaurantReservationPort + ?Sized> ReservationCreateIntentHandler<P> {
 
     fn workflow_text(conversation: &Conversation, slot: SlotName) -> String {
         match Self::workflow_value(conversation, slot) {
-            Some(SlotValue::Text(value)) | Some(SlotValue::Date(value)) | Some(SlotValue::Time(value)) => {
-                value.clone()
-            }
+            Some(SlotValue::Text(value))
+            | Some(SlotValue::Date(value))
+            | Some(SlotValue::Time(value)) => value.clone(),
             Some(SlotValue::Number(value)) => value.to_string(),
             Some(SlotValue::Boolean(value)) => value.to_string(),
             None => String::new(),
@@ -52,12 +52,27 @@ impl<P: RestaurantReservationPort + ?Sized> ReservationCreateIntentHandler<P> {
         }
     }
 
+    fn resolved_date_text(&self, conversation: &Conversation) -> String {
+        let raw_date = Self::workflow_text(conversation, SlotName::Date);
+        if raw_date.is_empty() {
+            return raw_date;
+        }
+
+        match self
+            .date_resolver
+            .resolve(&raw_date, Local::now().date_naive())
+        {
+            Ok(date) => format_resolved_date(date),
+            Err(_) => raw_date,
+        }
+    }
+
     fn confirmation_summary(&self, conversation: &Conversation) -> String {
         rust_i18n::t!(
             "workflow.reservation_create.confirmation.prompt",
             locale = conversation.lang.as_str(),
             name = Self::workflow_text(conversation, SlotName::Name),
-            date = Self::workflow_text(conversation, SlotName::Date),
+            date = self.resolved_date_text(conversation),
             time = Self::workflow_text(conversation, SlotName::Time),
             people = Self::workflow_people_count(conversation)
         )
@@ -156,15 +171,17 @@ impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
         }
 
         let name = Self::workflow_text(&conversation, SlotName::Name);
-        let date = Self::workflow_text(&conversation, SlotName::Date);
+        let date = self.resolved_date_text(&conversation);
         let time = Self::workflow_text(&conversation, SlotName::Time);
         let people_count = Self::workflow_people_count(&conversation);
-        let creation = self.reservation_port.create_reservation(ReservationCreateQuery {
-            name: name.clone(),
-            date: date.clone(),
-            time: time.clone(),
-            people_count,
-        });
+        let creation = self
+            .reservation_port
+            .create_reservation(ReservationCreateQuery {
+                name: name.clone(),
+                date: date.clone(),
+                time: time.clone(),
+                people_count,
+            });
         let reference = creation
             .strip_prefix("created:")
             .unwrap_or(creation.as_str())
@@ -187,6 +204,46 @@ impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
                 .to_string(),
             ),
         }
+    }
+}
+
+fn format_resolved_date(date: NaiveDate) -> String {
+    format!(
+        "{} {} {} {}",
+        weekday_name(date.weekday()),
+        month_name(date.month()),
+        date.day(),
+        date.year()
+    )
+}
+
+fn weekday_name(weekday: Weekday) -> &'static str {
+    match weekday {
+        Weekday::Mon => "Monday",
+        Weekday::Tue => "Tuesday",
+        Weekday::Wed => "Wednesday",
+        Weekday::Thu => "Thursday",
+        Weekday::Fri => "Friday",
+        Weekday::Sat => "Saturday",
+        Weekday::Sun => "Sunday",
+    }
+}
+
+fn month_name(month: u32) -> &'static str {
+    match month {
+        1 => "January",
+        2 => "February",
+        3 => "March",
+        4 => "April",
+        5 => "May",
+        6 => "June",
+        7 => "July",
+        8 => "August",
+        9 => "September",
+        10 => "October",
+        11 => "November",
+        12 => "December",
+        _ => "Unknown",
     }
 }
 
@@ -250,22 +307,26 @@ mod tests {
         impl DateResolver for AlwaysOk {
             fn resolve(
                 &self,
-                _raw: &str,
-                today: chrono::NaiveDate,
+                raw: &str,
+                _today: chrono::NaiveDate,
             ) -> Result<
                 chrono::NaiveDate,
                 crate::core::conversation::domain::date_resolver::DateResolveError,
             > {
-                Ok(today + chrono::Duration::days(1))
+                match raw {
+                    "June 12" => Ok(chrono::NaiveDate::from_ymd_opt(2026, 6, 12).unwrap()),
+                    "next Tuesday" => Ok(chrono::NaiveDate::from_ymd_opt(2026, 5, 19).unwrap()),
+                    value => panic!("unexpected test date input: {value}"),
+                }
             }
         }
         ReservationCreateIntentHandler::new(Arc::new(AlwaysOk), Arc::new(StubReservationPort))
             .handle(IntentHandlerInput {
-            conversation,
-            analysis_intent: &intent,
-            text: "",
-            analysis_entities: &entities,
-        })
+                conversation,
+                analysis_intent: &intent,
+                text: "",
+                analysis_entities: &entities,
+            })
     }
 
     #[test]
@@ -317,7 +378,7 @@ mod tests {
 
         assert_eq!(
             result.reply,
-            "I have the reservation details: Alice, June 12 at 7pm, for 4 people. Do you confirm this reservation?"
+            "I have the reservation details: Alice, Friday June 12 2026 at 7pm, for 4 people. Do you confirm this reservation?"
         );
     }
 
@@ -339,29 +400,35 @@ mod tests {
         impl DateResolver for AlwaysOk {
             fn resolve(
                 &self,
-                _raw: &str,
-                today: chrono::NaiveDate,
+                raw: &str,
+                _today: chrono::NaiveDate,
             ) -> Result<
                 chrono::NaiveDate,
                 crate::core::conversation::domain::date_resolver::DateResolveError,
             > {
-                Ok(today + chrono::Duration::days(1))
+                match raw {
+                    "June 12" => Ok(chrono::NaiveDate::from_ymd_opt(2026, 6, 12).unwrap()),
+                    value => panic!("unexpected test date input: {value}"),
+                }
             }
         }
         let result =
             ReservationCreateIntentHandler::new(Arc::new(AlwaysOk), Arc::new(StubReservationPort))
                 .handle(IntentHandlerInput {
-                conversation,
-                analysis_intent: &IntentId::ReservationCreate,
-                text: "10",
-                analysis_entities: &[],
-            });
+                    conversation,
+                    analysis_intent: &IntentId::ReservationCreate,
+                    text: "10",
+                    analysis_entities: &[],
+                });
 
         let workflow = result.updated_conversation.active_workflow().unwrap();
-        assert_eq!(workflow.slot_value(SlotName::People), Some(&SlotValue::Number(10)));
+        assert_eq!(
+            workflow.slot_value(SlotName::People),
+            Some(&SlotValue::Number(10))
+        );
         assert_eq!(
             result.reply,
-            "I have the reservation details: Alice, June 12 at 7pm, for 10 people. Do you confirm this reservation?"
+            "I have the reservation details: Alice, Friday June 12 2026 at 7pm, for 10 people. Do you confirm this reservation?"
         );
     }
 
@@ -407,7 +474,7 @@ mod tests {
 
         assert_eq!(
             result.reply,
-            "I have the reservation details: Alice, June 12 at 7pm, for 5 people. Do you confirm this reservation?"
+            "I have the reservation details: Alice, Friday June 12 2026 at 7pm, for 5 people. Do you confirm this reservation?"
         );
         let workflow = result.updated_conversation.active_workflow().unwrap();
         assert_eq!(
@@ -434,7 +501,7 @@ mod tests {
 
         assert_eq!(
             result.reply,
-            "Your reservation is confirmed for Alice, June 12 at 7pm, for 4 people. Your reference is REST-NEW123."
+            "Your reservation is confirmed for Alice, Friday June 12 2026 at 7pm, for 4 people. Your reference is REST-NEW123."
         );
         assert!(result.updated_conversation.is_idle());
         assert_eq!(
@@ -444,6 +511,27 @@ mod tests {
         assert_eq!(
             result.updated_conversation.last_reservation_reference(),
             Some("REST-NEW123")
+        );
+    }
+
+    #[test]
+    fn relative_date_is_rendered_as_resolved_calendar_date() {
+        let conversation = Conversation::new(DomainType::Restaurant);
+
+        let result = handle(
+            conversation,
+            IntentId::ReservationCreate,
+            vec![
+                entity(EntityType::Person, "Steph"),
+                entity(EntityType::Date, "next Tuesday"),
+                entity(EntityType::Time, "9 pm"),
+                entity(EntityType::PeopleCount, "10"),
+            ],
+        );
+
+        assert_eq!(
+            result.reply,
+            "I have the reservation details: Steph, Tuesday May 19 2026 at 9 pm, for 10 people. Do you confirm this reservation?"
         );
     }
 }

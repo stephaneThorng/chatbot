@@ -6,7 +6,8 @@ use crate::core::conversation::application::port::outbound::restaurant_queries::
     LocationQuery as ConversationLocationQuery, MenuDietaryQuery as ConversationMenuDietaryQuery,
     MenuItemDetailsQuery as ConversationMenuItemDetailsQuery, MenuQuery as ConversationMenuQuery,
     PaymentMethodQuery as ConversationPaymentMethodQuery, PriceFilter as ConversationPriceFilter,
-    PriceQuery as ConversationPriceQuery, ReservationCreateQuery as ConversationReservationCreateQuery,
+    PriceQuery as ConversationPriceQuery,
+    ReservationCreateQuery as ConversationReservationCreateQuery,
     ReservationLookupQuery as ConversationReservationLookupQuery,
 };
 use crate::core::conversation::application::port::outbound::restaurant_reservation_port::RestaurantReservationPort;

@@ -135,7 +135,7 @@ where
                 .join(", ")
         };
 
-        eprintln!(
+        println!(
             "[nlu] session={session_id} domain={} lang={} task={} text={message:?} intent={}:{:.3} candidates=[{}] entities=[{}]",
             conversation.domain.as_str(),
             conversation.lang,
@@ -149,9 +149,18 @@ where
 }
 
 fn debug_nlu_logging_enabled() -> bool {
+    std::env::var("COREBOT_DEBUG_NLU")
+        .ok()
+        .as_deref()
+        .map(is_truthy_env_value)
+        .unwrap_or(false)
+}
+
+fn is_truthy_env_value(value: &str) -> bool {
+    let normalized = value.trim().trim_matches('\'').trim_matches('"');
     matches!(
-        std::env::var("COREBOT_DEBUG_NLU"),
-        Ok(value) if matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")
+        normalized.to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
     )
 }
 
