@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use rust_i18n::t;
 
 use super::intent_handler::{IntentHandlerInput, IntentHandlerRegistry, StateHandlerResult};
+use crate::core::conversation::application::nlu_analysis_result::{NluAnalysisResult, NluEntityResult};
 use crate::core::conversation::domain::model::conversation::Conversation;
 use crate::core::conversation::domain::model::domain_type::DomainType;
-use crate::core::conversation::domain::model::intent::{IntentId, IntentKind};
-use crate::core::nlu_engine::domain::analysis::{NluAnalysis, NluEntity};
+use crate::core::conversation::domain::model::intent::IntentId;
 
 /// Application service that routes one decoded NLU turn to the right conversation path.
 pub struct ConversationProcessor {
@@ -33,13 +33,13 @@ impl ConversationProcessor {
         &self,
         conversation: Conversation,
         message: &str,
-        analysis: NluAnalysis,
+        analysis: NluAnalysisResult,
     ) -> StateHandlerResult {
         let Some(intent_registry) = self.handlers_for(conversation.domain) else {
             let reply = self.render_system_text(
                 "echo_intent",
                 conversation.lang.as_str(),
-                &[("intent".to_string(), analysis.intent.name)],
+                &[("intent".to_string(), analysis.intent_name)],
             );
             return StateHandlerResult {
                 updated_conversation: conversation,
@@ -48,9 +48,9 @@ impl ConversationProcessor {
             };
         };
 
-        let analysis_intent = IntentId::from(&analysis.intent.name);
+        let analysis_intent = IntentId::from(&analysis.intent_name);
         let analysis_entities = analysis.entities;
-        let analysis_policy = intent_registry.find_policy(&analysis_intent);
+        let analysis_config = intent_registry.find_config(&analysis_intent);
         if let Some(workflow) = conversation.active_workflow() {
             let handler = intent_registry
                 .get(&workflow.intent)
@@ -63,10 +63,10 @@ impl ConversationProcessor {
             });
         }
 
-        if analysis_policy.is_some_and(|policy| policy.kind == IntentKind::Workflow) {
+        if analysis_config.is_some_and(|cfg| cfg.workflow.is_workflow()) {
             let handler = intent_registry
                 .get(&analysis_intent)
-                .expect("workflow handler must exist for workflow policy");
+                .expect("workflow handler must exist for workflow config");
             return handler.handle(IntentHandlerInput {
                 conversation,
                 analysis_intent: &analysis_intent,
@@ -90,7 +90,7 @@ impl ConversationProcessor {
         conversation: Conversation,
         intent: IntentId,
         message: &str,
-        entities: &[NluEntity],
+        entities: &[NluEntityResult],
     ) -> StateHandlerResult {
         if let Some(handler) = intent_handlers.get(&intent) {
             return handler.handle(IntentHandlerInput {
@@ -180,8 +180,7 @@ mod tests {
         RestaurantConversationDependencies, RestaurantHandlerRegistryFactory,
     };
     use crate::core::conversation::domain::model::domain_type::DomainType;
-    use crate::core::conversation::domain::slot::EntityType;
-    use crate::core::nlu_engine::domain::analysis::{NerTokenLabel, NluIntent, NluIntentCandidate};
+    use crate::core::conversation::application::nlu_analysis_result::NluIntentCandidate;
 
     struct StubInformationPort;
 
@@ -260,22 +259,18 @@ mod tests {
         ConversationProcessor::new(restaurant_registry, IntentHandlerRegistry::new(vec![]))
     }
 
-    fn analysis(intent_name: &'static str, entities: Vec<NluEntity>) -> NluAnalysis {
-        NluAnalysis {
-            processed_text: String::new(),
-            intent: NluIntent {
-                name: intent_name.to_string(),
-                confidence: 1.0,
-            },
-            intents: Vec::<NluIntentCandidate>::new(),
+    fn analysis(intent_name: &'static str, entities: Vec<NluEntityResult>) -> NluAnalysisResult {
+        NluAnalysisResult {
+            intent_name: intent_name.to_string(),
+            intent_confidence: 1.0,
+            intent_candidates: Vec::<NluIntentCandidate>::new(),
             entities,
-            ner_labels: Vec::<NerTokenLabel>::new(),
         }
     }
 
-    fn entity(entity_type: EntityType, value: &str) -> NluEntity {
-        NluEntity {
-            entity_type,
+    fn entity(entity_label: &'static str, value: &str) -> NluEntityResult {
+        NluEntityResult {
+            entity_label: entity_label.to_string(),
             value: value.to_string(),
             raw_value: value.to_string(),
             start: 0,
@@ -293,7 +288,7 @@ mod tests {
             "tell me about ramen",
             analysis(
                 "ask_menu_item_details",
-                vec![entity(EntityType::MenuItem, "ramen")],
+                vec![entity("menu_item", "ramen")],
             ),
         );
 
@@ -362,7 +357,7 @@ mod tests {
             "cancel ABC123",
             analysis(
                 "reservation_cancel",
-                vec![entity(EntityType::ReservationReference, "ABC123")],
+                vec![entity("reservation_reference", "ABC123")],
             ),
         );
 
@@ -384,8 +379,8 @@ mod tests {
             analysis(
                 "ask_price",
                 vec![
-                    entity(EntityType::PriceComparator, "under"),
-                    entity(EntityType::PriceAmount, "20 euros"),
+                    entity("price_comparator", "under"),
+                    entity("price_amount", "20 euros"),
                 ],
             ),
         );

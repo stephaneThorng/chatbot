@@ -6,8 +6,8 @@ use crate::core::conversation::application::intent_handler::{
 };
 use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
 use crate::core::conversation::application::port::outbound::restaurant_queries::EventQuery;
-use crate::core::conversation::domain::model::intent::{IntentId, IntentKind, IntentPolicy};
-use crate::core::conversation::domain::model::slot::EntityType;
+use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
+
 
 pub struct AskEventIntentHandler<P: RestaurantInformationPort> {
     information_port: Arc<P>,
@@ -24,21 +24,13 @@ impl<P: RestaurantInformationPort + Send + Sync> IntentHandler for AskEventInten
         IntentId::AskEvent
     }
 
-    fn policy(&self) -> IntentPolicy {
-        IntentPolicy {
-            id: self.intent(),
-            kind: IntentKind::Informational,
-            nlu_task: None,
-            workflow_slots: vec![],
-            starting_message: None,
-            confirmation_prompt: None,
-            completion_response: None,
-        }
+    fn config(&self) -> IntentConfig {
+        IntentConfig { id: self.intent(), workflow: IntentWorkflow::Informational }
     }
 
     fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
-        let location = self.lookup_entity_value(&input, EntityType::Location);
+        let location = self.lookup_entity_value(&input, "location");
         let raw = self.information_port.find_event_info(EventQuery {
             location: location.map(str::to_string),
         });

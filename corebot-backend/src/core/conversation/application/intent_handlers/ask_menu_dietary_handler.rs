@@ -6,8 +6,7 @@ use crate::core::conversation::application::intent_handler::{
 };
 use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
 use crate::core::conversation::application::port::outbound::restaurant_queries::MenuDietaryQuery;
-use crate::core::conversation::domain::model::intent::{IntentId, IntentKind, IntentPolicy};
-use crate::core::conversation::domain::model::slot::EntityType;
+use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
 pub struct AskMenuDietaryIntentHandler<P: RestaurantInformationPort> {
     information_port: Arc<P>,
@@ -24,21 +23,13 @@ impl<P: RestaurantInformationPort + Send + Sync> IntentHandler for AskMenuDietar
         IntentId::AskMenuDietary
     }
 
-    fn policy(&self) -> IntentPolicy {
-        IntentPolicy {
-            id: self.intent(),
-            kind: IntentKind::Informational,
-            nlu_task: None,
-            workflow_slots: vec![],
-            starting_message: None,
-            confirmation_prompt: None,
-            completion_response: None,
-        }
+    fn config(&self) -> IntentConfig {
+        IntentConfig { id: self.intent(), workflow: IntentWorkflow::Informational }
     }
 
     fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
-        let dietary = self.lookup_entity_value(&input, EntityType::DietaryRequirement);
+        let dietary = self.lookup_entity_value(&input, "dietary_requirement");
         let raw = self.information_port.find_menu_dietary(MenuDietaryQuery {
             dietary_requirement: dietary.map(str::to_string),
         });

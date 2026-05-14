@@ -4,29 +4,22 @@ use rust_i18n::t;
 
 use crate::core::conversation::domain::conversation::Conversation;
 use crate::core::conversation::domain::date_resolver::{DateResolveError, resolve_date};
-use crate::core::conversation::domain::model::intent::{IntentId, IntentKind, IntentPolicy};
-use crate::core::conversation::domain::slot::{
-    EntityType, SlotConstraint, SlotDefinition, SlotName, SlotType, SlotValue,
+use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, WorkflowConfig};
+use crate::core::conversation::domain::model::slot::{
+    SlotConstraint, SlotDataType, SlotDataValue, SlotName,
 };
 use crate::core::conversation::domain::workflow::NextSlot;
-use crate::core::nlu_engine::domain::analysis::NluEntity;
+use crate::core::conversation::application::nlu_analysis_result::NluEntityResult;
 
 /// Stateless input passed to an intent-specific handler.
-///
-/// Handlers can inspect the current user text and NER entities, but they do not
-/// receive mutable conversation state. Workflow-capable handlers return an
-/// updated conversation instead of mutating the original one.
 pub struct IntentHandlerInput<'a> {
     pub conversation: Conversation,
     pub analysis_intent: &'a IntentId,
     pub text: &'a str,
-    pub analysis_entities: &'a [NluEntity],
+    pub analysis_entities: &'a [NluEntityResult],
 }
 
-/// Immediate result produced by an informational intent handler.
-///
-/// This type is intentionally small for v1, but keeps handler output typed so
-/// later metadata can be added without changing the processor contract.
+/// Immediate result produced by an intent handler.
 pub struct StateHandlerResult {
     pub updated_conversation: Conversation,
     pub reply: String,
@@ -44,36 +37,39 @@ pub enum WorkflowPostProcessResult {
     },
 }
 
-/// Stateless application component that handles one immediate intent.
+/// Stateless application component that handles one intent.
 pub trait IntentHandler: Send + Sync {
     fn intent(&self) -> IntentId;
-    fn policy(&self) -> IntentPolicy;
+    fn config(&self) -> IntentConfig;
+
     fn is_workflow(&self) -> bool {
-        self.policy().kind == IntentKind::Workflow
+        self.config().workflow.is_workflow()
     }
+
     fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult;
 
     fn lookup_entity_value<'a>(
         &self,
         input: &'a IntentHandlerInput<'a>,
-        entity_type: EntityType,
+        entity_label: &str,
     ) -> Option<&'a str> {
         input
             .analysis_entities
             .iter()
-            .find(|entity| entity.entity_type == entity_type)
+            .find(|entity| entity.entity_label == entity_label)
             .map(|entity| entity.value.as_str())
     }
 
     fn handle_workflow(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let mut updated_conversation = input.conversation;
-        let policy = self.policy();
+        let config = self.config();
+        let workflow_cfg = config.workflow.workflow_config();
 
         let just_started = !updated_conversation.has_active_workflow();
         if just_started {
             updated_conversation = updated_conversation
-                .into_started_workflow(&policy)
-                .expect("workflow handler policy must start a workflow");
+                .into_started_workflow(&config)
+                .expect("workflow handler config must start a workflow");
         }
 
         if input.analysis_intent == &IntentId::Cancel {
@@ -98,7 +94,7 @@ pub trait IntentHandler: Send + Sync {
         updated_conversation = update_result.updated_conversation;
 
         if let Some(invalid_slot) = invalid_slot {
-            let reply = self.slot_prompt(&policy, invalid_slot, updated_conversation.lang.as_str());
+            let reply = self.slot_prompt(workflow_cfg, invalid_slot, updated_conversation.lang.as_str());
             return StateHandlerResult {
                 updated_conversation,
                 reply,
@@ -106,8 +102,7 @@ pub trait IntentHandler: Send + Sync {
             };
         }
 
-        // Evaluate declarative slot constraints; re-prompt on first violation.
-        if let Some(violation) = self.validate_constraints(&policy, &mut updated_conversation) {
+        if let Some(violation) = self.validate_constraints(workflow_cfg, &mut updated_conversation) {
             return StateHandlerResult {
                 updated_conversation,
                 reply: violation,
@@ -120,9 +115,9 @@ pub trait IntentHandler: Send + Sync {
             .is_some_and(|workflow| workflow.is_ready_for_confirmation());
 
         if !ready_for_confirmation {
-            let slot_prompt = self.next_slot_prompt(&updated_conversation, &policy);
+            let slot_prompt = self.next_slot_prompt(&updated_conversation, workflow_cfg);
             let reply = if just_started {
-                self.starting_reply(&policy, updated_conversation.lang.as_str(), &slot_prompt)
+                self.starting_reply(workflow_cfg, updated_conversation.lang.as_str(), &slot_prompt)
             } else {
                 slot_prompt
             };
@@ -136,6 +131,7 @@ pub trait IntentHandler: Send + Sync {
         match input.analysis_intent {
             IntentId::Affirmative if !updated_any_slot => {
                 let lang = updated_conversation.lang.clone();
+                updated_conversation = updated_conversation.into_confirmed_workflow();
                 match self.post_process(lang.as_str(), updated_conversation) {
                     WorkflowPostProcessResult::Succeeded {
                         mut updated_conversation,
@@ -144,7 +140,7 @@ pub trait IntentHandler: Send + Sync {
                         let lang = updated_conversation.lang.clone();
                         updated_conversation = updated_conversation.into_completed_workflow();
                         let reply =
-                            reply.unwrap_or_else(|| self.completion_reply(&policy, lang.as_str()));
+                            reply.unwrap_or_else(|| self.completion_reply(workflow_cfg, lang.as_str()));
                         StateHandlerResult {
                             updated_conversation,
                             reply,
@@ -170,7 +166,7 @@ pub trait IntentHandler: Send + Sync {
                 }
             }
             _ => {
-                let reply = self.confirmation_prompt(&policy, &updated_conversation);
+                let reply = self.confirmation_prompt(workflow_cfg, &updated_conversation);
                 StateHandlerResult {
                     updated_conversation,
                     reply,
@@ -191,21 +187,21 @@ pub trait IntentHandler: Send + Sync {
         t!("system.workflow_update_prompt", locale = lang).to_string()
     }
 
-    fn next_slot_prompt(&self, conversation: &Conversation, policy: &IntentPolicy) -> String {
+    fn next_slot_prompt(&self, conversation: &Conversation, workflow_cfg: &WorkflowConfig) -> String {
         let Some(workflow) = conversation.active_workflow() else {
-            return self.confirmation_prompt(policy, conversation);
+            return self.confirmation_prompt(workflow_cfg, conversation);
         };
         match workflow.next_required_slot() {
             Some(NextSlot::Data(definition)) => {
-                self.slot_prompt(policy, definition.name, conversation.lang.as_str())
+                self.slot_prompt(workflow_cfg, definition.name, conversation.lang.as_str())
             }
-            Some(NextSlot::Confirmation) | None => self.confirmation_prompt(policy, conversation),
+            Some(NextSlot::Confirmation) | None => self.confirmation_prompt(workflow_cfg, conversation),
         }
     }
 
-    fn slot_prompt(&self, policy: &IntentPolicy, slot_name: SlotName, lang: &str) -> String {
-        policy
-            .workflow_slots
+    fn slot_prompt(&self, workflow_cfg: &WorkflowConfig, slot_name: SlotName, lang: &str) -> String {
+        workflow_cfg
+            .slots
             .iter()
             .find(|slot| slot.name == slot_name)
             .map(|slot| t!(slot.prompt.0.as_str(), locale = lang).to_string())
@@ -219,8 +215,8 @@ pub trait IntentHandler: Send + Sync {
             })
     }
 
-    fn confirmation_prompt(&self, policy: &IntentPolicy, conversation: &Conversation) -> String {
-        policy
+    fn confirmation_prompt(&self, workflow_cfg: &WorkflowConfig, conversation: &Conversation) -> String {
+        workflow_cfg
             .confirmation_prompt
             .as_ref()
             .map(|key| t!(key.0.as_str(), locale = conversation.lang.as_str()).to_string())
@@ -233,16 +229,16 @@ pub trait IntentHandler: Send + Sync {
             })
     }
 
-    fn completion_reply(&self, policy: &IntentPolicy, lang: &str) -> String {
-        policy
+    fn completion_reply(&self, workflow_cfg: &WorkflowConfig, lang: &str) -> String {
+        workflow_cfg
             .completion_response
             .as_ref()
             .map(|key| t!(key.0.as_str(), locale = lang).to_string())
             .unwrap_or_else(|| t!("system.workflow_complete", locale = lang).to_string())
     }
 
-    fn starting_reply(&self, policy: &IntentPolicy, lang: &str, slot_prompt: &str) -> String {
-        match policy.starting_message.as_ref() {
+    fn starting_reply(&self, workflow_cfg: &WorkflowConfig, lang: &str, slot_prompt: &str) -> String {
+        match workflow_cfg.starting_message.as_ref() {
             Some(key) => {
                 let starting = t!(key.0.as_str(), locale = lang).to_string();
                 format!("{}\n{}", starting, slot_prompt)
@@ -252,17 +248,13 @@ pub trait IntentHandler: Send + Sync {
     }
 
     /// Evaluate all declarative constraints on currently filled slots.
-    ///
-    /// Returns the translated error message for the first violation found, and
-    /// clears the offending slot from the conversation so the user is re-prompted.
-    /// Returns `None` when all constraints pass.
     fn validate_constraints(
         &self,
-        policy: &IntentPolicy,
+        workflow_cfg: &WorkflowConfig,
         conversation: &mut Conversation,
     ) -> Option<String> {
         let lang = conversation.lang.clone();
-        for slot_def in &policy.workflow_slots {
+        for slot_def in &workflow_cfg.slots {
             let Some(value) = conversation
                 .active_workflow()
                 .and_then(|wf| wf.slot_value(slot_def.name))
@@ -287,34 +279,33 @@ pub trait IntentHandler: Send + Sync {
         None
     }
 
-    /// Returns the fallback i18n error key if the constraint is violated, `None` if it passes.
     fn check_slot_constraint(
         &self,
         constraint: &SlotConstraint,
-        value: &SlotValue,
+        value: &SlotDataValue,
     ) -> Option<&'static str> {
         match (constraint, value) {
-            (SlotConstraint::TextMaxLen(max), SlotValue::Text(s)) => {
+            (SlotConstraint::TextMaxLen(max), SlotDataValue::Text(s)) => {
                 if s.len() > *max {
                     Some(SlotConstraint::TextMaxLen(0).default_error_key())
                 } else {
                     None
                 }
             }
-            (SlotConstraint::EmailFormat, SlotValue::Text(s)) => {
+            (SlotConstraint::EmailFormat, SlotDataValue::Text(s)) => {
                 let valid = s.contains('@')
                     && s.split('@').nth(0).is_some_and(|local| !local.is_empty())
                     && s.split('@').nth(1).is_some_and(|domain| domain.contains('.') && domain.len() > 2);
                 if valid { None } else { Some(SlotConstraint::EmailFormat.default_error_key()) }
             }
-            (SlotConstraint::NumberRange(min, max), SlotValue::Number(n)) => {
+            (SlotConstraint::NumberRange(min, max), SlotDataValue::Number(n)) => {
                 if n < min || n > max {
                     Some(SlotConstraint::NumberRange(0, 0).default_error_key())
                 } else {
                     None
                 }
             }
-            (SlotConstraint::FutureDate, SlotValue::Date(raw)) => {
+            (SlotConstraint::FutureDate, SlotDataValue::Date(raw)) => {
                 match resolve_date(raw) {
                     Ok(_) => None,
                     Err(DateResolveError::PastDate(_)) | Err(DateResolveError::Unparseable) => {
@@ -330,7 +321,7 @@ pub trait IntentHandler: Send + Sync {
         &self,
         conversation: &Conversation,
         raw_text: &str,
-        entities: &[NluEntity],
+        entities: &[NluEntityResult],
     ) -> SlotUpdateResult {
         let Some(workflow) = conversation.active_workflow() else {
             return SlotUpdateResult { updates: vec![] };
@@ -339,22 +330,16 @@ pub trait IntentHandler: Send + Sync {
         let mut updates = vec![];
 
         for entity in entities {
-            for slot in workflow.slot_definitions() {
-                if !slot
-                    .entity_types
-                    .iter()
-                    .any(|entity_type| entity_type == &entity.entity_type)
-                {
+            for slot_cfg in workflow.slot_definitions() {
+                if !slot_cfg.name.entity_type_labels().contains(&entity.entity_label.as_str()) {
                     continue;
                 }
-
-                let Some(slot_value) = self.slot_value_from_entity(slot, entity.value.as_str())
+                let Some(slot_value) = self.slot_value_from_name(slot_cfg.name, entity.value.as_str())
                 else {
                     continue;
                 };
-
                 updates.push(SlotUpdate {
-                    slot_name: slot.name,
+                    slot_name: slot_cfg.name,
                     value: slot_value,
                 });
             }
@@ -362,12 +347,12 @@ pub trait IntentHandler: Send + Sync {
 
         if updates.is_empty()
             && let Some(NextSlot::Data(next_slot)) = workflow.next_required_slot()
-            && next_slot.slot_type == SlotType::Number
+            && next_slot.name.data_type() == SlotDataType::Number
             && let Some(number) = self.parse_number_slot(raw_text)
         {
             updates.push(SlotUpdate {
                 slot_name: next_slot.name,
-                value: SlotValue::Number(number),
+                value: SlotDataValue::Number(number),
             });
         }
 
@@ -400,13 +385,13 @@ pub trait IntentHandler: Send + Sync {
         }
     }
 
-    fn slot_value_from_entity(&self, slot: &SlotDefinition, raw_value: &str) -> Option<SlotValue> {
-        match slot.slot_type {
-            SlotType::Text => Some(SlotValue::Text(raw_value.to_string())),
-            SlotType::Date => Some(SlotValue::Date(raw_value.to_string())),
-            SlotType::Time => Some(SlotValue::Time(raw_value.to_string())),
-            SlotType::Number => self.parse_number_slot(raw_value).map(SlotValue::Number),
-            SlotType::Boolean => None,
+    fn slot_value_from_name(&self, slot_name: SlotName, raw_value: &str) -> Option<SlotDataValue> {
+        match slot_name.data_type() {
+            SlotDataType::Text => Some(SlotDataValue::Text(raw_value.to_string())),
+            SlotDataType::Date => Some(SlotDataValue::Date(raw_value.to_string())),
+            SlotDataType::Time => Some(SlotDataValue::Time(raw_value.to_string())),
+            SlotDataType::Number => self.parse_number_slot(raw_value).map(SlotDataValue::Number),
+            SlotDataType::Boolean => None,
         }
     }
 
@@ -432,7 +417,7 @@ pub struct SlotUpdateApplicationResult {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SlotUpdate {
     pub slot_name: SlotName,
-    pub value: SlotValue,
+    pub value: SlotDataValue,
 }
 
 /// Lookup table for application-level intent handlers.
@@ -454,15 +439,16 @@ impl IntentHandlerRegistry {
         self.handlers.get(intent).map(Box::as_ref)
     }
 
-    pub fn find_policy(&self, intent: &IntentId) -> Option<IntentPolicy> {
-        self.get(intent).map(IntentHandler::policy)
+    pub fn find_config(&self, intent: &IntentId) -> Option<IntentConfig> {
+        self.get(intent).map(IntentHandler::config)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::conversation::domain::domain_type::DomainType;
+    use crate::core::conversation::domain::model::domain_type::DomainType;
+    use crate::core::conversation::domain::model::intent::IntentWorkflow;
 
     struct StubHandler;
 
@@ -471,15 +457,10 @@ mod tests {
             IntentId::AskOpeningHours
         }
 
-        fn policy(&self) -> IntentPolicy {
-            IntentPolicy {
+        fn config(&self) -> IntentConfig {
+            IntentConfig {
                 id: self.intent(),
-                kind: crate::core::conversation::domain::intent::IntentKind::Informational,
-                nlu_task: None,
-                workflow_slots: vec![],
-                starting_message: None,
-                confirmation_prompt: None,
-                completion_response: None,
+                workflow: IntentWorkflow::Informational,
             }
         }
 
@@ -495,17 +476,14 @@ mod tests {
     #[test]
     fn registry_resolves_known_intent_handler() {
         let registry = IntentHandlerRegistry::new(vec![Box::new(StubHandler)]);
-
         assert!(registry.get(&IntentId::AskOpeningHours).is_some());
         assert!(registry.get(&IntentId::Greeting).is_none());
     }
 
     #[test]
-    fn registry_resolves_known_intent_policy() {
+    fn registry_resolves_known_intent_config() {
         let registry = IntentHandlerRegistry::new(vec![Box::new(StubHandler)]);
-
-        let policy = registry.find_policy(&IntentId::AskOpeningHours).unwrap();
-
-        assert_eq!(policy.id, IntentId::AskOpeningHours);
+        let config = registry.find_config(&IntentId::AskOpeningHours).unwrap();
+        assert_eq!(config.id, IntentId::AskOpeningHours);
     }
 }

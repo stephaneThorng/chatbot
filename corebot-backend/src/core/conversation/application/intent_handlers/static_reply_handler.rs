@@ -3,7 +3,7 @@ use rust_i18n::t;
 use crate::core::conversation::application::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
-use crate::core::conversation::domain::model::intent::{IntentId, IntentKind, IntentPolicy};
+use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
 pub struct StaticReplyIntentHandler {
     intent: IntentId,
@@ -21,15 +21,10 @@ impl IntentHandler for StaticReplyIntentHandler {
         self.intent.clone()
     }
 
-    fn policy(&self) -> IntentPolicy {
-        IntentPolicy {
+    fn config(&self) -> IntentConfig {
+        IntentConfig {
             id: self.intent(),
-            kind: IntentKind::Informational,
-            nlu_task: None,
-            workflow_slots: vec![],
-            starting_message: None,
-            confirmation_prompt: None,
-            completion_response: None,
+            workflow: IntentWorkflow::Informational,
         }
     }
 

@@ -2,7 +2,7 @@ use crate::core::conversation::application::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
 use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
-use crate::core::conversation::domain::model::intent::{IntentId, IntentKind, IntentPolicy};
+use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
 pub struct OpeningHoursIntentHandler<P: RestaurantInformationPort + ?Sized> {
     information_port: std::sync::Arc<P>,
@@ -21,16 +21,8 @@ impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
         IntentId::AskOpeningHours
     }
 
-    fn policy(&self) -> IntentPolicy {
-        IntentPolicy {
-            id: self.intent(),
-            kind: IntentKind::Informational,
-            nlu_task: None,
-            workflow_slots: vec![],
-            starting_message: None,
-            confirmation_prompt: None,
-            completion_response: None,
-        }
+    fn config(&self) -> IntentConfig {
+        IntentConfig { id: self.intent(), workflow: IntentWorkflow::Informational }
     }
 
     fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {

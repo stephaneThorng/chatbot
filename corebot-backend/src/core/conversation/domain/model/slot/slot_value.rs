@@ -1,6 +1,6 @@
-/// Slot type for validation.
+/// Runtime type tag used for slot validation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SlotType {
+pub enum SlotDataType {
     Text,
     Date,
     Time,
@@ -10,7 +10,7 @@ pub enum SlotType {
 
 /// Validated slot value.
 #[derive(Debug, Clone, PartialEq)]
-pub enum SlotValue {
+pub enum SlotDataValue {
     Text(String),
     Date(String),
     Time(String),
@@ -18,16 +18,16 @@ pub enum SlotValue {
     Boolean(bool),
 }
 
-impl SlotValue {
+impl SlotDataValue {
     /// Check if this value matches the expected type.
-    pub fn matches_type(&self, slot_type: SlotType) -> bool {
+    pub fn matches_type(&self, slot_type: SlotDataType) -> bool {
         matches!(
             (self, slot_type),
-            (SlotValue::Text(_), SlotType::Text)
-                | (SlotValue::Date(_), SlotType::Date)
-                | (SlotValue::Time(_), SlotType::Time)
-                | (SlotValue::Number(_), SlotType::Number)
-                | (SlotValue::Boolean(_), SlotType::Boolean)
+            (SlotDataValue::Text(_), SlotDataType::Text)
+                | (SlotDataValue::Date(_), SlotDataType::Date)
+                | (SlotDataValue::Time(_), SlotDataType::Time)
+                | (SlotDataValue::Number(_), SlotDataType::Number)
+                | (SlotDataValue::Boolean(_), SlotDataType::Boolean)
         )
     }
 }

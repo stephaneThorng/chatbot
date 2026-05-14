@@ -8,8 +8,7 @@ use crate::core::conversation::application::port::outbound::restaurant_informati
 use crate::core::conversation::application::port::outbound::restaurant_queries::{
     PriceFilter, PriceQuery,
 };
-use crate::core::conversation::domain::model::intent::{IntentId, IntentKind, IntentPolicy};
-use crate::core::conversation::domain::model::slot::EntityType;
+use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
 pub struct AskPriceIntentHandler<P: RestaurantInformationPort> {
     information_port: Arc<P>,
@@ -26,24 +25,16 @@ impl<P: RestaurantInformationPort + Send + Sync> IntentHandler for AskPriceInten
         IntentId::AskPrice
     }
 
-    fn policy(&self) -> IntentPolicy {
-        IntentPolicy {
-            id: self.intent(),
-            kind: IntentKind::Informational,
-            nlu_task: None,
-            workflow_slots: vec![],
-            starting_message: None,
-            confirmation_prompt: None,
-            completion_response: None,
-        }
+    fn config(&self) -> IntentConfig {
+        IntentConfig { id: self.intent(), workflow: IntentWorkflow::Informational }
     }
 
     fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
-        let price_item = self.lookup_entity_value(&input, EntityType::PriceItem);
-        let menu_item = self.lookup_entity_value(&input, EntityType::MenuItem);
-        let comparator = self.lookup_entity_value(&input, EntityType::PriceComparator);
-        let amount = self.lookup_entity_value(&input, EntityType::PriceAmount);
+        let price_item = self.lookup_entity_value(&input, "price_item");
+        let menu_item = self.lookup_entity_value(&input, "menu_item");
+        let comparator = self.lookup_entity_value(&input, "price_comparator");
+        let amount = self.lookup_entity_value(&input, "price_amount");
         let item = price_item.or(menu_item);
         let raw = self.information_port.find_price(PriceQuery {
             item: item.map(str::to_string),

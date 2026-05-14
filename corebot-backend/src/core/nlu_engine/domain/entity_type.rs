@@ -24,6 +24,28 @@ pub enum EntityType {
 }
 
 impl EntityType {
+    pub fn as_label(&self) -> &str {
+        match self {
+            Self::Person => "person",
+            Self::Date => "date",
+            Self::Time => "time",
+            Self::PeopleCount => "people_count",
+            Self::ReservationReference => "reservation_reference",
+            Self::MenuItem => "menu_item",
+            Self::PriceItem => "price_item",
+            Self::Location => "location",
+            Self::Phone => "phone",
+            Self::Email => "email",
+            Self::Allergen => "allergen",
+            Self::Facility => "facility",
+            Self::PaymentMethod => "payment_method",
+            Self::PriceComparator => "price_comparator",
+            Self::PriceAmount => "price_amount",
+            Self::DietaryRequirement => "dietary_requirement",
+            Self::Unknown(s) => s.as_str(),
+        }
+    }
+
     pub fn from(label: &str) -> Self {
         match label {
             "person" => Self::Person,

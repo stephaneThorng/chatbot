@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::core::conversation::domain::model::slot::SlotDefinition;
+use crate::core::conversation::domain::model::slot::SlotConfig;
 
 /// Backend-owned identifier for intents the conversation core knows how to route.
 ///
@@ -97,12 +97,6 @@ impl fmt::Display for IntentId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IntentKind {
-    Workflow,
-    Informational,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct I18nKey(pub String);
 
@@ -112,16 +106,48 @@ impl I18nKey {
     }
 }
 
-/// Handler-owned policy used by the conversation core to route and process an intent.
+/// Workflow-specific configuration.
+/// Only present when `IntentWorkflow::Workflow`.
 #[derive(Debug, PartialEq)]
-pub struct IntentPolicy {
-    pub id: IntentId,
-    pub kind: IntentKind,
+pub struct WorkflowConfig {
     pub nlu_task: Option<NluTask>,
-    pub workflow_slots: Vec<SlotDefinition>,
+    pub slots: Vec<SlotConfig>,
     pub starting_message: Option<I18nKey>,
     pub confirmation_prompt: Option<I18nKey>,
     pub completion_response: Option<I18nKey>,
+}
+
+/// Discriminates the intent's interaction mode.
+#[derive(Debug, PartialEq)]
+pub enum IntentWorkflow {
+    /// A single-turn intent that returns a reply with no slot collection.
+    Informational,
+    /// A multi-turn workflow that collects slots before executing.
+    Workflow(WorkflowConfig),
+}
+
+impl IntentWorkflow {
+    pub fn is_workflow(&self) -> bool {
+        matches!(self, Self::Workflow(_))
+    }
+
+    /// Panics if called on `Informational`.
+    pub fn workflow_config(&self) -> &WorkflowConfig {
+        match self {
+            Self::Workflow(cfg) => cfg,
+            Self::Informational => panic!("workflow_config() called on Informational intent"),
+        }
+    }
+}
+
+/// Handler-owned configuration used by the conversation core to route and process an intent.
+///
+/// Replaces `IntentPolicy`. The `workflow` field encodes both the intent kind
+/// and all workflow-specific data in a single, type-safe enum.
+#[derive(Debug, PartialEq)]
+pub struct IntentConfig {
+    pub id: IntentId,
+    pub workflow: IntentWorkflow,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,21 +177,12 @@ mod tests {
 
     #[test]
     fn known_intent_label_maps_to_typed_variant() {
-        assert_eq!(
-            IntentId::from("ask_opening_hours"),
-            IntentId::AskOpeningHours
-        );
+        assert_eq!(IntentId::from("ask_opening_hours"), IntentId::AskOpeningHours);
     }
 
     #[test]
     fn unknown_intent_label_is_preserved() {
-        assert_eq!(
-            IntentId::from("new_model_label"),
-            IntentId::Unknown("new_model_label".to_string())
-        );
-        assert_eq!(
-            IntentId::from("new_model_label").as_str(),
-            "new_model_label"
-        );
+        assert_eq!(IntentId::from("new_model_label"), IntentId::Unknown("new_model_label".to_string()));
+        assert_eq!(IntentId::from("new_model_label").as_str(), "new_model_label");
     }
 }

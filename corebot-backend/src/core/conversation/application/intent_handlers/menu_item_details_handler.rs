@@ -6,8 +6,7 @@ use crate::core::conversation::application::intent_handler::{
 };
 use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
 use crate::core::conversation::application::port::outbound::restaurant_queries::MenuItemDetailsQuery;
-use crate::core::conversation::domain::model::intent::{IntentId, IntentKind, IntentPolicy};
-use crate::core::conversation::domain::slot::EntityType;
+use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
 pub struct MenuItemDetailsIntentHandler<P: RestaurantInformationPort> {
     information_port: Arc<P>,
@@ -24,22 +23,14 @@ impl<P: RestaurantInformationPort + Send + Sync> IntentHandler for MenuItemDetai
         IntentId::AskMenuItemDetails
     }
 
-    fn policy(&self) -> IntentPolicy {
-        IntentPolicy {
-            id: self.intent(),
-            kind: IntentKind::Informational,
-            nlu_task: None,
-            workflow_slots: vec![],
-            starting_message: None,
-            confirmation_prompt: None,
-            completion_response: None,
-        }
+    fn config(&self) -> IntentConfig {
+        IntentConfig { id: self.intent(), workflow: IntentWorkflow::Informational }
     }
 
     fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
-        let menu_item = self.lookup_entity_value(&input, EntityType::MenuItem);
-        let allergen = self.lookup_entity_value(&input, EntityType::Allergen);
+        let menu_item = self.lookup_entity_value(&input, "menu_item");
+        let allergen = self.lookup_entity_value(&input, "allergen");
         let raw = self
             .information_port
             .find_menu_item_details(MenuItemDetailsQuery {

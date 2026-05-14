@@ -6,6 +6,7 @@ use super::port::inbound::conversation_usecase::HandleConversationUseCase;
 use super::port::outbound::conversation_repository_port::ConversationRepositoryPort;
 use super::port::outbound::language_detector_port::LanguageDetectorPort;
 use super::port::outbound::nlp_engine_gateway_port::NlpEngineGatewayPort;
+use crate::core::conversation::application::nlu_analysis_result::NluAnalysisResult;
 use crate::core::conversation::domain::conversation::Conversation;
 use crate::core::conversation::domain::conversation_id::ConversationId;
 use crate::core::conversation::domain::domain_type::DomainType;
@@ -104,7 +105,7 @@ where
         session_id: &str,
         message: &str,
         conversation: &Conversation,
-        analysis: &crate::core::nlu_engine::domain::analysis::NluAnalysis,
+        analysis: &NluAnalysisResult,
     ) {
         if !debug_nlu_logging_enabled() {
             return;
@@ -114,11 +115,11 @@ where
             .detect_task()
             .map(|value| value.as_tag().to_string())
             .unwrap_or_else(|| "-".to_string());
-        let intents = if analysis.intents.is_empty() {
+        let intents = if analysis.intent_candidates.is_empty() {
             "-".to_string()
         } else {
             analysis
-                .intents
+                .intent_candidates
                 .iter()
                 .map(|intent| format!("{}:{:.3}", intent.name, intent.confidence))
                 .collect::<Vec<_>>()
@@ -130,7 +131,7 @@ where
             analysis
                 .entities
                 .iter()
-                .map(|entity| format!("{:?}={}", entity.entity_type, entity.value))
+                .map(|entity| format!("{}={}", entity.entity_label, entity.value))
                 .collect::<Vec<_>>()
                 .join(", ")
         };
@@ -140,8 +141,8 @@ where
             conversation.domain.as_str(),
             conversation.lang,
             task,
-            analysis.intent.name,
-            analysis.intent.confidence,
+            analysis.intent_name,
+            analysis.intent_confidence,
             intents,
             entities,
         );
@@ -186,9 +187,8 @@ mod tests {
         RestaurantConversationDependencies, RestaurantHandlerRegistryFactory,
     };
     use crate::core::conversation::domain::model::intent::NluTask;
-    use crate::core::conversation::domain::slot::EntityType;
-    use crate::core::nlu_engine::domain::analysis::{
-        NerTokenLabel, NluAnalysis, NluEntity, NluIntent, NluIntentCandidate,
+    use crate::core::conversation::application::nlu_analysis_result::{
+        NluAnalysisResult, NluEntityResult, NluIntentCandidate,
     };
 
     #[derive(Clone)]
@@ -343,14 +343,14 @@ mod tests {
 
     #[derive(Clone)]
     struct StubNlpAnalyzer {
-        responses: Arc<Mutex<Vec<NluAnalysis>>>,
+        responses: Arc<Mutex<Vec<NluAnalysisResult>>>,
         tasks: Arc<Mutex<Vec<Option<String>>>>,
         langs: Arc<Mutex<Vec<String>>>,
         domains: Arc<Mutex<Vec<String>>>,
     }
 
     impl StubNlpAnalyzer {
-        fn new(responses: Vec<NluAnalysis>) -> Self {
+        fn new(responses: Vec<NluAnalysisResult>) -> Self {
             Self {
                 responses: Arc::new(Mutex::new(responses.into_iter().rev().collect())),
                 tasks: Arc::new(Mutex::new(vec![])),
@@ -379,7 +379,7 @@ mod tests {
             lang: &str,
             domain: DomainType,
             task: Option<NluTask>,
-        ) -> NluAnalysis {
+        ) -> NluAnalysisResult {
             let _ = text;
             self.tasks
                 .lock()
@@ -399,22 +399,18 @@ mod tests {
     }
 
 
-    fn analysis(intent_name: &'static str, entities: Vec<NluEntity>) -> NluAnalysis {
-        NluAnalysis {
-            processed_text: String::new(),
-            intent: NluIntent {
-                name: intent_name.to_string(),
-                confidence: 1.0,
-            },
-            intents: Vec::<NluIntentCandidate>::new(),
+    fn analysis(intent_name: &'static str, entities: Vec<NluEntityResult>) -> NluAnalysisResult {
+        NluAnalysisResult {
+            intent_name: intent_name.to_string(),
+            intent_confidence: 1.0,
+            intent_candidates: Vec::<NluIntentCandidate>::new(),
             entities,
-            ner_labels: Vec::<NerTokenLabel>::new(),
         }
     }
 
-    fn entity(entity_type: EntityType, value: &str) -> NluEntity {
-        NluEntity {
-            entity_type,
+    fn entity(entity_label: &'static str, value: &str) -> NluEntityResult {
+        NluEntityResult {
+            entity_label: entity_label.to_string(),
             value: value.to_string(),
             raw_value: value.to_string(),
             start: 0,
@@ -519,14 +515,14 @@ mod tests {
             analysis(
                 "reservation_create",
                 vec![
-                    entity(EntityType::Person, "Jean Martin"),
-                    entity(EntityType::Date, "2099-06-12"),
-                    entity(EntityType::Time, "7pm"),
+                    entity("person", "Jean Martin"),
+                    entity("date", "2099-06-12"),
+                    entity("time", "7pm"),
                 ],
             ),
             analysis(
                 "reservation_create",
-                vec![entity(EntityType::PeopleCount, "4 people")],
+                vec![entity("people_count", "4 people")],
             ),
         ]);
         let parts = make_use_case(analyzer.clone());
@@ -553,10 +549,10 @@ mod tests {
             analysis(
                 "reservation_create",
                 vec![
-                    entity(EntityType::Person, "Jean Martin"),
-                    entity(EntityType::Date, "2099-06-12"),
-                    entity(EntityType::Time, "7pm"),
-                    entity(EntityType::PeopleCount, "4 people"),
+                    entity("person", "Jean Martin"),
+                    entity("date", "2099-06-12"),
+                    entity("time", "7pm"),
+                    entity("people_count", "4 people"),
                 ],
             ),
             analysis("affirmative", vec![]),
@@ -584,7 +580,7 @@ mod tests {
         let analyzer = StubNlpAnalyzer::new(vec![
             analysis(
                 "reservation_create",
-                vec![entity(EntityType::Person, "Jean Martin")],
+                vec![entity("person", "Jean Martin")],
             ),
             analysis("cancel", vec![]),
         ]);
@@ -603,9 +599,9 @@ mod tests {
         let analyzer = StubNlpAnalyzer::new(vec![analysis(
             "reservation_create",
             vec![
-                entity(EntityType::Person, "Budi Santoso"),
-                entity(EntityType::Date, "2099-06-12"),
-                entity(EntityType::Time, "jam 7 malam"),
+                entity("person", "Budi Santoso"),
+                entity("date", "2099-06-12"),
+                entity("time", "jam 7 malam"),
             ],
         )]);
         let parts = make_use_case_for_domain(DomainType::Restaurant, analyzer.clone(), "id");

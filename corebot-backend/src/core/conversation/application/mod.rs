@@ -3,7 +3,9 @@ pub mod conversation_processor;
 pub mod conversation_service;
 pub mod intent_handler;
 pub mod intent_handlers;
+pub mod nlu_analysis_result;
 pub mod port;
 pub mod restaurant_handler_registry_factory;
 
 pub use conversation_command::{HandleConversationCommand, HandleConversationResult};
+pub use nlu_analysis_result::{NluAnalysisResult, NluEntityResult, NluIntentCandidate};

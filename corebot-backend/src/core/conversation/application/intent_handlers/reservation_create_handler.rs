@@ -11,10 +11,10 @@ use crate::core::conversation::application::port::outbound::restaurant_reservati
 use crate::core::conversation::domain::date_resolver::{resolve_date, resolve_time};
 use crate::core::conversation::domain::model::conversation::Conversation;
 use crate::core::conversation::domain::model::intent::{
-    IntentId, IntentKind, IntentPolicy, NluTask, i18n_key,
+    IntentConfig, IntentId, IntentWorkflow, NluTask, WorkflowConfig, i18n_key,
 };
-use crate::core::conversation::domain::slot::{
-    EntityType, SlotConstraint, SlotConstraintEntry, SlotDefinition, SlotName, SlotType, SlotValue,
+use crate::core::conversation::domain::model::slot::{
+    SlotConfig, SlotConstraint, SlotConstraintEntry, SlotDataValue, SlotName,
 };
 
 pub struct ReservationCreateIntentHandler<P: RestaurantReservationPort + ?Sized> {
@@ -26,7 +26,7 @@ impl<P: RestaurantReservationPort + ?Sized> ReservationCreateIntentHandler<P> {
         Self { reservation_port }
     }
 
-    fn workflow_value<'a>(conversation: &'a Conversation, slot: SlotName) -> Option<&'a SlotValue> {
+    fn workflow_value<'a>(conversation: &'a Conversation, slot: SlotName) -> Option<&'a SlotDataValue> {
         conversation
             .active_workflow()
             .and_then(|workflow| workflow.slot_value(slot))
@@ -34,18 +34,18 @@ impl<P: RestaurantReservationPort + ?Sized> ReservationCreateIntentHandler<P> {
 
     fn workflow_text(conversation: &Conversation, slot: SlotName) -> String {
         match Self::workflow_value(conversation, slot) {
-            Some(SlotValue::Text(value))
-            | Some(SlotValue::Date(value))
-            | Some(SlotValue::Time(value)) => value.clone(),
-            Some(SlotValue::Number(value)) => value.to_string(),
-            Some(SlotValue::Boolean(value)) => value.to_string(),
+            Some(SlotDataValue::Text(value))
+            | Some(SlotDataValue::Date(value))
+            | Some(SlotDataValue::Time(value)) => value.clone(),
+            Some(SlotDataValue::Number(value)) => value.to_string(),
+            Some(SlotDataValue::Boolean(value)) => value.to_string(),
             None => String::new(),
         }
     }
 
     fn workflow_people_count(conversation: &Conversation) -> u32 {
         match Self::workflow_value(conversation, SlotName::People) {
-            Some(SlotValue::Number(value)) => *value,
+            Some(SlotDataValue::Number(value)) => *value,
             _ => 0,
         }
     }
@@ -81,51 +81,44 @@ impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
         IntentId::ReservationCreate
     }
 
-    fn policy(&self) -> IntentPolicy {
-        IntentPolicy {
+    fn config(&self) -> IntentConfig {
+        IntentConfig {
             id: self.intent(),
-            kind: IntentKind::Workflow,
-            nlu_task: Some(NluTask::ReservationCreate),
-            workflow_slots: vec![
-                SlotDefinition {
-                    name: SlotName::Name,
-                    slot_type: SlotType::Text,
-                    required: true,
-                    entity_types: vec![EntityType::Person],
-                    prompt: i18n_key("workflow.reservation_create.slot.name.prompt"),
-                    constraints: vec![SlotConstraintEntry::new(SlotConstraint::TextMaxLen(100))],
-                },
-                SlotDefinition {
-                    name: SlotName::Date,
-                    slot_type: SlotType::Date,
-                    required: true,
-                    entity_types: vec![EntityType::Date],
-                    prompt: i18n_key("workflow.reservation_create.slot.date.prompt"),
-                    constraints: vec![SlotConstraintEntry::with_error_key(
-                        SlotConstraint::FutureDate,
-                        "workflow.reservation_create.past_date.error",
-                    )],
-                },
-                SlotDefinition {
-                    name: SlotName::Time,
-                    slot_type: SlotType::Time,
-                    required: true,
-                    entity_types: vec![EntityType::Time],
-                    prompt: i18n_key("workflow.reservation_create.slot.time.prompt"),
-                    constraints: vec![],
-                },
-                SlotDefinition {
-                    name: SlotName::People,
-                    slot_type: SlotType::Number,
-                    required: true,
-                    entity_types: vec![EntityType::PeopleCount],
-                    prompt: i18n_key("workflow.reservation_create.slot.people.prompt"),
-                    constraints: vec![SlotConstraintEntry::new(SlotConstraint::NumberRange(1, 20))],
-                },
-            ],
-            starting_message: Some(i18n_key("workflow.reservation_create.starting.message")),
-            confirmation_prompt: Some(i18n_key("workflow.reservation_create.confirmation.prompt")),
-            completion_response: Some(i18n_key("workflow.reservation_create.completion.success")),
+            workflow: IntentWorkflow::Workflow(WorkflowConfig {
+                nlu_task: Some(NluTask::ReservationCreate),
+                slots: vec![
+                    SlotConfig {
+                        name: SlotName::Name,
+                        required: true,
+                        prompt: i18n_key("workflow.reservation_create.slot.name.prompt"),
+                        constraints: vec![SlotConstraintEntry::new(SlotConstraint::TextMaxLen(100))],
+                    },
+                    SlotConfig {
+                        name: SlotName::Date,
+                        required: true,
+                        prompt: i18n_key("workflow.reservation_create.slot.date.prompt"),
+                        constraints: vec![SlotConstraintEntry::with_error_key(
+                            SlotConstraint::FutureDate,
+                            "workflow.reservation_create.past_date.error",
+                        )],
+                    },
+                    SlotConfig {
+                        name: SlotName::Time,
+                        required: true,
+                        prompt: i18n_key("workflow.reservation_create.slot.time.prompt"),
+                        constraints: vec![],
+                    },
+                    SlotConfig {
+                        name: SlotName::People,
+                        required: true,
+                        prompt: i18n_key("workflow.reservation_create.slot.people.prompt"),
+                        constraints: vec![SlotConstraintEntry::new(SlotConstraint::NumberRange(1, 20))],
+                    },
+                ],
+                starting_message: Some(i18n_key("workflow.reservation_create.starting.message")),
+                confirmation_prompt: Some(i18n_key("workflow.reservation_create.confirmation.prompt")),
+                completion_response: Some(i18n_key("workflow.reservation_create.completion.success")),
+            }),
         }
     }
 
@@ -137,7 +130,11 @@ impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
         rust_i18n::t!("workflow.reservation_create.update.prompt", locale = lang).to_string()
     }
 
-    fn confirmation_prompt(&self, _policy: &IntentPolicy, conversation: &Conversation) -> String {
+    fn confirmation_prompt(
+        &self,
+        _workflow_cfg: &crate::core::conversation::domain::model::intent::WorkflowConfig,
+        conversation: &Conversation,
+    ) -> String {
         Self::confirmation_summary(conversation)
     }
 
@@ -151,7 +148,6 @@ impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
         let raw_time = Self::workflow_text(&conversation, SlotName::Time);
         let people_count = Self::workflow_people_count(&conversation);
 
-        // Parse typed date — already validated by FutureDate constraint so should succeed
         let Ok(date) = resolve_date(&raw_date) else {
             conversation.clear_workflow_slot(SlotName::Date);
             conversation.clear_workflow_slot(SlotName::Time);
@@ -165,7 +161,6 @@ impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
             };
         };
 
-        // Parse typed time
         let Ok(time) = resolve_time(&raw_time) else {
             conversation.clear_workflow_slot(SlotName::Time);
             return WorkflowPostProcessResult::Failed {
@@ -293,17 +288,15 @@ mod tests {
     use crate::core::conversation::application::port::outbound::restaurant_queries::ReservationFailure;
     use crate::core::conversation::domain::conversation::Conversation;
     use crate::core::conversation::domain::domain_type::DomainType;
-    use crate::core::conversation::domain::slot::SlotValue;
-    use crate::core::nlu_engine::domain::analysis::NluEntity;
+    use crate::core::conversation::domain::model::slot::{SlotDataValue, SlotName};
+    use crate::core::conversation::application::nlu_analysis_result::NluEntityResult;
     use std::sync::Arc;
 
     struct StubReservationPort;
-
     impl RestaurantReservationPort for StubReservationPort {
         fn create_reservation(&self, _: ReservationCreateQuery) -> Result<String, ReservationFailure> {
             Ok("created:REST-NEW123".to_string())
         }
-
         fn check_reservation(
             &self,
             _: crate::core::conversation::application::port::outbound::restaurant_queries::ReservationLookupQuery,
@@ -313,14 +306,12 @@ mod tests {
     }
 
     struct FullStubReservationPort;
-
     impl RestaurantReservationPort for FullStubReservationPort {
         fn create_reservation(&self, _: ReservationCreateQuery) -> Result<String, ReservationFailure> {
             Err(ReservationFailure::NoAvailability {
                 next_slot: Some("Monday June 1 at 21:00".to_string()),
             })
         }
-
         fn check_reservation(
             &self,
             _: crate::core::conversation::application::port::outbound::restaurant_queries::ReservationLookupQuery,
@@ -330,12 +321,10 @@ mod tests {
     }
 
     struct ClosedStubReservationPort;
-
     impl RestaurantReservationPort for ClosedStubReservationPort {
         fn create_reservation(&self, _: ReservationCreateQuery) -> Result<String, ReservationFailure> {
             Err(ReservationFailure::RestaurantClosed)
         }
-
         fn check_reservation(
             &self,
             _: crate::core::conversation::application::port::outbound::restaurant_queries::ReservationLookupQuery,
@@ -344,9 +333,9 @@ mod tests {
         }
     }
 
-    fn entity(entity_type: EntityType, value: &str) -> NluEntity {
-        NluEntity {
-            entity_type,
+    fn entity(entity_label: &'static str, value: &str) -> NluEntityResult {
+        NluEntityResult {
+            entity_label: entity_label.to_string(),
             value: value.to_string(),
             raw_value: value.to_string(),
             start: 0,
@@ -363,7 +352,7 @@ mod tests {
         conversation: Conversation,
         intent: IntentId,
         text: &str,
-        entities: Vec<NluEntity>,
+        entities: Vec<NluEntityResult>,
     ) -> StateHandlerResult {
         handler().handle(IntentHandlerInput {
             conversation,
@@ -389,13 +378,13 @@ mod tests {
             IntentId::ReservationCreate,
             "",
             vec![
-                entity(EntityType::Person, "Alice"),
-                entity(EntityType::Date, "2099-06-12"),
-                entity(EntityType::Time, "7pm"),
+                entity("person", "Alice"),
+                entity("date", "2099-06-12"),
+                entity("time", "7pm"),
             ],
         );
         let workflow = result.updated_conversation.active_workflow().unwrap();
-        assert_eq!(workflow.slot_value(SlotName::Name), Some(&SlotValue::Text("Alice".to_string())));
+        assert_eq!(workflow.slot_value(SlotName::Name), Some(&SlotDataValue::Text("Alice".to_string())));
         assert!(result.reply.ends_with("For how many people?"));
     }
 
@@ -407,10 +396,10 @@ mod tests {
             IntentId::ReservationCreate,
             "",
             vec![
-                entity(EntityType::Person, "Alice"),
-                entity(EntityType::Date, "2099-06-12"),
-                entity(EntityType::Time, "7pm"),
-                entity(EntityType::PeopleCount, "4 people"),
+                entity("person", "Alice"),
+                entity("date", "2099-06-12"),
+                entity("time", "7pm"),
+                entity("people_count", "4 people"),
             ],
         );
         assert!(result.reply.contains("Alice"));
@@ -426,9 +415,9 @@ mod tests {
             IntentId::ReservationCreate,
             "",
             vec![
-                entity(EntityType::Person, "Alice"),
-                entity(EntityType::Date, "2099-06-12"),
-                entity(EntityType::Time, "7pm"),
+                entity("person", "Alice"),
+                entity("date", "2099-06-12"),
+                entity("time", "7pm"),
             ],
         )
         .updated_conversation;
@@ -439,7 +428,7 @@ mod tests {
             analysis_entities: &[],
         });
         let workflow = result.updated_conversation.active_workflow().unwrap();
-        assert_eq!(workflow.slot_value(SlotName::People), Some(&SlotValue::Number(10)));
+        assert_eq!(workflow.slot_value(SlotName::People), Some(&SlotDataValue::Number(10)));
         assert!(result.reply.contains("10 people"));
         assert!(result.reply.contains("Do you confirm"));
     }
@@ -451,10 +440,10 @@ mod tests {
             IntentId::ReservationCreate,
             "",
             vec![
-                entity(EntityType::Person, "Alice"),
-                entity(EntityType::Date, "2099-06-12"),
-                entity(EntityType::Time, "7pm"),
-                entity(EntityType::PeopleCount, "4 people"),
+                entity("person", "Alice"),
+                entity("date", "2099-06-12"),
+                entity("time", "7pm"),
+                entity("people_count", "4 people"),
             ],
         )
         .updated_conversation;
@@ -470,17 +459,17 @@ mod tests {
             IntentId::ReservationCreate,
             "",
             vec![
-                entity(EntityType::Person, "Alice"),
-                entity(EntityType::Date, "2099-06-12"),
-                entity(EntityType::Time, "7pm"),
-                entity(EntityType::PeopleCount, "4 people"),
+                entity("person", "Alice"),
+                entity("date", "2099-06-12"),
+                entity("time", "7pm"),
+                entity("people_count", "4 people"),
             ],
         )
         .updated_conversation;
-        let result = handle(conversation, IntentId::Negative, "", vec![entity(EntityType::PeopleCount, "5 people")]);
+        let result = handle(conversation, IntentId::Negative, "", vec![entity("people_count", "5 people")]);
         assert!(result.reply.contains("Do you confirm"));
         let workflow = result.updated_conversation.active_workflow().unwrap();
-        assert_eq!(workflow.slot_value(SlotName::People), Some(&SlotValue::Number(5)));
+        assert_eq!(workflow.slot_value(SlotName::People), Some(&SlotDataValue::Number(5)));
     }
 
     #[test]
@@ -490,10 +479,10 @@ mod tests {
             IntentId::ReservationCreate,
             "",
             vec![
-                entity(EntityType::Person, "Alice"),
-                entity(EntityType::Date, "2099-06-12"),
-                entity(EntityType::Time, "7pm"),
-                entity(EntityType::PeopleCount, "4 people"),
+                entity("person", "Alice"),
+                entity("date", "2099-06-12"),
+                entity("time", "7pm"),
+                entity("people_count", "4 people"),
             ],
         )
         .updated_conversation;
@@ -512,8 +501,8 @@ mod tests {
             IntentId::ReservationCreate,
             "",
             vec![
-                entity(EntityType::Person, "Alice"),
-                entity(EntityType::Date, "2000-01-01"),
+                entity("person", "Alice"),
+                entity("date", "2000-01-01"),
             ],
         );
         assert_eq!(result.reply, "That date is in the past. Please provide a future date.");
@@ -529,10 +518,10 @@ mod tests {
             IntentId::ReservationCreate,
             "",
             vec![
-                entity(EntityType::Person, "Alice"),
-                entity(EntityType::Date, "2099-06-12"),
-                entity(EntityType::Time, "7pm"),
-                entity(EntityType::PeopleCount, "50"),
+                entity("person", "Alice"),
+                entity("date", "2099-06-12"),
+                entity("time", "7pm"),
+                entity("people_count", "50"),
             ],
         );
         assert!(!result.reply.contains("Do you confirm"));
@@ -546,14 +535,13 @@ mod tests {
             IntentId::ReservationCreate,
             "",
             vec![
-                entity(EntityType::Person, "Alice"),
-                entity(EntityType::Date, "2099-06-12"),
-                entity(EntityType::Time, "7pm"),
-                entity(EntityType::PeopleCount, "4 people"),
+                entity("person", "Alice"),
+                entity("date", "2099-06-12"),
+                entity("time", "7pm"),
+                entity("people_count", "4 people"),
             ],
         )
         .updated_conversation;
-
         let result = ReservationCreateIntentHandler::new(Arc::new(FullStubReservationPort))
             .handle(IntentHandlerInput {
                 conversation,
@@ -561,7 +549,6 @@ mod tests {
                 text: "",
                 analysis_entities: &[],
             });
-
         assert!(result.reply.contains("Monday June 1 at 21:00"));
         assert!(result.updated_conversation.has_active_workflow());
         let wf = result.updated_conversation.active_workflow().unwrap();
@@ -576,14 +563,13 @@ mod tests {
             IntentId::ReservationCreate,
             "",
             vec![
-                entity(EntityType::Person, "Alice"),
-                entity(EntityType::Date, "2099-06-12"),
-                entity(EntityType::Time, "7pm"),
-                entity(EntityType::PeopleCount, "4 people"),
+                entity("person", "Alice"),
+                entity("date", "2099-06-12"),
+                entity("time", "7pm"),
+                entity("people_count", "4 people"),
             ],
         )
         .updated_conversation;
-
         let result = ReservationCreateIntentHandler::new(Arc::new(ClosedStubReservationPort))
             .handle(IntentHandlerInput {
                 conversation,

@@ -6,8 +6,7 @@ use crate::core::conversation::application::intent_handler::{
 };
 use crate::core::conversation::application::port::outbound::restaurant_queries::ReservationLookupQuery;
 use crate::core::conversation::application::port::outbound::restaurant_reservation_port::RestaurantReservationPort;
-use crate::core::conversation::domain::model::intent::{IntentId, IntentKind, IntentPolicy};
-use crate::core::conversation::domain::model::slot::EntityType;
+use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
 pub struct CheckReservationIntentHandler<P: RestaurantReservationPort + ?Sized> {
     reservation_port: Arc<P>,
@@ -26,23 +25,15 @@ impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
         IntentId::CheckReservation
     }
 
-    fn policy(&self) -> IntentPolicy {
-        IntentPolicy {
-            id: self.intent(),
-            kind: IntentKind::Informational,
-            nlu_task: None,
-            workflow_slots: vec![],
-            starting_message: None,
-            confirmation_prompt: None,
-            completion_response: None,
-        }
+    fn config(&self) -> IntentConfig {
+        IntentConfig { id: self.intent(), workflow: IntentWorkflow::Informational }
     }
 
     fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
-        let reference = self.lookup_entity_value(&input, EntityType::ReservationReference);
+        let reference = self.lookup_entity_value(&input, "reservation_reference");
         let name = self
-            .lookup_entity_value(&input, EntityType::Person)
+            .lookup_entity_value(&input, "person")
             .or_else(|| input.conversation.known_customer_name());
         let raw = self
             .reservation_port

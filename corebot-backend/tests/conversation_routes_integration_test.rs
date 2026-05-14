@@ -19,9 +19,8 @@ use corebot_backend::core::conversation::application::restaurant_handler_registr
 };
 use corebot_backend::core::conversation::domain::domain_type::DomainType;
 use corebot_backend::core::conversation::domain::model::intent::NluTask;
-use corebot_backend::core::conversation::domain::slot::EntityType;
-use corebot_backend::core::nlu_engine::domain::analysis::{
-    NerTokenLabel, NluAnalysis, NluEntity, NluIntent, NluIntentCandidate,
+use corebot_backend::core::conversation::application::nlu_analysis_result::{
+    NluAnalysisResult, NluEntityResult, NluIntentCandidate,
 };
 use corebot_backend::core::restaurant::application::restaurant_service::RestaurantService;
 use corebot_backend::core::restaurant::application::port::inbound::restaurant_information_port::RestaurantInformationUseCase;
@@ -108,28 +107,24 @@ impl NlpEngineGatewayPort for StubNlpAnalyzer {
         lang: &str,
         domain: DomainType,
         task: Option<NluTask>,
-    ) -> NluAnalysis {
-        let _ = (lang, domain, task);
-        NluAnalysis {
-            processed_text: text.to_string(),
-            intent: NluIntent {
-                name: self.intent_name.to_string(),
-                confidence: 1.0,
-            },
-            intents: vec![],
+    ) -> NluAnalysisResult {
+        let _ = (lang, domain, task, text);
+        NluAnalysisResult {
+            intent_name: self.intent_name.to_string(),
+            intent_confidence: 1.0,
+            intent_candidates: vec![],
             entities: vec![],
-            ner_labels: vec![],
         }
     }
 }
 
 #[derive(Clone)]
 struct ScriptedNlpAnalyzer {
-    responses: Arc<Mutex<Vec<NluAnalysis>>>,
+    responses: Arc<Mutex<Vec<NluAnalysisResult>>>,
 }
 
 impl ScriptedNlpAnalyzer {
-    fn new(responses: Vec<NluAnalysis>) -> Self {
+    fn new(responses: Vec<NluAnalysisResult>) -> Self {
         Self {
             responses: Arc::new(Mutex::new(responses.into_iter().rev().collect())),
         }
@@ -143,7 +138,7 @@ impl NlpEngineGatewayPort for ScriptedNlpAnalyzer {
         _lang: &str,
         _domain: DomainType,
         _task: Option<NluTask>,
-    ) -> NluAnalysis {
+    ) -> NluAnalysisResult {
         self.responses
             .lock()
             .unwrap()
@@ -182,22 +177,18 @@ fn make_server(intent_name: &'static str) -> TestServer {
     TestServer::new(conversation_routes_with_use_case(use_case))
 }
 
-fn analysis(intent_name: &'static str, entities: Vec<NluEntity>) -> NluAnalysis {
-    NluAnalysis {
-        processed_text: String::new(),
-        intent: NluIntent {
-            name: intent_name.to_string(),
-            confidence: 1.0,
-        },
-        intents: Vec::<NluIntentCandidate>::new(),
+fn analysis(intent_name: &'static str, entities: Vec<NluEntityResult>) -> NluAnalysisResult {
+    NluAnalysisResult {
+        intent_name: intent_name.to_string(),
+        intent_confidence: 1.0,
+        intent_candidates: Vec::<NluIntentCandidate>::new(),
         entities,
-        ner_labels: Vec::<NerTokenLabel>::new(),
     }
 }
 
-fn entity(entity_type: EntityType, value: &str) -> NluEntity {
-    NluEntity {
-        entity_type,
+fn entity(entity_label: &'static str, value: &str) -> NluEntityResult {
+    NluEntityResult {
+        entity_label: entity_label.to_string(),
         value: value.to_string(),
         raw_value: value.to_string(),
         start: 0,
@@ -206,7 +197,7 @@ fn entity(entity_type: EntityType, value: &str) -> NluEntity {
     }
 }
 
-fn make_scripted_server(responses: Vec<NluAnalysis>) -> TestServer {
+fn make_scripted_server(responses: Vec<NluAnalysisResult>) -> TestServer {
     let restaurant = Arc::new(RestaurantService::new());
     let restaurant_registry =
         RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
@@ -291,18 +282,18 @@ async fn multi_turn_reservation_flow_returns_summary_reference_and_supports_chec
         analysis("reservation_create", vec![]),
         analysis(
             "reservation_create",
-            vec![entity(EntityType::Person, "Stephane")],
+            vec![entity("person", "Stephane")],
         ),
         analysis(
             "reservation_create",
             vec![
-                entity(EntityType::Date, "tomorrow"),
-                entity(EntityType::Time, "7pm"),
+                entity("date", "tomorrow"),
+                entity("time", "7pm"),
             ],
         ),
         analysis(
             "reservation_create",
-            vec![entity(EntityType::PeopleCount, "4")],
+            vec![entity("people_count", "4")],
         ),
         analysis("affirmative", vec![]),
         analysis("check_reservation", vec![]),

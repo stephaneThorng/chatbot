@@ -1,4 +1,4 @@
-use crate::core::conversation::domain::model::slot::EntityType;
+use crate::core::nlu_engine::domain::entity_type::EntityType;
 
 /// Runtime context attached to an utterance before model inference.
 #[derive(Debug, PartialEq)]
