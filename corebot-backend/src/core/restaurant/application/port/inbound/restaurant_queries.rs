@@ -56,7 +56,7 @@ pub struct ReservationLookupQuery {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReservationCreateQuery {
     pub name: String,
-    pub date: String,
-    pub time: String,
+    pub date: chrono::NaiveDate,
+    pub time: chrono::NaiveTime,
     pub people_count: u32,
 }

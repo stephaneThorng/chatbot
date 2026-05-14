@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use rust_i18n::t;
 
 use crate::core::conversation::domain::conversation::Conversation;
+use crate::core::conversation::domain::date_resolver::{DateResolveError, resolve_date};
 use crate::core::conversation::domain::model::intent::{IntentId, IntentKind, IntentPolicy};
 use crate::core::conversation::domain::slot::{
-    EntityType, SlotDefinition, SlotName, SlotType, SlotValue,
+    EntityType, SlotConstraint, SlotDefinition, SlotName, SlotType, SlotValue,
 };
 use crate::core::conversation::domain::workflow::NextSlot;
 use crate::core::nlu_engine::domain::analysis::NluEntity;
@@ -68,7 +69,8 @@ pub trait IntentHandler: Send + Sync {
         let mut updated_conversation = input.conversation;
         let policy = self.policy();
 
-        if !updated_conversation.has_active_workflow() {
+        let just_started = !updated_conversation.has_active_workflow();
+        if just_started {
             updated_conversation = updated_conversation
                 .into_started_workflow(&policy)
                 .expect("workflow handler policy must start a workflow");
@@ -104,12 +106,26 @@ pub trait IntentHandler: Send + Sync {
             };
         }
 
+        // Evaluate declarative slot constraints; re-prompt on first violation.
+        if let Some(violation) = self.validate_constraints(&policy, &mut updated_conversation) {
+            return StateHandlerResult {
+                updated_conversation,
+                reply: violation,
+                handled_intent: self.intent(),
+            };
+        }
+
         let ready_for_confirmation = updated_conversation
             .active_workflow()
             .is_some_and(|workflow| workflow.is_ready_for_confirmation());
 
         if !ready_for_confirmation {
-            let reply = self.next_slot_prompt(&updated_conversation, &policy);
+            let slot_prompt = self.next_slot_prompt(&updated_conversation, &policy);
+            let reply = if just_started {
+                self.starting_reply(&policy, updated_conversation.lang.as_str(), &slot_prompt)
+            } else {
+                slot_prompt
+            };
             return StateHandlerResult {
                 updated_conversation,
                 reply,
@@ -223,6 +239,91 @@ pub trait IntentHandler: Send + Sync {
             .as_ref()
             .map(|key| t!(key.0.as_str(), locale = lang).to_string())
             .unwrap_or_else(|| t!("system.workflow_complete", locale = lang).to_string())
+    }
+
+    fn starting_reply(&self, policy: &IntentPolicy, lang: &str, slot_prompt: &str) -> String {
+        match policy.starting_message.as_ref() {
+            Some(key) => {
+                let starting = t!(key.0.as_str(), locale = lang).to_string();
+                format!("{}\n{}", starting, slot_prompt)
+            }
+            None => slot_prompt.to_string(),
+        }
+    }
+
+    /// Evaluate all declarative constraints on currently filled slots.
+    ///
+    /// Returns the translated error message for the first violation found, and
+    /// clears the offending slot from the conversation so the user is re-prompted.
+    /// Returns `None` when all constraints pass.
+    fn validate_constraints(
+        &self,
+        policy: &IntentPolicy,
+        conversation: &mut Conversation,
+    ) -> Option<String> {
+        let lang = conversation.lang.clone();
+        for slot_def in &policy.workflow_slots {
+            let Some(value) = conversation
+                .active_workflow()
+                .and_then(|wf| wf.slot_value(slot_def.name))
+                .cloned()
+            else {
+                continue;
+            };
+
+            for entry in &slot_def.constraints {
+                if let Some(error_key) = self.check_slot_constraint(&entry.constraint, &value) {
+                    let resolved_key = entry
+                        .error_key
+                        .as_ref()
+                        .map(|k| k.0.as_str())
+                        .unwrap_or(error_key);
+                    let reply = t!(resolved_key, locale = lang.as_str()).to_string();
+                    conversation.clear_workflow_slot(slot_def.name);
+                    return Some(reply);
+                }
+            }
+        }
+        None
+    }
+
+    /// Returns the fallback i18n error key if the constraint is violated, `None` if it passes.
+    fn check_slot_constraint(
+        &self,
+        constraint: &SlotConstraint,
+        value: &SlotValue,
+    ) -> Option<&'static str> {
+        match (constraint, value) {
+            (SlotConstraint::TextMaxLen(max), SlotValue::Text(s)) => {
+                if s.len() > *max {
+                    Some(SlotConstraint::TextMaxLen(0).default_error_key())
+                } else {
+                    None
+                }
+            }
+            (SlotConstraint::EmailFormat, SlotValue::Text(s)) => {
+                let valid = s.contains('@')
+                    && s.split('@').nth(0).is_some_and(|local| !local.is_empty())
+                    && s.split('@').nth(1).is_some_and(|domain| domain.contains('.') && domain.len() > 2);
+                if valid { None } else { Some(SlotConstraint::EmailFormat.default_error_key()) }
+            }
+            (SlotConstraint::NumberRange(min, max), SlotValue::Number(n)) => {
+                if n < min || n > max {
+                    Some(SlotConstraint::NumberRange(0, 0).default_error_key())
+                } else {
+                    None
+                }
+            }
+            (SlotConstraint::FutureDate, SlotValue::Date(raw)) => {
+                match resolve_date(raw) {
+                    Ok(_) => None,
+                    Err(DateResolveError::PastDate(_)) | Err(DateResolveError::Unparseable) => {
+                        Some(SlotConstraint::FutureDate.default_error_key())
+                    }
+                }
+            }
+            _ => None,
+        }
     }
 
     fn extract_slot_updates(
@@ -376,6 +477,7 @@ mod tests {
                 kind: crate::core::conversation::domain::intent::IntentKind::Informational,
                 nlu_task: None,
                 workflow_slots: vec![],
+                starting_message: None,
                 confirmation_prompt: None,
                 completion_response: None,
             }

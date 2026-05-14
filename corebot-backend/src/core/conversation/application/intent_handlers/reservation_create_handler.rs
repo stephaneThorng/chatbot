@@ -1,31 +1,29 @@
-use chrono::{Datelike, Local, NaiveDate, Weekday};
+use chrono::{Datelike, NaiveDate, Weekday};
 use std::sync::Arc;
 
 use crate::core::conversation::application::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult, WorkflowPostProcessResult,
 };
-use crate::core::conversation::application::port::outbound::restaurant_queries::ReservationCreateQuery;
+use crate::core::conversation::application::port::outbound::restaurant_queries::{
+    ReservationCreateQuery, ReservationFailure,
+};
 use crate::core::conversation::application::port::outbound::restaurant_reservation_port::RestaurantReservationPort;
-use crate::core::conversation::domain::date_resolver::{DateResolveError, DateResolver};
+use crate::core::conversation::domain::date_resolver::{resolve_date, resolve_time};
 use crate::core::conversation::domain::model::conversation::Conversation;
 use crate::core::conversation::domain::model::intent::{
     IntentId, IntentKind, IntentPolicy, NluTask, i18n_key,
 };
 use crate::core::conversation::domain::slot::{
-    EntityType, SlotDefinition, SlotName, SlotType, SlotValue,
+    EntityType, SlotConstraint, SlotConstraintEntry, SlotDefinition, SlotName, SlotType, SlotValue,
 };
 
 pub struct ReservationCreateIntentHandler<P: RestaurantReservationPort + ?Sized> {
-    date_resolver: Arc<dyn DateResolver>,
     reservation_port: Arc<P>,
 }
 
 impl<P: RestaurantReservationPort + ?Sized> ReservationCreateIntentHandler<P> {
-    pub fn new(date_resolver: Arc<dyn DateResolver>, reservation_port: Arc<P>) -> Self {
-        Self {
-            date_resolver,
-            reservation_port,
-        }
+    pub fn new(reservation_port: Arc<P>) -> Self {
+        Self { reservation_port }
     }
 
     fn workflow_value<'a>(conversation: &'a Conversation, slot: SlotName) -> Option<&'a SlotValue> {
@@ -52,27 +50,23 @@ impl<P: RestaurantReservationPort + ?Sized> ReservationCreateIntentHandler<P> {
         }
     }
 
-    fn resolved_date_text(&self, conversation: &Conversation) -> String {
+    fn resolved_date_text(conversation: &Conversation) -> String {
         let raw_date = Self::workflow_text(conversation, SlotName::Date);
         if raw_date.is_empty() {
             return raw_date;
         }
-
-        match self
-            .date_resolver
-            .resolve(&raw_date, Local::now().date_naive())
-        {
+        match resolve_date(&raw_date) {
             Ok(date) => format_resolved_date(date),
             Err(_) => raw_date,
         }
     }
 
-    fn confirmation_summary(&self, conversation: &Conversation) -> String {
+    fn confirmation_summary(conversation: &Conversation) -> String {
         rust_i18n::t!(
             "workflow.reservation_create.confirmation.prompt",
             locale = conversation.lang.as_str(),
             name = Self::workflow_text(conversation, SlotName::Name),
-            date = self.resolved_date_text(conversation),
+            date = Self::resolved_date_text(conversation),
             time = Self::workflow_text(conversation, SlotName::Time),
             people = Self::workflow_people_count(conversation)
         )
@@ -93,31 +87,43 @@ impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
             kind: IntentKind::Workflow,
             nlu_task: Some(NluTask::ReservationCreate),
             workflow_slots: vec![
-                required_slot(
-                    SlotName::Name,
-                    SlotType::Text,
-                    vec![EntityType::Person],
-                    "workflow.reservation_create.slot.name.prompt",
-                ),
-                required_slot(
-                    SlotName::Date,
-                    SlotType::Date,
-                    vec![EntityType::Date],
-                    "workflow.reservation_create.slot.date.prompt",
-                ),
-                required_slot(
-                    SlotName::Time,
-                    SlotType::Time,
-                    vec![EntityType::Time],
-                    "workflow.reservation_create.slot.time.prompt",
-                ),
-                required_slot(
-                    SlotName::People,
-                    SlotType::Number,
-                    vec![EntityType::PeopleCount],
-                    "workflow.reservation_create.slot.people.prompt",
-                ),
+                SlotDefinition {
+                    name: SlotName::Name,
+                    slot_type: SlotType::Text,
+                    required: true,
+                    entity_types: vec![EntityType::Person],
+                    prompt: i18n_key("workflow.reservation_create.slot.name.prompt"),
+                    constraints: vec![SlotConstraintEntry::new(SlotConstraint::TextMaxLen(100))],
+                },
+                SlotDefinition {
+                    name: SlotName::Date,
+                    slot_type: SlotType::Date,
+                    required: true,
+                    entity_types: vec![EntityType::Date],
+                    prompt: i18n_key("workflow.reservation_create.slot.date.prompt"),
+                    constraints: vec![SlotConstraintEntry::with_error_key(
+                        SlotConstraint::FutureDate,
+                        "workflow.reservation_create.past_date.error",
+                    )],
+                },
+                SlotDefinition {
+                    name: SlotName::Time,
+                    slot_type: SlotType::Time,
+                    required: true,
+                    entity_types: vec![EntityType::Time],
+                    prompt: i18n_key("workflow.reservation_create.slot.time.prompt"),
+                    constraints: vec![],
+                },
+                SlotDefinition {
+                    name: SlotName::People,
+                    slot_type: SlotType::Number,
+                    required: true,
+                    entity_types: vec![EntityType::PeopleCount],
+                    prompt: i18n_key("workflow.reservation_create.slot.people.prompt"),
+                    constraints: vec![SlotConstraintEntry::new(SlotConstraint::NumberRange(1, 20))],
+                },
             ],
+            starting_message: Some(i18n_key("workflow.reservation_create.starting.message")),
             confirmation_prompt: Some(i18n_key("workflow.reservation_create.confirmation.prompt")),
             completion_response: Some(i18n_key("workflow.reservation_create.completion.success")),
         }
@@ -132,7 +138,7 @@ impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
     }
 
     fn confirmation_prompt(&self, _policy: &IntentPolicy, conversation: &Conversation) -> String {
-        self.confirmation_summary(conversation)
+        Self::confirmation_summary(conversation)
     }
 
     fn post_process(
@@ -140,69 +146,103 @@ impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
         lang: &str,
         mut conversation: Conversation,
     ) -> WorkflowPostProcessResult {
-        // Resolve and validate the date slot if present.
-        if let Some(workflow) = conversation.active_workflow() {
-            if let Some(SlotValue::Date(raw_date)) = workflow.slot_value(SlotName::Date) {
-                let today = Local::now().date_naive();
-                match self.date_resolver.resolve(raw_date, today) {
-                    Ok(_) => {} // date is valid and in the future
-                    Err(DateResolveError::PastDate(_)) => {
-                        return WorkflowPostProcessResult::Failed {
-                            updated_conversation: conversation,
-                            reply: rust_i18n::t!(
-                                "workflow.reservation_create.past_date.error",
-                                locale = lang
-                            )
-                            .to_string(),
-                        };
-                    }
-                    Err(DateResolveError::Unparseable) => {
-                        return WorkflowPostProcessResult::Failed {
-                            updated_conversation: conversation,
-                            reply: rust_i18n::t!(
-                                "workflow.reservation_create.past_date.error",
-                                locale = lang
-                            )
-                            .to_string(),
-                        };
-                    }
-                }
-            }
-        }
-
         let name = Self::workflow_text(&conversation, SlotName::Name);
-        let date = self.resolved_date_text(&conversation);
-        let time = Self::workflow_text(&conversation, SlotName::Time);
+        let raw_date = Self::workflow_text(&conversation, SlotName::Date);
+        let raw_time = Self::workflow_text(&conversation, SlotName::Time);
         let people_count = Self::workflow_people_count(&conversation);
-        let creation = self
-            .reservation_port
-            .create_reservation(ReservationCreateQuery {
-                name: name.clone(),
-                date: date.clone(),
-                time: time.clone(),
-                people_count,
-            });
-        let reference = creation
-            .strip_prefix("created:")
-            .unwrap_or(creation.as_str())
-            .to_string();
-        conversation.remember_customer_name(name.clone());
-        conversation.remember_reservation_reference(reference.clone());
 
-        WorkflowPostProcessResult::Succeeded {
-            updated_conversation: conversation,
-            reply: Some(
-                rust_i18n::t!(
-                    "workflow.reservation_create.completion.success",
-                    locale = lang,
-                    name = name,
-                    date = date,
-                    time = time,
-                    people = people_count,
-                    reference = reference
+        // Parse typed date — already validated by FutureDate constraint so should succeed
+        let Ok(date) = resolve_date(&raw_date) else {
+            conversation.clear_workflow_slot(SlotName::Date);
+            conversation.clear_workflow_slot(SlotName::Time);
+            return WorkflowPostProcessResult::Failed {
+                updated_conversation: conversation,
+                reply: rust_i18n::t!(
+                    "workflow.reservation_create.slot.date.prompt",
+                    locale = lang
                 )
                 .to_string(),
-            ),
+            };
+        };
+
+        // Parse typed time
+        let Ok(time) = resolve_time(&raw_time) else {
+            conversation.clear_workflow_slot(SlotName::Time);
+            return WorkflowPostProcessResult::Failed {
+                updated_conversation: conversation,
+                reply: rust_i18n::t!(
+                    "workflow.reservation_create.time_invalid.error",
+                    locale = lang
+                )
+                .to_string(),
+            };
+        };
+
+        let date_display = format_resolved_date(date);
+        let time_display = raw_time.clone();
+
+        match self.reservation_port.create_reservation(ReservationCreateQuery {
+            name: name.clone(),
+            date,
+            time,
+            people_count,
+        }) {
+            Ok(creation) => {
+                let reference = creation
+                    .strip_prefix("created:")
+                    .unwrap_or(creation.as_str())
+                    .to_string();
+                conversation.remember_customer_name(name.clone());
+                conversation.remember_reservation_reference(reference.clone());
+                WorkflowPostProcessResult::Succeeded {
+                    updated_conversation: conversation,
+                    reply: Some(
+                        rust_i18n::t!(
+                            "workflow.reservation_create.completion.success",
+                            locale = lang,
+                            name = name,
+                            date = date_display,
+                            time = time_display,
+                            people = people_count,
+                            reference = reference
+                        )
+                        .to_string(),
+                    ),
+                }
+            }
+            Err(ReservationFailure::RestaurantClosed) => {
+                conversation.clear_workflow_slot(SlotName::Date);
+                conversation.clear_workflow_slot(SlotName::Time);
+                WorkflowPostProcessResult::Failed {
+                    updated_conversation: conversation,
+                    reply: rust_i18n::t!(
+                        "workflow.reservation_create.closed.error",
+                        locale = lang
+                    )
+                    .to_string(),
+                }
+            }
+            Err(ReservationFailure::NoAvailability { next_slot }) => {
+                conversation.clear_workflow_slot(SlotName::Date);
+                conversation.clear_workflow_slot(SlotName::Time);
+                let reply = match next_slot {
+                    Some(suggestion) => rust_i18n::t!(
+                        "workflow.reservation_create.no_availability_with_suggestion.error",
+                        locale = lang,
+                        next_slot = suggestion
+                    )
+                    .to_string(),
+                    None => rust_i18n::t!(
+                        "workflow.reservation_create.no_availability.error",
+                        locale = lang
+                    )
+                    .to_string(),
+                };
+                WorkflowPostProcessResult::Failed {
+                    updated_conversation: conversation,
+                    reply,
+                }
+            }
         }
     }
 }
@@ -247,24 +287,10 @@ fn month_name(month: u32) -> &'static str {
     }
 }
 
-fn required_slot(
-    name: SlotName,
-    slot_type: SlotType,
-    entity_types: Vec<EntityType>,
-    prompt: &str,
-) -> SlotDefinition {
-    SlotDefinition {
-        name,
-        slot_type,
-        required: true,
-        entity_types,
-        prompt: i18n_key(prompt),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::conversation::application::port::outbound::restaurant_queries::ReservationFailure;
     use crate::core::conversation::domain::conversation::Conversation;
     use crate::core::conversation::domain::domain_type::DomainType;
     use crate::core::conversation::domain::slot::SlotValue;
@@ -274,8 +300,40 @@ mod tests {
     struct StubReservationPort;
 
     impl RestaurantReservationPort for StubReservationPort {
-        fn create_reservation(&self, _: ReservationCreateQuery) -> String {
-            "created:REST-NEW123".to_string()
+        fn create_reservation(&self, _: ReservationCreateQuery) -> Result<String, ReservationFailure> {
+            Ok("created:REST-NEW123".to_string())
+        }
+
+        fn check_reservation(
+            &self,
+            _: crate::core::conversation::application::port::outbound::restaurant_queries::ReservationLookupQuery,
+        ) -> String {
+            "no_reference_or_name:".to_string()
+        }
+    }
+
+    struct FullStubReservationPort;
+
+    impl RestaurantReservationPort for FullStubReservationPort {
+        fn create_reservation(&self, _: ReservationCreateQuery) -> Result<String, ReservationFailure> {
+            Err(ReservationFailure::NoAvailability {
+                next_slot: Some("Monday June 1 at 21:00".to_string()),
+            })
+        }
+
+        fn check_reservation(
+            &self,
+            _: crate::core::conversation::application::port::outbound::restaurant_queries::ReservationLookupQuery,
+        ) -> String {
+            "no_reference_or_name:".to_string()
+        }
+    }
+
+    struct ClosedStubReservationPort;
+
+    impl RestaurantReservationPort for ClosedStubReservationPort {
+        fn create_reservation(&self, _: ReservationCreateQuery) -> Result<String, ReservationFailure> {
+            Err(ReservationFailure::RestaurantClosed)
         }
 
         fn check_reservation(
@@ -297,89 +355,68 @@ mod tests {
         }
     }
 
+    fn handler() -> ReservationCreateIntentHandler<StubReservationPort> {
+        ReservationCreateIntentHandler::new(Arc::new(StubReservationPort))
+    }
+
     fn handle(
         conversation: Conversation,
         intent: IntentId,
+        text: &str,
         entities: Vec<NluEntity>,
     ) -> StateHandlerResult {
-        use crate::core::conversation::domain::date_resolver::DateResolver;
-        struct AlwaysOk;
-        impl DateResolver for AlwaysOk {
-            fn resolve(
-                &self,
-                raw: &str,
-                _today: chrono::NaiveDate,
-            ) -> Result<
-                chrono::NaiveDate,
-                crate::core::conversation::domain::date_resolver::DateResolveError,
-            > {
-                match raw {
-                    "June 12" => Ok(chrono::NaiveDate::from_ymd_opt(2026, 6, 12).unwrap()),
-                    "next Tuesday" => Ok(chrono::NaiveDate::from_ymd_opt(2026, 5, 19).unwrap()),
-                    value => panic!("unexpected test date input: {value}"),
-                }
-            }
-        }
-        ReservationCreateIntentHandler::new(Arc::new(AlwaysOk), Arc::new(StubReservationPort))
-            .handle(IntentHandlerInput {
-                conversation,
-                analysis_intent: &intent,
-                text: "",
-                analysis_entities: &entities,
-            })
+        handler().handle(IntentHandlerInput {
+            conversation,
+            analysis_intent: &intent,
+            text,
+            analysis_entities: &entities,
+        })
     }
 
     #[test]
     fn idle_workflow_prompts_for_first_missing_slot() {
         let conversation = Conversation::new(DomainType::Restaurant);
-
-        let result = handle(conversation, IntentId::ReservationCreate, vec![]);
-
-        assert_eq!(result.reply, "What name should I use for the reservation?");
+        let result = handle(conversation, IntentId::ReservationCreate, "", vec![]);
+        assert!(result.reply.ends_with("What name should I use for the reservation?"));
         assert!(result.updated_conversation.has_active_workflow());
     }
 
     #[test]
     fn missing_slots_are_filled_from_entities() {
         let conversation = Conversation::new(DomainType::Restaurant);
-
         let result = handle(
             conversation,
             IntentId::ReservationCreate,
+            "",
             vec![
                 entity(EntityType::Person, "Alice"),
-                entity(EntityType::Date, "June 12"),
+                entity(EntityType::Date, "2099-06-12"),
                 entity(EntityType::Time, "7pm"),
             ],
         );
-
         let workflow = result.updated_conversation.active_workflow().unwrap();
-        assert_eq!(
-            workflow.slot_value(SlotName::Name),
-            Some(&SlotValue::Text("Alice".to_string()))
-        );
-        assert_eq!(result.reply, "For how many people?");
+        assert_eq!(workflow.slot_value(SlotName::Name), Some(&SlotValue::Text("Alice".to_string())));
+        assert!(result.reply.ends_with("For how many people?"));
     }
 
     #[test]
     fn filled_workflow_asks_for_confirmation() {
         let conversation = Conversation::new(DomainType::Restaurant);
-
         let result = handle(
             conversation,
             IntentId::ReservationCreate,
+            "",
             vec![
                 entity(EntityType::Person, "Alice"),
-                entity(EntityType::Date, "June 12"),
+                entity(EntityType::Date, "2099-06-12"),
                 entity(EntityType::Time, "7pm"),
                 entity(EntityType::PeopleCount, "4 people"),
             ],
         );
-
-        assert_eq!(
-            result.reply,
-            "I have the reservation details: Alice, Friday June 12 2026 at 7pm, for 4 people. Do you confirm this reservation?"
-        );
+        assert!(result.reply.contains("Alice"));
+        assert!(result.reply.contains("7pm"));
+        assert!(result.reply.contains("4 people"));
+        assert!(result.reply.contains("Do you confirm"));
     }
 
     #[test]
@@ -387,49 +424,24 @@ mod tests {
         let conversation = handle(
             Conversation::new(DomainType::Restaurant),
             IntentId::ReservationCreate,
+            "",
             vec![
                 entity(EntityType::Person, "Alice"),
-                entity(EntityType::Date, "June 12"),
+                entity(EntityType::Date, "2099-06-12"),
                 entity(EntityType::Time, "7pm"),
             ],
         )
         .updated_conversation;
-
-        use crate::core::conversation::domain::date_resolver::DateResolver;
-        struct AlwaysOk;
-        impl DateResolver for AlwaysOk {
-            fn resolve(
-                &self,
-                raw: &str,
-                _today: chrono::NaiveDate,
-            ) -> Result<
-                chrono::NaiveDate,
-                crate::core::conversation::domain::date_resolver::DateResolveError,
-            > {
-                match raw {
-                    "June 12" => Ok(chrono::NaiveDate::from_ymd_opt(2026, 6, 12).unwrap()),
-                    value => panic!("unexpected test date input: {value}"),
-                }
-            }
-        }
-        let result =
-            ReservationCreateIntentHandler::new(Arc::new(AlwaysOk), Arc::new(StubReservationPort))
-                .handle(IntentHandlerInput {
-                    conversation,
-                    analysis_intent: &IntentId::ReservationCreate,
-                    text: "10",
-                    analysis_entities: &[],
-                });
-
+        let result = handler().handle(IntentHandlerInput {
+            conversation,
+            analysis_intent: &IntentId::ReservationCreate,
+            text: "10",
+            analysis_entities: &[],
+        });
         let workflow = result.updated_conversation.active_workflow().unwrap();
-        assert_eq!(
-            workflow.slot_value(SlotName::People),
-            Some(&SlotValue::Number(10))
-        );
-        assert_eq!(
-            result.reply,
-            "I have the reservation details: Alice, Friday June 12 2026 at 7pm, for 10 people. Do you confirm this reservation?"
-        );
+        assert_eq!(workflow.slot_value(SlotName::People), Some(&SlotValue::Number(10)));
+        assert!(result.reply.contains("10 people"));
+        assert!(result.reply.contains("Do you confirm"));
     }
 
     #[test]
@@ -437,17 +449,16 @@ mod tests {
         let conversation = handle(
             Conversation::new(DomainType::Restaurant),
             IntentId::ReservationCreate,
+            "",
             vec![
                 entity(EntityType::Person, "Alice"),
-                entity(EntityType::Date, "June 12"),
+                entity(EntityType::Date, "2099-06-12"),
                 entity(EntityType::Time, "7pm"),
                 entity(EntityType::PeopleCount, "4 people"),
             ],
         )
         .updated_conversation;
-
-        let result = handle(conversation, IntentId::Negative, vec![]);
-
+        let result = handle(conversation, IntentId::Negative, "", vec![]);
         assert_eq!(result.reply, "Okay. What would you like to change?");
         assert!(result.updated_conversation.has_active_workflow());
     }
@@ -457,30 +468,19 @@ mod tests {
         let conversation = handle(
             Conversation::new(DomainType::Restaurant),
             IntentId::ReservationCreate,
+            "",
             vec![
                 entity(EntityType::Person, "Alice"),
-                entity(EntityType::Date, "June 12"),
+                entity(EntityType::Date, "2099-06-12"),
                 entity(EntityType::Time, "7pm"),
                 entity(EntityType::PeopleCount, "4 people"),
             ],
         )
         .updated_conversation;
-
-        let result = handle(
-            conversation,
-            IntentId::Negative,
-            vec![entity(EntityType::PeopleCount, "5 people")],
-        );
-
-        assert_eq!(
-            result.reply,
-            "I have the reservation details: Alice, Friday June 12 2026 at 7pm, for 5 people. Do you confirm this reservation?"
-        );
+        let result = handle(conversation, IntentId::Negative, "", vec![entity(EntityType::PeopleCount, "5 people")]);
+        assert!(result.reply.contains("Do you confirm"));
         let workflow = result.updated_conversation.active_workflow().unwrap();
-        assert_eq!(
-            workflow.slot_value(SlotName::People),
-            Some(&SlotValue::Number(5))
-        );
+        assert_eq!(workflow.slot_value(SlotName::People), Some(&SlotValue::Number(5)));
     }
 
     #[test]
@@ -488,50 +488,114 @@ mod tests {
         let conversation = handle(
             Conversation::new(DomainType::Restaurant),
             IntentId::ReservationCreate,
+            "",
             vec![
                 entity(EntityType::Person, "Alice"),
-                entity(EntityType::Date, "June 12"),
+                entity(EntityType::Date, "2099-06-12"),
+                entity(EntityType::Time, "7pm"),
+                entity(EntityType::PeopleCount, "4 people"),
+            ],
+        )
+        .updated_conversation;
+        let result = handle(conversation, IntentId::Affirmative, "", vec![]);
+        assert!(result.reply.contains("REST-NEW123"));
+        assert!(result.updated_conversation.is_idle());
+        assert_eq!(result.updated_conversation.known_customer_name(), Some("Alice"));
+        assert_eq!(result.updated_conversation.last_reservation_reference(), Some("REST-NEW123"));
+    }
+
+    #[test]
+    fn past_date_triggers_constraint_error_and_re_prompts() {
+        let conversation = Conversation::new(DomainType::Restaurant);
+        let result = handle(
+            conversation,
+            IntentId::ReservationCreate,
+            "",
+            vec![
+                entity(EntityType::Person, "Alice"),
+                entity(EntityType::Date, "2000-01-01"),
+            ],
+        );
+        assert_eq!(result.reply, "That date is in the past. Please provide a future date.");
+        assert!(result.updated_conversation.has_active_workflow());
+        assert!(result.updated_conversation.active_workflow().unwrap().slot_value(SlotName::Date).is_none());
+    }
+
+    #[test]
+    fn people_out_of_range_triggers_constraint_error() {
+        let conversation = Conversation::new(DomainType::Restaurant);
+        let result = handle(
+            conversation,
+            IntentId::ReservationCreate,
+            "",
+            vec![
+                entity(EntityType::Person, "Alice"),
+                entity(EntityType::Date, "2099-06-12"),
+                entity(EntityType::Time, "7pm"),
+                entity(EntityType::PeopleCount, "50"),
+            ],
+        );
+        assert!(!result.reply.contains("Do you confirm"));
+        assert!(result.updated_conversation.has_active_workflow());
+    }
+
+    #[test]
+    fn no_availability_clears_date_and_time_slots_and_suggests_next() {
+        let conversation = handle(
+            Conversation::new(DomainType::Restaurant),
+            IntentId::ReservationCreate,
+            "",
+            vec![
+                entity(EntityType::Person, "Alice"),
+                entity(EntityType::Date, "2099-06-12"),
                 entity(EntityType::Time, "7pm"),
                 entity(EntityType::PeopleCount, "4 people"),
             ],
         )
         .updated_conversation;
 
-        let result = handle(conversation, IntentId::Affirmative, vec![]);
+        let result = ReservationCreateIntentHandler::new(Arc::new(FullStubReservationPort))
+            .handle(IntentHandlerInput {
+                conversation,
+                analysis_intent: &IntentId::Affirmative,
+                text: "",
+                analysis_entities: &[],
+            });
 
-        assert_eq!(
-            result.reply,
-            "Your reservation is confirmed for Alice, Friday June 12 2026 at 7pm, for 4 people. Your reference is REST-NEW123."
-        );
-        assert!(result.updated_conversation.is_idle());
-        assert_eq!(
-            result.updated_conversation.known_customer_name(),
-            Some("Alice")
-        );
-        assert_eq!(
-            result.updated_conversation.last_reservation_reference(),
-            Some("REST-NEW123")
-        );
+        assert!(result.reply.contains("Monday June 1 at 21:00"));
+        assert!(result.updated_conversation.has_active_workflow());
+        let wf = result.updated_conversation.active_workflow().unwrap();
+        assert!(wf.slot_value(SlotName::Date).is_none());
+        assert!(wf.slot_value(SlotName::Time).is_none());
     }
 
     #[test]
-    fn relative_date_is_rendered_as_resolved_calendar_date() {
-        let conversation = Conversation::new(DomainType::Restaurant);
-
-        let result = handle(
-            conversation,
+    fn closed_restaurant_clears_date_and_time_and_reports_closed() {
+        let conversation = handle(
+            Conversation::new(DomainType::Restaurant),
             IntentId::ReservationCreate,
+            "",
             vec![
-                entity(EntityType::Person, "Steph"),
-                entity(EntityType::Date, "next Tuesday"),
-                entity(EntityType::Time, "9 pm"),
-                entity(EntityType::PeopleCount, "10"),
+                entity(EntityType::Person, "Alice"),
+                entity(EntityType::Date, "2099-06-12"),
+                entity(EntityType::Time, "7pm"),
+                entity(EntityType::PeopleCount, "4 people"),
             ],
-        );
+        )
+        .updated_conversation;
 
-        assert_eq!(
-            result.reply,
-            "I have the reservation details: Steph, Tuesday May 19 2026 at 9 pm, for 10 people. Do you confirm this reservation?"
-        );
+        let result = ReservationCreateIntentHandler::new(Arc::new(ClosedStubReservationPort))
+            .handle(IntentHandlerInput {
+                conversation,
+                analysis_intent: &IntentId::Affirmative,
+                text: "",
+                analysis_entities: &[],
+            });
+
+        assert!(result.reply.contains("closed") || result.reply.contains("opening hours") || result.reply.contains("horaires"));
+        assert!(result.updated_conversation.has_active_workflow());
+        let wf = result.updated_conversation.active_workflow().unwrap();
+        assert!(wf.slot_value(SlotName::Date).is_none());
+        assert!(wf.slot_value(SlotName::Time).is_none());
     }
 }

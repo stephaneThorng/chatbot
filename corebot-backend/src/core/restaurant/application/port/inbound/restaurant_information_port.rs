@@ -3,7 +3,7 @@ use crate::core::restaurant::application::port::inbound::restaurant_queries::{
     PaymentMethodQuery, PriceQuery,
 };
 
-pub trait RestaurantInformationPort {
+pub trait RestaurantInformationUseCase {
     fn get_opening_hours(&self) -> String;
     fn find_menu(&self, query: MenuQuery) -> String;
     fn find_menu_dietary(&self, query: MenuDietaryQuery) -> String;

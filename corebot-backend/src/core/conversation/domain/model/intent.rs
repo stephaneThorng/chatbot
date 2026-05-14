@@ -119,6 +119,7 @@ pub struct IntentPolicy {
     pub kind: IntentKind,
     pub nlu_task: Option<NluTask>,
     pub workflow_slots: Vec<SlotDefinition>,
+    pub starting_message: Option<I18nKey>,
     pub confirmation_prompt: Option<I18nKey>,
     pub completion_response: Option<I18nKey>,
 }

@@ -82,6 +82,11 @@ impl Workflow {
         Ok(())
     }
 
+    /// Remove a slot value (used to clear an invalid slot after a constraint violation).
+    pub fn clear_slot(&mut self, slot_name: SlotName) {
+        self.slots.remove(slot_name);
+    }
+
     /// True when all data slots are filled but confirmation is not yet.
     pub fn is_ready_for_confirmation(&self) -> bool {
         let all_data_filled = self
@@ -120,6 +125,7 @@ mod tests {
                 slot(SlotName::Time, SlotType::Time, true),
                 slot(SlotName::People, SlotType::Number, true),
             ],
+            starting_message: None,
             confirmation_prompt: None,
             completion_response: None,
         })
@@ -135,6 +141,7 @@ mod tests {
                 slot(SlotName::Name, SlotType::Text, false),
                 slot(SlotName::Date, SlotType::Date, false),
             ],
+            starting_message: None,
             confirmation_prompt: None,
             completion_response: None,
         })
@@ -147,6 +154,7 @@ mod tests {
             required,
             entity_types: vec![EntityType::Unknown("test".to_string())],
             prompt: i18n_key("test.prompt"),
+            constraints: vec![],
         }
     }
 

@@ -27,6 +27,7 @@ impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
             kind: IntentKind::Informational,
             nlu_task: None,
             workflow_slots: vec![],
+            starting_message: None,
             confirmation_prompt: None,
             completion_response: None,
         }

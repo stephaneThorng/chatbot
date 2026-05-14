@@ -22,7 +22,6 @@ use crate::core::conversation::application::intent_handlers::reservation_create_
 use crate::core::conversation::application::intent_handlers::static_reply_handler::StaticReplyIntentHandler;
 use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
 use crate::core::conversation::application::port::outbound::restaurant_reservation_port::RestaurantReservationPort;
-use crate::core::conversation::domain::date_resolver::DateResolver;
 use crate::core::conversation::domain::model::intent::IntentId;
 
 pub struct RestaurantConversationDependencies<I, R>
@@ -32,7 +31,6 @@ where
 {
     pub information_port: Arc<I>,
     pub reservation_port: Arc<R>,
-    pub date_resolver: Arc<dyn DateResolver>,
 }
 
 /// Builds the [`IntentHandlerRegistry`] for the restaurant domain.
@@ -50,14 +48,12 @@ impl RestaurantHandlerRegistryFactory {
         let RestaurantConversationDependencies {
             information_port,
             reservation_port,
-            date_resolver,
         } = deps;
 
         let handlers: Vec<Box<dyn IntentHandler>> = vec![
-            Box::new(ReservationCreateIntentHandler::new(
-                date_resolver,
-                Arc::clone(&reservation_port),
-            )),
+            Box::new(ReservationCreateIntentHandler::new(Arc::clone(
+                &reservation_port,
+            ))),
             Box::new(ReservationCancelIntentHandler),
             Box::new(OpeningHoursIntentHandler::new(Arc::clone(
                 &information_port,

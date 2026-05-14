@@ -1,4 +1,5 @@
 /// In-memory domain model for the restaurant domain (v1).
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 
 #[derive(Debug, Clone)]
 pub struct MenuItem {
@@ -35,19 +36,79 @@ impl MenuItem {
 pub struct Reservation {
     pub reference: String,
     pub name: String,
-    pub date: String,
-    pub time: String,
+    pub date: NaiveDate,
+    pub time: NaiveTime,
     pub people_count: u32,
 }
 
 impl Reservation {
-    pub fn new(reference: &str, name: &str, date: &str, time: &str, people_count: u32) -> Self {
+    pub fn new(
+        reference: &str,
+        name: &str,
+        date: NaiveDate,
+        time: NaiveTime,
+        people_count: u32,
+    ) -> Self {
         Self {
             reference: reference.to_string(),
             name: name.to_string(),
-            date: date.to_string(),
-            time: time.to_string(),
+            date,
+            time,
             people_count,
         }
     }
+}
+
+/// One type of table available in the restaurant.
+#[derive(Debug, Clone)]
+pub struct TableConfig {
+    /// Seats at this table.
+    pub capacity: u32,
+    /// How many tables of this type exist.
+    pub count: u32,
+}
+
+/// Static configuration for the restaurant (v1: hardcoded).
+#[derive(Debug, Clone)]
+pub struct RestaurantConfig {
+    pub opening: NaiveTime,
+    pub closing: NaiveTime,
+    /// Duration of one reservation slot in minutes.
+    pub slot_mins: u32,
+    pub tables: Vec<TableConfig>,
+}
+
+impl RestaurantConfig {
+    /// Default v1 configuration: open 11:00–22:00, 2-hour slots,
+    /// 2×6-seat, 3×4-seat, 3×2-seat tables.
+    pub fn default_v1() -> Self {
+        Self {
+            opening: NaiveTime::from_hms_opt(11, 0, 0).unwrap(),
+            closing: NaiveTime::from_hms_opt(22, 0, 0).unwrap(),
+            slot_mins: 120,
+            tables: vec![
+                TableConfig { capacity: 6, count: 2 },
+                TableConfig { capacity: 4, count: 3 },
+                TableConfig { capacity: 2, count: 3 },
+            ],
+        }
+    }
+
+    /// Total seating capacity across all tables.
+    pub fn total_capacity(&self) -> u32 {
+        self.tables.iter().map(|t| t.capacity * t.count).sum()
+    }
+}
+
+/// Error returned when a reservation cannot be created.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReservationError {
+    /// The requested time is outside opening hours.
+    RestaurantClosed,
+    /// No table combination can seat the party at the requested slot.
+    /// The optional field carries the next available slot if one exists
+    /// within the same day or the next few days.
+    NoAvailability {
+        next_slot: Option<NaiveDateTime>,
+    },
 }

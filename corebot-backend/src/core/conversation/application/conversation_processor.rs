@@ -179,7 +179,6 @@ mod tests {
     use crate::core::conversation::application::restaurant_handler_registry_factory::{
         RestaurantConversationDependencies, RestaurantHandlerRegistryFactory,
     };
-    use crate::core::conversation::domain::date_resolver::{DateResolveError, DateResolver};
     use crate::core::conversation::domain::model::domain_type::DomainType;
     use crate::core::conversation::domain::slot::EntityType;
     use crate::core::nlu_engine::domain::analysis::{NerTokenLabel, NluIntent, NluIntentCandidate};
@@ -243,24 +242,12 @@ mod tests {
     struct StubReservationPort;
 
     impl RestaurantReservationPort for StubReservationPort {
-        fn create_reservation(&self, _: ReservationCreateQuery) -> String {
-            "created:REST-NEW123".to_string()
+        fn create_reservation(&self, _: ReservationCreateQuery) -> Result<String, crate::core::conversation::application::port::outbound::restaurant_queries::ReservationFailure> {
+            Ok("created:REST-NEW123".to_string())
         }
 
         fn check_reservation(&self, _: ReservationLookupQuery) -> String {
             "no_reference_or_name:".to_string()
-        }
-    }
-
-    struct AlwaysOk;
-
-    impl DateResolver for AlwaysOk {
-        fn resolve(
-            &self,
-            _: &str,
-            today: chrono::NaiveDate,
-        ) -> Result<chrono::NaiveDate, DateResolveError> {
-            Ok(today + chrono::Duration::days(1))
         }
     }
 
@@ -269,7 +256,6 @@ mod tests {
             RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
                 information_port: Arc::new(StubInformationPort),
                 reservation_port: Arc::new(StubReservationPort),
-                date_resolver: Arc::new(AlwaysOk),
             });
         ConversationProcessor::new(restaurant_registry, IntentHandlerRegistry::new(vec![]))
     }
@@ -347,7 +333,7 @@ mod tests {
             analysis("reservation_create", vec![]),
         );
 
-        assert_eq!(result.reply, "What name should I use for the reservation?");
+        assert!(result.reply.ends_with("What name should I use for the reservation?"));
         assert!(result.updated_conversation.has_active_workflow());
         assert!(conversation.is_idle());
     }

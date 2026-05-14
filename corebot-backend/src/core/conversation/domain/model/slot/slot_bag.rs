@@ -40,8 +40,6 @@ impl SlotBag {
             });
         }
 
-        Self::validate(name, &value)?;
-
         self.slots.insert(name, value);
         Ok(())
     }
@@ -54,24 +52,9 @@ impl SlotBag {
         self.slots.contains_key(&name)
     }
 
-    fn validate(name: SlotName, value: &SlotValue) -> Result<(), SlotError> {
-        match (name, value) {
-            (SlotName::Name, SlotValue::Text(value))
-                if value.trim().is_empty() || value.len() > 100 =>
-            {
-                Err(SlotError {
-                    slot: name,
-                    message: "Name must be non-empty (max 100 chars)".to_string(),
-                })
-            }
-            (SlotName::People, SlotValue::Number(value)) if *value < 1 || *value > 20 => {
-                Err(SlotError {
-                    slot: name,
-                    message: "People must be between 1 and 20".to_string(),
-                })
-            }
-            _ => Ok(()),
-        }
+    /// Remove a slot value (used to clear an invalid slot after constraint violation).
+    pub fn remove(&mut self, name: SlotName) {
+        self.slots.remove(&name);
     }
 }
 
@@ -106,36 +89,13 @@ mod tests {
     }
 
     #[test]
-    fn reject_empty_name() {
-        let bag = SlotBag::new();
+    fn remove_clears_slot() {
+        let mut bag = SlotBag::new();
+        bag.set_slot(SlotName::Name, SlotType::Text, SlotValue::Text("Alice".into()))
+            .unwrap();
 
-        let result = bag.into_slot(SlotName::Name, SlotType::Text, SlotValue::Text("".into()));
+        bag.remove(SlotName::Name);
 
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn reject_people_out_of_range() {
-        let bag = SlotBag::new();
-
-        assert!(
-            bag.clone()
-                .into_slot(SlotName::People, SlotType::Number, SlotValue::Number(0))
-                .is_err()
-        );
-        assert!(
-            bag.into_slot(SlotName::People, SlotType::Number, SlotValue::Number(21))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn accept_people_in_range() {
-        let bag = SlotBag::new();
-
-        assert!(
-            bag.into_slot(SlotName::People, SlotType::Number, SlotValue::Number(4))
-                .is_ok()
-        );
+        assert!(!bag.is_filled(SlotName::Name));
     }
 }

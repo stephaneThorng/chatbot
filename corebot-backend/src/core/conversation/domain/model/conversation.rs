@@ -112,6 +112,13 @@ impl Conversation {
         }
     }
 
+    /// Remove a slot value from the active workflow (e.g. after a constraint violation).
+    pub fn clear_workflow_slot(&mut self, slot_name: SlotName) {
+        if let ConversationState::Workflow(workflow) = &mut self.state {
+            workflow.clear_slot(slot_name);
+        }
+    }
+
     pub fn active_workflow(&self) -> Option<&Workflow> {
         match &self.state {
             ConversationState::Workflow(wf) => Some(wf),
@@ -172,7 +179,9 @@ mod tests {
                 required: true,
                 entity_types: vec![EntityType::Person],
                 prompt: i18n_key("test.prompt"),
+                constraints: vec![],
             }],
+            starting_message: None,
             confirmation_prompt: None,
             completion_response: None,
         }
@@ -184,6 +193,7 @@ mod tests {
             kind: IntentKind::Informational,
             nlu_task: None,
             workflow_slots: vec![],
+            starting_message: None,
             confirmation_prompt: None,
             completion_response: None,
         }
@@ -295,7 +305,8 @@ mod tests {
             .into_started_workflow(&workflow_policy(IntentId::ReservationCreate))
             .unwrap();
 
-        let result = conv.into_workflow_slot(SlotName::Name, SlotValue::Text(String::new()));
+        // Providing a Number where Text is expected triggers a type mismatch error.
+        let result = conv.into_workflow_slot(SlotName::Name, SlotValue::Number(42));
 
         assert_eq!(result.unwrap_err().slot, SlotName::Name);
     }

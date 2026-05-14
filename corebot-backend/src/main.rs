@@ -5,7 +5,6 @@ use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 
 use corebot_backend::core::conversation::adapter::inbound::web::routes::conversation_routes_with_use_case;
-use corebot_backend::core::conversation::adapter::outbound::english_date_resolver::EnglishDateResolver;
 use corebot_backend::core::conversation::adapter::outbound::in_memory_conversation_repository::InMemoryConversationRepository;
 use corebot_backend::core::conversation::adapter::outbound::langdetect_language_detector::LangdetectLanguageDetector;
 use corebot_backend::core::conversation::adapter::outbound::nlu_engine_gateway::NluEngineGateway;
@@ -21,7 +20,7 @@ use corebot_backend::core::conversation::application::restaurant_handler_registr
 use corebot_backend::core::conversation::domain::domain_type::DomainType;
 use corebot_backend::core::nlu_engine::adapter::outbound::onnx_nlu_runtime::OnnxNluRuntime;
 use corebot_backend::core::nlu_engine::application::AnalyzeTextService;
-use corebot_backend::core::restaurant::adapter::inbound::restaurant_adapter::RestaurantAdapter;
+use corebot_backend::core::restaurant::application::restaurant_service::RestaurantService;
 
 const BIND_ADDRESS: &str = "0.0.0.0:3000";
 
@@ -34,13 +33,11 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let restaurant = Arc::new(RestaurantAdapter::new());
-    let date_resolver = Arc::new(EnglishDateResolver);
+    let restaurant = Arc::new(RestaurantService::new());
     let restaurant_registry =
         RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
             information_port: Arc::new(RestaurantInformationGateway::new(Arc::clone(&restaurant))),
             reservation_port: Arc::new(RestaurantReservationGateway::new(Arc::clone(&restaurant))),
-            date_resolver,
         });
     let processor =
         ConversationProcessor::new(restaurant_registry, IntentHandlerRegistry::new(vec![]));

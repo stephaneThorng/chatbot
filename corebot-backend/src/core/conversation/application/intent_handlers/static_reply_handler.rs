@@ -27,6 +27,7 @@ impl IntentHandler for StaticReplyIntentHandler {
             kind: IntentKind::Informational,
             nlu_task: None,
             workflow_slots: vec![],
+            starting_message: None,
             confirmation_prompt: None,
             completion_response: None,
         }

@@ -56,7 +56,20 @@ pub struct ReservationLookupQuery {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReservationCreateQuery {
     pub name: String,
-    pub date: String,
-    pub time: String,
+    pub date: chrono::NaiveDate,
+    pub time: chrono::NaiveTime,
     pub people_count: u32,
 }
+
+/// Failure reason returned by `create_reservation` through the conversation outbound port.
+/// Mirrors [`crate::core::restaurant::domain::model::ReservationError`] but decoupled
+/// from the restaurant domain so the conversation core never imports restaurant types.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReservationFailure {
+    /// Requested time is outside opening hours.
+    RestaurantClosed,
+    /// No table combination available for the requested slot.
+    /// `next_slot` is a pre-formatted human-readable string when available.
+    NoAvailability { next_slot: Option<String> },
+}
+
