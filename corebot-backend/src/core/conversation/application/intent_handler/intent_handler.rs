@@ -2,8 +2,7 @@ use std::collections::HashMap;
 
 use chrono::Local;
 use rust_i18n::t;
-
-use crate::core::conversation::application::nlu_analysis_result::NluEntityResult;
+use crate::core::conversation::application::dto::nlu_analysis_result::NluEntityResult;
 use crate::core::conversation::domain::conversation::Conversation;
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, WorkflowConfig};
 use crate::core::conversation::domain::model::slot::{

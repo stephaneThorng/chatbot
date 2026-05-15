@@ -1,27 +1,27 @@
 use rust_i18n::t;
 use std::sync::Arc;
 
-use crate::core::conversation::application::intent_handler::{
+use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
 use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
-pub struct AskContactIntentHandler<P: RestaurantInformationPort + ?Sized> {
+pub struct AskEntertainmentIntentHandler<P: RestaurantInformationPort> {
     information_port: Arc<P>,
 }
 
-impl<P: RestaurantInformationPort + ?Sized> AskContactIntentHandler<P> {
+impl<P: RestaurantInformationPort> AskEntertainmentIntentHandler<P> {
     pub fn new(information_port: Arc<P>) -> Self {
         Self { information_port }
     }
 }
 
-impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
-    for AskContactIntentHandler<P>
+impl<P: RestaurantInformationPort + Send + Sync> IntentHandler
+    for AskEntertainmentIntentHandler<P>
 {
     fn intent(&self) -> IntentId {
-        IntentId::AskContact
+        IntentId::AskEntertainment
     }
 
     fn config(&self) -> IntentConfig {
@@ -33,20 +33,16 @@ impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
 
     fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
-        let raw = self.information_port.get_contact();
-        let reply = if let Some(payload) = raw.strip_prefix("contact:") {
-            let mut p = payload.splitn(2, '|');
-            let phone = p.next().unwrap_or("");
-            let email = p.next().unwrap_or("");
+        let raw = self.information_port.get_entertainment_info();
+        let reply = if let Some(info) = raw.strip_prefix("entertainment:yes|") {
             t!(
-                "intent.ask_contact.data.reply",
+                "intent.ask_entertainment.confirmed.reply",
                 locale = lang,
-                phone = phone,
-                email = email
+                info = info
             )
             .to_string()
         } else {
-            t!("intent.ask_contact.reply", locale = lang).to_string()
+            t!("intent.ask_entertainment.reply", locale = lang).to_string()
         };
         StateHandlerResult {
             updated_conversation: input.conversation,

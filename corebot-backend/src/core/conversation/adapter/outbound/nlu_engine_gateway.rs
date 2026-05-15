@@ -1,4 +1,4 @@
-use crate::core::conversation::application::nlu_analysis_result::{
+use crate::core::conversation::application::dto::nlu_analysis_result::{
     NluAnalysisResult, NluEntityResult, NluIntentCandidate,
 };
 use crate::core::conversation::application::port::outbound::nlp_engine_gateway_port::NlpEngineGatewayPort;

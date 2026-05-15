@@ -1,4 +1,4 @@
-use crate::core::conversation::application::{HandleConversationCommand, HandleConversationResult};
+use crate::core::conversation::application::dto::conversation_command::{HandleConversationCommand, HandleConversationResult};
 
 /// Inbound port — defines what the web adapter can ask the application layer to do.
 pub trait HandleConversationUseCase {

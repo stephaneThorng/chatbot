@@ -1,4 +1,4 @@
-use crate::core::conversation::application::nlu_analysis_result::NluAnalysisResult;
+use crate::core::conversation::application::dto::nlu_analysis_result::NluAnalysisResult;
 use crate::core::conversation::domain::domain_type::DomainType;
 use crate::core::conversation::domain::model::intent::NluTask;
 use crate::core::conversation::domain::model::slot::SlotName;

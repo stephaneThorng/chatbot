@@ -13,8 +13,8 @@ use corebot_backend::core::conversation::adapter::outbound::restaurant_domain_ga
 };
 use corebot_backend::core::conversation::application::conversation_processor::ConversationProcessor;
 use corebot_backend::core::conversation::application::conversation_service::HandleConversationService;
-use corebot_backend::core::conversation::application::intent_handler::IntentHandlerRegistry;
-use corebot_backend::core::conversation::application::restaurant_handler_registry_factory::{
+use corebot_backend::core::conversation::application::intent_handler::intent_handler::IntentHandlerRegistry;
+use corebot_backend::core::conversation::application::intent_handler::restaurant_handler_registry_factory::{
     RestaurantConversationDependencies, RestaurantHandlerRegistryFactory,
 };
 use corebot_backend::core::conversation::domain::domain_type::DomainType;

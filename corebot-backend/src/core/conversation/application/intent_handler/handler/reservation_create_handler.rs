@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::core::conversation::application::intent_handler::{
+use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult, WorkflowPostProcessResult,
 };
 use crate::core::conversation::application::port::outbound::restaurant_queries::{
@@ -191,7 +191,7 @@ impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::conversation::application::nlu_analysis_result::NluEntityResult;
+    use crate::core::conversation::application::dto::nlu_analysis_result::NluEntityResult;
     use crate::core::conversation::application::port::outbound::restaurant_queries::ReservationFailure;
     use crate::core::conversation::domain::conversation::Conversation;
     use crate::core::conversation::domain::domain_type::DomainType;

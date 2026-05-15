@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use rust_i18n::t;
 
-use super::intent_handler::{IntentHandlerInput, IntentHandlerRegistry, StateHandlerResult};
-use crate::core::conversation::application::nlu_analysis_result::{
+use crate::core::conversation::application::intent_handler::intent_handler::{IntentHandlerInput, IntentHandlerRegistry, StateHandlerResult};
+use crate::core::conversation::application::dto::nlu_analysis_result::{
     NluAnalysisResult, NluEntityResult,
 };
 use crate::core::conversation::domain::model::conversation::Conversation;
@@ -202,14 +202,14 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::core::conversation::application::nlu_analysis_result::NluIntentCandidate;
+    use crate::core::conversation::application::dto::nlu_analysis_result::NluIntentCandidate;
     use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
     use crate::core::conversation::application::port::outbound::restaurant_queries::{
         EventQuery, FacilityQuery, LocationQuery, MenuDietaryQuery, MenuItemDetailsQuery,
         MenuQuery, PaymentMethodQuery, PriceQuery, ReservationCreateQuery, ReservationLookupQuery,
     };
     use crate::core::conversation::application::port::outbound::restaurant_reservation_port::RestaurantReservationPort;
-    use crate::core::conversation::application::restaurant_handler_registry_factory::{
+    use crate::core::conversation::application::intent_handler::restaurant_handler_registry_factory::{
         RestaurantConversationDependencies, RestaurantHandlerRegistryFactory,
     };
     use crate::core::conversation::domain::model::domain_type::DomainType;

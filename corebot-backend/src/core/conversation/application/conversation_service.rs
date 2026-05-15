@@ -1,12 +1,12 @@
 use std::str::FromStr;
 
-use super::conversation_command::{HandleConversationCommand, HandleConversationResult};
+use super::dto::conversation_command::{HandleConversationCommand, HandleConversationResult};
 use super::conversation_processor::ConversationProcessor;
 use super::port::inbound::conversation_usecase::HandleConversationUseCase;
 use super::port::outbound::conversation_repository_port::ConversationRepositoryPort;
 use super::port::outbound::language_detector_port::LanguageDetectorPort;
 use super::port::outbound::nlp_engine_gateway_port::NlpEngineGatewayPort;
-use crate::core::conversation::application::nlu_analysis_result::NluAnalysisResult;
+use crate::core::conversation::application::dto::nlu_analysis_result::NluAnalysisResult;
 use crate::core::conversation::domain::conversation::Conversation;
 use crate::core::conversation::domain::conversation_id::ConversationId;
 use crate::core::conversation::domain::domain_type::DomainType;
@@ -177,8 +177,8 @@ mod tests {
     use std::sync::{Arc, Mutex, RwLock};
 
     use super::*;
-    use crate::core::conversation::application::intent_handler::IntentHandlerRegistry;
-    use crate::core::conversation::application::nlu_analysis_result::{
+    use crate::core::conversation::application::intent_handler::intent_handler::IntentHandlerRegistry;
+    use crate::core::conversation::application::dto::nlu_analysis_result::{
         NluAnalysisResult, NluEntityResult, NluIntentCandidate,
     };
     use crate::core::conversation::application::port::outbound::conversation_repository_port::{
@@ -192,7 +192,7 @@ mod tests {
         MenuQuery, PaymentMethodQuery, PriceQuery, ReservationCreateQuery, ReservationLookupQuery,
     };
     use crate::core::conversation::application::port::outbound::restaurant_reservation_port::RestaurantReservationPort;
-    use crate::core::conversation::application::restaurant_handler_registry_factory::{
+    use crate::core::conversation::application::intent_handler::restaurant_handler_registry_factory::{
         RestaurantConversationDependencies, RestaurantHandlerRegistryFactory,
     };
     use crate::core::conversation::domain::model::intent::NluTask;

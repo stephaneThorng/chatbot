@@ -1,7 +1,7 @@
 use rust_i18n::t;
 use std::sync::Arc;
 
-use crate::core::conversation::application::intent_handler::{
+use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
 use crate::core::conversation::application::port::outbound::restaurant_queries::ReservationLookupQuery;

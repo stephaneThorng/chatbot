@@ -1,6 +1,6 @@
 use rust_i18n::t;
 
-use crate::core::conversation::application::intent_handler::{
+use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};

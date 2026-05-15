@@ -1,27 +1,27 @@
 use rust_i18n::t;
 use std::sync::Arc;
 
-use crate::core::conversation::application::intent_handler::{
+use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
 use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
-pub struct AskTakeawayDeliveryIntentHandler<P: RestaurantInformationPort> {
+pub struct AskAccessibilityIntentHandler<P: RestaurantInformationPort> {
     information_port: Arc<P>,
 }
 
-impl<P: RestaurantInformationPort> AskTakeawayDeliveryIntentHandler<P> {
+impl<P: RestaurantInformationPort> AskAccessibilityIntentHandler<P> {
     pub fn new(information_port: Arc<P>) -> Self {
         Self { information_port }
     }
 }
 
 impl<P: RestaurantInformationPort + Send + Sync> IntentHandler
-    for AskTakeawayDeliveryIntentHandler<P>
+    for AskAccessibilityIntentHandler<P>
 {
     fn intent(&self) -> IntentId {
-        IntentId::AskTakeawayDelivery
+        IntentId::AskAccessibility
     }
 
     fn config(&self) -> IntentConfig {
@@ -33,22 +33,16 @@ impl<P: RestaurantInformationPort + Send + Sync> IntentHandler
 
     fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
-        let raw = self.information_port.get_takeaway_info();
-        let reply = if let Some(payload) = raw.strip_prefix("takeaway:yes|") {
+        let raw = self.information_port.get_accessibility_info();
+        let reply = if let Some(info) = raw.strip_prefix("accessibility:yes|") {
             t!(
-                "intent.ask_takeaway_delivery.available.reply",
+                "intent.ask_accessibility.confirmed.reply",
                 locale = lang,
-                info = payload
-            )
-            .to_string()
-        } else if raw.starts_with("takeaway:no|") {
-            t!(
-                "intent.ask_takeaway_delivery.unavailable.reply",
-                locale = lang
+                info = info
             )
             .to_string()
         } else {
-            t!("intent.ask_takeaway_delivery.reply", locale = lang).to_string()
+            t!("intent.ask_accessibility.reply", locale = lang).to_string()
         };
         StateHandlerResult {
             updated_conversation: input.conversation,
