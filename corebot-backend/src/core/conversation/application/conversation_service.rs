@@ -10,7 +10,7 @@ use crate::core::conversation::domain::conversation::Conversation;
 use crate::core::conversation::domain::conversation_id::ConversationId;
 use crate::core::conversation::domain::domain_type::DomainType;
 
-pub struct HandleConversationService<N, R, L>
+pub struct HandleConversationService<'a, N, R, L>
 where
     N: NlpEngineGatewayPort,
     R: ConversationRepositoryPort,
@@ -20,10 +20,10 @@ where
     nlu_engine_gateway: N,
     conversation_repository: R,
     language_detector: L,
-    processor: ConversationProcessor,
+    processor: ConversationProcessor<'a>,
 }
 
-impl<N, R, L> HandleConversationUseCase for HandleConversationService<N, R, L>
+impl<'a, N, R, L> HandleConversationUseCase for HandleConversationService<'a, N, R, L>
 where
     N: NlpEngineGatewayPort,
     R: ConversationRepositoryPort,
@@ -55,7 +55,7 @@ where
     }
 }
 
-impl<N, R, L> HandleConversationService<N, R, L>
+impl<'a, N, R, L> HandleConversationService<'a, N, R, L>
 where
     N: NlpEngineGatewayPort,
     R: ConversationRepositoryPort,
@@ -63,7 +63,7 @@ where
 {
     pub fn new(
         domain: DomainType,
-        processor: ConversationProcessor,
+        processor: ConversationProcessor<'a>,
         nlu_engine_gateway: N,
         conversation_repository: R,
         language_detector: L,
@@ -424,6 +424,7 @@ mod tests {
     }
 
     type TestUseCase = HandleConversationService<
+        'static,
         StubNlpAnalyzer,
         StubConversationRepository,
         StubLanguageDetector,
@@ -433,7 +434,7 @@ mod tests {
         use_case: TestUseCase,
         repo: StubConversationRepository,
         detector: StubLanguageDetector,
-        information_port: StubInformationPort,
+        information_port: &'static StubInformationPort,
     }
 
     fn make_use_case(analyzer: StubNlpAnalyzer) -> UseCaseParts {
@@ -447,12 +448,12 @@ mod tests {
     ) -> UseCaseParts {
         let repo = StubConversationRepository::new();
         let detector = StubLanguageDetector::new(lang);
-        let information_port = StubInformationPort::new();
-        let reservation_port = StubReservationPort;
+        let information_port = Box::leak(Box::new(StubInformationPort::new()));
+        let reservation_port = Box::leak(Box::new(StubReservationPort));
         let restaurant_registry =
             RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-                information_port: Arc::new(information_port.clone()),
-                reservation_port: Arc::new(reservation_port),
+                information_port,
+                reservation_port,
             });
         let processor =
             ConversationProcessor::new(restaurant_registry, IntentHandlerRegistry::new(vec![]));

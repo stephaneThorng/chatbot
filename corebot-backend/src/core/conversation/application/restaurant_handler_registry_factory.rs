@@ -1,8 +1,4 @@
-use std::sync::Arc;
-
-use crate::core::conversation::application::intent_handler::{
-    IntentHandler, IntentHandlerRegistry,
-};
+use crate::core::conversation::application::intent_handler::{IntentHandler, IntentHandlerRegistry};
 use crate::core::conversation::application::intent_handlers::ask_accessibility_handler::AskAccessibilityIntentHandler;
 use crate::core::conversation::application::intent_handlers::ask_contact_handler::AskContactIntentHandler;
 use crate::core::conversation::application::intent_handlers::ask_entertainment_handler::AskEntertainmentIntentHandler;
@@ -24,13 +20,13 @@ use crate::core::conversation::application::port::outbound::restaurant_informati
 use crate::core::conversation::application::port::outbound::restaurant_reservation_port::RestaurantReservationPort;
 use crate::core::conversation::domain::model::intent::IntentId;
 
-pub struct RestaurantConversationDependencies<I, R>
+pub struct RestaurantConversationDependencies<'a, I, R>
 where
-    I: RestaurantInformationPort + Send + Sync + 'static,
-    R: RestaurantReservationPort + Send + Sync + 'static,
+    I: RestaurantInformationPort + Send + Sync + ?Sized,
+    R: RestaurantReservationPort + Send + Sync + ?Sized,
 {
-    pub information_port: Arc<I>,
-    pub reservation_port: Arc<R>,
+    pub information_port: &'a I,
+    pub reservation_port: &'a R,
 }
 
 /// Builds the [`IntentHandlerRegistry`] for the restaurant domain.
@@ -40,55 +36,35 @@ where
 pub struct RestaurantHandlerRegistryFactory;
 
 impl RestaurantHandlerRegistryFactory {
-    pub fn build<I, R>(deps: RestaurantConversationDependencies<I, R>) -> IntentHandlerRegistry
+    pub fn build<'a, I, R>(
+        deps: RestaurantConversationDependencies<'a, I, R>,
+    ) -> IntentHandlerRegistry<'a>
     where
-        I: RestaurantInformationPort + Send + Sync + 'static,
-        R: RestaurantReservationPort + Send + Sync + 'static,
+        I: RestaurantInformationPort + Send + Sync + ?Sized + 'a,
+        R: RestaurantReservationPort + Send + Sync + ?Sized + 'a,
     {
         let RestaurantConversationDependencies {
             information_port,
             reservation_port,
         } = deps;
 
-        let handlers: Vec<Box<dyn IntentHandler>> = vec![
-            Box::new(ReservationCreateIntentHandler::new(Arc::clone(
-                &reservation_port,
-            ))),
+        let handlers: Vec<Box<dyn IntentHandler + 'a>> = vec![
+            Box::new(ReservationCreateIntentHandler::new(reservation_port)),
             Box::new(ReservationCancelIntentHandler),
-            Box::new(OpeningHoursIntentHandler::new(Arc::clone(
-                &information_port,
-            ))),
-            Box::new(MenuItemDetailsIntentHandler::new(Arc::clone(
-                &information_port,
-            ))),
-            Box::new(AskMenuGeneralIntentHandler::new(Arc::clone(
-                &information_port,
-            ))),
-            Box::new(AskMenuDietaryIntentHandler::new(Arc::clone(
-                &information_port,
-            ))),
-            Box::new(AskLocationIntentHandler::new(Arc::clone(&information_port))),
-            Box::new(AskContactIntentHandler::new(Arc::clone(&information_port))),
-            Box::new(AskPaymentMethodsIntentHandler::new(Arc::clone(
-                &information_port,
-            ))),
-            Box::new(AskPriceIntentHandler::new(Arc::clone(&information_port))),
-            Box::new(AskTakeawayDeliveryIntentHandler::new(Arc::clone(
-                &information_port,
-            ))),
-            Box::new(AskEventIntentHandler::new(Arc::clone(&information_port))),
-            Box::new(AskFacilitiesIntentHandler::new(Arc::clone(
-                &information_port,
-            ))),
-            Box::new(AskAccessibilityIntentHandler::new(Arc::clone(
-                &information_port,
-            ))),
-            Box::new(AskEntertainmentIntentHandler::new(Arc::clone(
-                &information_port,
-            ))),
-            Box::new(CheckReservationIntentHandler::new(Arc::clone(
-                &reservation_port,
-            ))),
+            Box::new(OpeningHoursIntentHandler::new(information_port)),
+            Box::new(MenuItemDetailsIntentHandler::new(information_port)),
+            Box::new(AskMenuGeneralIntentHandler::new(information_port)),
+            Box::new(AskMenuDietaryIntentHandler::new(information_port)),
+            Box::new(AskLocationIntentHandler::new(information_port)),
+            Box::new(AskContactIntentHandler::new(information_port)),
+            Box::new(AskPaymentMethodsIntentHandler::new(information_port)),
+            Box::new(AskPriceIntentHandler::new(information_port)),
+            Box::new(AskTakeawayDeliveryIntentHandler::new(information_port)),
+            Box::new(AskEventIntentHandler::new(information_port)),
+            Box::new(AskFacilitiesIntentHandler::new(information_port)),
+            Box::new(AskAccessibilityIntentHandler::new(information_port)),
+            Box::new(AskEntertainmentIntentHandler::new(information_port)),
+            Box::new(CheckReservationIntentHandler::new(reservation_port)),
             Box::new(StaticReplyIntentHandler::new(
                 IntentId::Greeting,
                 "intent.greeting.reply",

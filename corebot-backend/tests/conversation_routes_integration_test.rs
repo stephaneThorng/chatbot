@@ -162,10 +162,16 @@ impl LanguageDetectorPort for StubLanguageDetector {
 
 fn make_server(intent_name: &'static str) -> TestServer {
     let restaurant = Arc::new(StubRestaurant);
+    let information_gateway = Box::leak(Box::new(RestaurantInformationGateway::new(
+        Arc::clone(&restaurant),
+    )));
+    let reservation_gateway = Box::leak(Box::new(RestaurantReservationGateway::new(
+        Arc::clone(&restaurant),
+    )));
     let restaurant_registry =
         RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-            information_port: Arc::new(RestaurantInformationGateway::new(Arc::clone(&restaurant))),
-            reservation_port: Arc::new(RestaurantReservationGateway::new(Arc::clone(&restaurant))),
+            information_port: information_gateway,
+            reservation_port: reservation_gateway,
         });
     let processor =
         ConversationProcessor::new(restaurant_registry, IntentHandlerRegistry::new(vec![]));
@@ -208,10 +214,16 @@ fn entity(entity_type: EntityType, value: &str) -> NluEntity {
 
 fn make_scripted_server(responses: Vec<NluAnalysis>) -> TestServer {
     let restaurant = Arc::new(RestaurantService::new());
+    let information_gateway = Box::leak(Box::new(RestaurantInformationGateway::new(
+        Arc::clone(&restaurant),
+    )));
+    let reservation_gateway = Box::leak(Box::new(RestaurantReservationGateway::new(
+        Arc::clone(&restaurant),
+    )));
     let restaurant_registry =
         RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-            information_port: Arc::new(RestaurantInformationGateway::new(Arc::clone(&restaurant))),
-            reservation_port: Arc::new(RestaurantReservationGateway::new(Arc::clone(&restaurant))),
+            information_port: information_gateway,
+            reservation_port: reservation_gateway,
         });
     let processor =
         ConversationProcessor::new(restaurant_registry, IntentHandlerRegistry::new(vec![]));

@@ -1,5 +1,4 @@
 use rust_i18n::t;
-use std::sync::Arc;
 
 use crate::core::conversation::application::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
@@ -9,18 +8,18 @@ use crate::core::conversation::application::port::outbound::restaurant_reservati
 use crate::core::conversation::domain::model::intent::{IntentId, IntentKind, IntentPolicy};
 use crate::core::conversation::domain::model::slot::EntityType;
 
-pub struct CheckReservationIntentHandler<P: RestaurantReservationPort + ?Sized> {
-    reservation_port: Arc<P>,
+pub struct CheckReservationIntentHandler<'a, P: RestaurantReservationPort + ?Sized> {
+    reservation_port: &'a P,
 }
 
-impl<P: RestaurantReservationPort + ?Sized> CheckReservationIntentHandler<P> {
-    pub fn new(reservation_port: Arc<P>) -> Self {
+impl<'a, P: RestaurantReservationPort + ?Sized> CheckReservationIntentHandler<'a, P> {
+    pub fn new(reservation_port: &'a P) -> Self {
         Self { reservation_port }
     }
 }
 
-impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
-    for CheckReservationIntentHandler<P>
+impl<'a, P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
+    for CheckReservationIntentHandler<'a, P>
 {
     fn intent(&self) -> IntentId {
         IntentId::CheckReservation

@@ -1,5 +1,4 @@
 use rust_i18n::t;
-use std::sync::Arc;
 
 use crate::core::conversation::application::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
@@ -9,17 +8,19 @@ use crate::core::conversation::application::port::outbound::restaurant_queries::
 use crate::core::conversation::domain::model::intent::{IntentId, IntentKind, IntentPolicy};
 use crate::core::conversation::domain::model::slot::EntityType;
 
-pub struct AskEventIntentHandler<P: RestaurantInformationPort> {
-    information_port: Arc<P>,
+pub struct AskEventIntentHandler<'a, P: RestaurantInformationPort + ?Sized> {
+    information_port: &'a P,
 }
 
-impl<P: RestaurantInformationPort> AskEventIntentHandler<P> {
-    pub fn new(information_port: Arc<P>) -> Self {
+impl<'a, P: RestaurantInformationPort + ?Sized> AskEventIntentHandler<'a, P> {
+    pub fn new(information_port: &'a P) -> Self {
         Self { information_port }
     }
 }
 
-impl<P: RestaurantInformationPort + Send + Sync> IntentHandler for AskEventIntentHandler<P> {
+impl<'a, P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
+    for AskEventIntentHandler<'a, P>
+{
     fn intent(&self) -> IntentId {
         IntentId::AskEvent
     }

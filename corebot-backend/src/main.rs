@@ -34,10 +34,16 @@ async fn main() {
         .allow_headers(Any);
 
     let restaurant = Arc::new(RestaurantService::new());
+    let information_gateway = Box::leak(Box::new(RestaurantInformationGateway::new(
+        Arc::clone(&restaurant),
+    )));
+    let reservation_gateway = Box::leak(Box::new(RestaurantReservationGateway::new(
+        Arc::clone(&restaurant),
+    )));
     let restaurant_registry =
         RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-            information_port: Arc::new(RestaurantInformationGateway::new(Arc::clone(&restaurant))),
-            reservation_port: Arc::new(RestaurantReservationGateway::new(Arc::clone(&restaurant))),
+            information_port: information_gateway,
+            reservation_port: reservation_gateway,
         });
     let processor =
         ConversationProcessor::new(restaurant_registry, IntentHandlerRegistry::new(vec![]));

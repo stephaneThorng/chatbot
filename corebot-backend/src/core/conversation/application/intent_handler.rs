@@ -436,12 +436,12 @@ pub struct SlotUpdate {
 }
 
 /// Lookup table for application-level intent handlers.
-pub struct IntentHandlerRegistry {
-    handlers: HashMap<IntentId, Box<dyn IntentHandler>>,
+pub struct IntentHandlerRegistry<'a> {
+    handlers: HashMap<IntentId, Box<dyn IntentHandler + 'a>>,
 }
 
-impl IntentHandlerRegistry {
-    pub fn new(handlers: Vec<Box<dyn IntentHandler>>) -> Self {
+impl<'a> IntentHandlerRegistry<'a> {
+    pub fn new(handlers: Vec<Box<dyn IntentHandler + 'a>>) -> Self {
         Self {
             handlers: handlers
                 .into_iter()
@@ -450,7 +450,7 @@ impl IntentHandlerRegistry {
         }
     }
 
-    pub fn get(&self, intent: &IntentId) -> Option<&dyn IntentHandler> {
+    pub fn get(&self, intent: &IntentId) -> Option<&(dyn IntentHandler + 'a)> {
         self.handlers.get(intent).map(Box::as_ref)
     }
 

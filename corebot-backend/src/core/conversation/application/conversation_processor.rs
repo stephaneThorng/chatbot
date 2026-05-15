@@ -9,14 +9,14 @@ use crate::core::conversation::domain::model::intent::{IntentId, IntentKind};
 use crate::core::nlu_engine::domain::analysis::{NluAnalysis, NluEntity};
 
 /// Application service that routes one decoded NLU turn to the right conversation path.
-pub struct ConversationProcessor {
-    intent_handlers: HashMap<DomainType, IntentHandlerRegistry>,
+pub struct ConversationProcessor<'a> {
+    intent_handlers: HashMap<DomainType, IntentHandlerRegistry<'a>>,
 }
 
-impl ConversationProcessor {
+impl<'a> ConversationProcessor<'a> {
     pub fn new(
-        restaurant_registry: IntentHandlerRegistry,
-        hotel_registry: IntentHandlerRegistry,
+        restaurant_registry: IntentHandlerRegistry<'a>,
+        hotel_registry: IntentHandlerRegistry<'a>,
     ) -> Self {
         let mut intent_handlers = HashMap::new();
         intent_handlers.insert(DomainType::Restaurant, restaurant_registry);
@@ -25,7 +25,7 @@ impl ConversationProcessor {
         Self { intent_handlers }
     }
 
-    fn handlers_for(&self, domain: DomainType) -> Option<&IntentHandlerRegistry> {
+    fn handlers_for(&self, domain: DomainType) -> Option<&IntentHandlerRegistry<'a>> {
         self.intent_handlers.get(&domain)
     }
 
@@ -86,7 +86,7 @@ impl ConversationProcessor {
 
     fn process_idle_intent(
         &self,
-        intent_handlers: &IntentHandlerRegistry,
+        intent_handlers: &IntentHandlerRegistry<'a>,
         conversation: Conversation,
         intent: IntentId,
         message: &str,
@@ -167,8 +167,6 @@ fn system_text_i18n_key(key: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::*;
     use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
     use crate::core::conversation::application::port::outbound::restaurant_queries::{
@@ -251,11 +249,13 @@ mod tests {
         }
     }
 
-    fn processor() -> ConversationProcessor {
+    fn processor() -> ConversationProcessor<'static> {
+        let information_port = Box::leak(Box::new(StubInformationPort));
+        let reservation_port = Box::leak(Box::new(StubReservationPort));
         let restaurant_registry =
             RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-                information_port: Arc::new(StubInformationPort),
-                reservation_port: Arc::new(StubReservationPort),
+                information_port,
+                reservation_port,
             });
         ConversationProcessor::new(restaurant_registry, IntentHandlerRegistry::new(vec![]))
     }

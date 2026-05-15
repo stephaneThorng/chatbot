@@ -1,5 +1,4 @@
 use rust_i18n::t;
-use std::sync::Arc;
 
 use crate::core::conversation::application::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
@@ -7,18 +6,18 @@ use crate::core::conversation::application::intent_handler::{
 use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
 use crate::core::conversation::domain::model::intent::{IntentId, IntentKind, IntentPolicy};
 
-pub struct AskTakeawayDeliveryIntentHandler<P: RestaurantInformationPort> {
-    information_port: Arc<P>,
+pub struct AskTakeawayDeliveryIntentHandler<'a, P: RestaurantInformationPort + ?Sized> {
+    information_port: &'a P,
 }
 
-impl<P: RestaurantInformationPort> AskTakeawayDeliveryIntentHandler<P> {
-    pub fn new(information_port: Arc<P>) -> Self {
+impl<'a, P: RestaurantInformationPort + ?Sized> AskTakeawayDeliveryIntentHandler<'a, P> {
+    pub fn new(information_port: &'a P) -> Self {
         Self { information_port }
     }
 }
 
-impl<P: RestaurantInformationPort + Send + Sync> IntentHandler
-    for AskTakeawayDeliveryIntentHandler<P>
+impl<'a, P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
+    for AskTakeawayDeliveryIntentHandler<'a, P>
 {
     fn intent(&self) -> IntentId {
         IntentId::AskTakeawayDelivery

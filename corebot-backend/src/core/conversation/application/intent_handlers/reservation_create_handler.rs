@@ -1,5 +1,4 @@
 use chrono::{Datelike, NaiveDate, Weekday};
-use std::sync::Arc;
 
 use crate::core::conversation::application::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult, WorkflowPostProcessResult,
@@ -17,16 +16,19 @@ use crate::core::conversation::domain::slot::{
     EntityType, SlotConstraint, SlotConstraintEntry, SlotDefinition, SlotName, SlotType, SlotValue,
 };
 
-pub struct ReservationCreateIntentHandler<P: RestaurantReservationPort + ?Sized> {
-    reservation_port: Arc<P>,
+pub struct ReservationCreateIntentHandler<'a, P: RestaurantReservationPort + ?Sized> {
+    reservation_port: &'a P,
 }
 
-impl<P: RestaurantReservationPort + ?Sized> ReservationCreateIntentHandler<P> {
-    pub fn new(reservation_port: Arc<P>) -> Self {
+impl<'a, P: RestaurantReservationPort + ?Sized> ReservationCreateIntentHandler<'a, P> {
+    pub fn new(reservation_port: &'a P) -> Self {
         Self { reservation_port }
     }
 
-    fn workflow_value<'a>(conversation: &'a Conversation, slot: SlotName) -> Option<&'a SlotValue> {
+    fn workflow_value<'conversation>(
+        conversation: &'conversation Conversation,
+        slot: SlotName,
+    ) -> Option<&'conversation SlotValue> {
         conversation
             .active_workflow()
             .and_then(|workflow| workflow.slot_value(slot))
@@ -74,8 +76,8 @@ impl<P: RestaurantReservationPort + ?Sized> ReservationCreateIntentHandler<P> {
     }
 }
 
-impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
-    for ReservationCreateIntentHandler<P>
+impl<'a, P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
+    for ReservationCreateIntentHandler<'a, P>
 {
     fn intent(&self) -> IntentId {
         IntentId::ReservationCreate
@@ -295,7 +297,6 @@ mod tests {
     use crate::core::conversation::domain::domain_type::DomainType;
     use crate::core::conversation::domain::slot::SlotValue;
     use crate::core::nlu_engine::domain::analysis::NluEntity;
-    use std::sync::Arc;
 
     struct StubReservationPort;
 
@@ -355,8 +356,9 @@ mod tests {
         }
     }
 
-    fn handler() -> ReservationCreateIntentHandler<StubReservationPort> {
-        ReservationCreateIntentHandler::new(Arc::new(StubReservationPort))
+    fn handler() -> ReservationCreateIntentHandler<'static, StubReservationPort> {
+        let reservation_port = Box::leak(Box::new(StubReservationPort));
+        ReservationCreateIntentHandler::new(reservation_port)
     }
 
     fn handle(
@@ -554,13 +556,15 @@ mod tests {
         )
         .updated_conversation;
 
-        let result = ReservationCreateIntentHandler::new(Arc::new(FullStubReservationPort))
-            .handle(IntentHandlerInput {
+        let reservation_port = Box::leak(Box::new(FullStubReservationPort));
+        let result = ReservationCreateIntentHandler::new(reservation_port).handle(
+            IntentHandlerInput {
                 conversation,
                 analysis_intent: &IntentId::Affirmative,
                 text: "",
                 analysis_entities: &[],
-            });
+            },
+        );
 
         assert!(result.reply.contains("Monday June 1 at 21:00"));
         assert!(result.updated_conversation.has_active_workflow());
@@ -584,13 +588,15 @@ mod tests {
         )
         .updated_conversation;
 
-        let result = ReservationCreateIntentHandler::new(Arc::new(ClosedStubReservationPort))
-            .handle(IntentHandlerInput {
+        let reservation_port = Box::leak(Box::new(ClosedStubReservationPort));
+        let result = ReservationCreateIntentHandler::new(reservation_port).handle(
+            IntentHandlerInput {
                 conversation,
                 analysis_intent: &IntentId::Affirmative,
                 text: "",
                 analysis_entities: &[],
-            });
+            },
+        );
 
         assert!(result.reply.contains("closed") || result.reply.contains("opening hours") || result.reply.contains("horaires"));
         assert!(result.updated_conversation.has_active_workflow());
