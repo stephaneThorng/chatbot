@@ -1,26 +1,14 @@
 use chrono::{Local, NaiveDate, NaiveTime};
 use human_date_parser::{ParseResult, from_human_time};
 
-/// Domain error for date resolution.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DateResolveError {
-    /// The raw string could not be parsed into any recognised date pattern.
     Unparseable,
-    /// The resolved date falls strictly before today.
     PastDate(NaiveDate),
 }
 
-/// Resolve a human-readable date string (as extracted by the NLU) into a concrete
-/// calendar date relative to today.
-///
-/// Uses the `human-date-parser` crate which covers relative expressions
-/// (`tomorrow`, `next Friday`, `in 3 days`), plain weekday names, and literal
-/// dates (`June 12`, `2026-08-23`).
-///
-/// Year-inference: if the resolved date falls before today it is treated as past.
 pub fn resolve_date(raw: &str) -> Result<NaiveDate, DateResolveError> {
     let today = Local::now().naive_local();
-    // Strip leading prepositions that the NLU may include ("on next tuesday", "on the 5th")
     let raw = raw.trim();
     let raw = raw
         .strip_prefix("on the ")
@@ -47,22 +35,14 @@ pub fn resolve_date(raw: &str) -> Result<NaiveDate, DateResolveError> {
     }
 }
 
-/// Error returned when a raw time string cannot be parsed.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TimeResolveError {
     Unparseable,
 }
 
-/// Resolve a human-readable time string (as extracted by the NLU) into a [`NaiveTime`].
-///
-/// Supports the following formats:
-/// - 24-hour: `"19:00"`, `"7:30"`
-/// - 12-hour with am/pm: `"7pm"`, `"7 pm"`, `"7:30 pm"`, `"12:00 am"`
-/// - Bare hour with am/pm suffix: `"7pm"`, `"9am"`
 pub fn resolve_time(raw: &str) -> Result<NaiveTime, TimeResolveError> {
     let s = normalize_time_text(raw);
 
-    // Try explicit 12h suffix first (most reliable for chatbot input)
     let normalized = s.replace(" pm", "pm").replace(" am", "am");
     if let Some(rest) = normalized.strip_suffix("pm") {
         if let Some(time) = parse_12h(rest.trim(), true) {
@@ -75,7 +55,6 @@ pub fn resolve_time(raw: &str) -> Result<NaiveTime, TimeResolveError> {
         }
     }
 
-    // Try 24h format directly
     if let Ok(t) = chrono::NaiveTime::parse_from_str(&s, "%H:%M") {
         return Ok(t);
     }
@@ -83,7 +62,6 @@ pub fn resolve_time(raw: &str) -> Result<NaiveTime, TimeResolveError> {
         return Ok(t);
     }
 
-    // Fall back to human-date-parser for anything remaining
     let now = Local::now().naive_local();
     if let Ok(ParseResult::Time(t)) = from_human_time(&s, now) {
         return Ok(t);
@@ -146,7 +124,6 @@ mod tests {
 
     #[test]
     fn on_prefix_stripped_before_parsing() {
-        // "on next tuesday" is what the NLU extracts when the user says "on next tuesday at 6pm"
         let result = resolve_date("on next tuesday");
         assert!(result.is_ok(), "expected future date, got {:?}", result);
     }
@@ -154,7 +131,6 @@ mod tests {
     #[test]
     fn on_the_prefix_stripped_before_parsing() {
         let result = resolve_date("on the 31st of December 2099");
-        // Should not fail with Unparseable due to the "on the" prefix
         assert!(result.is_ok() || matches!(result, Err(DateResolveError::Unparseable)));
     }
 

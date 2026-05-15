@@ -1,7 +1,7 @@
 use chrono::{NaiveDate, NaiveTime};
 use text2num::{Language, text2digits};
 
-use crate::core::conversation::domain::date_resolver::{
+use crate::core::conversation::domain::service::date_resolver::{
     DateResolveError, resolve_date, resolve_time,
 };
 

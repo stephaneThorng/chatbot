@@ -12,6 +12,8 @@ use crate::core::conversation::domain::model::conversation::Conversation;
 use crate::core::conversation::domain::model::domain_type::DomainType;
 use crate::core::conversation::domain::model::intent::IntentId;
 
+const MIN_ACCEPTED_INTENT_CONFIDENCE: f32 = 0.3;
+
 /// Application service that routes one decoded NLU turn to the right conversation path.
 pub struct ConversationProcessor {
     intent_handlers: HashMap<DomainType, IntentHandlerRegistry>,
@@ -52,11 +54,11 @@ impl ConversationProcessor {
             };
         };
 
-        let mut analysis_intent = IntentId::from(&analysis.intent_name);
+        let mut analysis_intent = self.resolve_top_level_intent(&analysis);
         let analysis_config = intent_registry.find_config(&analysis_intent);
         if let Some(workflow) = conversation.active_workflow() {
             analysis_intent =
-                self.resolve_active_workflow_intent(workflow, &analysis, &analysis_intent);
+                self.resolve_active_workflow_intent(workflow, &analysis, analysis_intent);
             let analysis_entities = analysis.entities;
             let handler = intent_registry
                 .get(&workflow.intent)
@@ -95,16 +97,19 @@ impl ConversationProcessor {
         &self,
         workflow: &crate::core::conversation::domain::model::workflow::Workflow,
         analysis: &NluAnalysisResult,
-        analysis_intent: &IntentId,
+        analysis_intent: IntentId,
     ) -> IntentId {
         if !workflow.is_ready_for_confirmation() || !analysis.entities.is_empty() {
-            return analysis_intent.clone();
+            return analysis_intent;
         }
 
         analysis
             .intent_candidates
             .iter()
             .filter_map(|candidate| {
+                if candidate.confidence < MIN_ACCEPTED_INTENT_CONFIDENCE {
+                    return None;
+                }
                 let intent = IntentId::from(candidate.name.as_str());
                 match intent {
                     IntentId::Affirmative | IntentId::Negative | IntentId::Cancel => {
@@ -115,7 +120,15 @@ impl ConversationProcessor {
             })
             .max_by(|left, right| left.1.total_cmp(&right.1))
             .map(|(intent, _)| intent)
-            .unwrap_or_else(|| analysis_intent.clone())
+            .unwrap_or(analysis_intent)
+    }
+
+    fn resolve_top_level_intent(&self, analysis: &NluAnalysisResult) -> IntentId {
+        if analysis.intent_confidence < MIN_ACCEPTED_INTENT_CONFIDENCE {
+            return IntentId::Unknown("unknown".to_string());
+        }
+
+        IntentId::from(&analysis.intent_name)
     }
 
     fn process_idle_intent(
@@ -307,10 +320,32 @@ mod tests {
         entities: Vec<NluEntityResult>,
         intent_candidates: Vec<NluIntentCandidate>,
     ) -> NluAnalysisResult {
+        analysis_with_candidates_and_confidence(intent_name, 1.0, entities, intent_candidates)
+    }
+
+    fn analysis_with_candidates_and_confidence(
+        intent_name: &'static str,
+        intent_confidence: f32,
+        entities: Vec<NluEntityResult>,
+        intent_candidates: Vec<NluIntentCandidate>,
+    ) -> NluAnalysisResult {
         NluAnalysisResult {
             intent_name: intent_name.to_string(),
-            intent_confidence: 1.0,
+            intent_confidence,
             intent_candidates,
+            entities,
+        }
+    }
+
+    fn analysis_with_confidence(
+        intent_name: &'static str,
+        intent_confidence: f32,
+        entities: Vec<NluEntityResult>,
+    ) -> NluAnalysisResult {
+        NluAnalysisResult {
+            intent_name: intent_name.to_string(),
+            intent_confidence,
+            intent_candidates: Vec::<NluIntentCandidate>::new(),
             entities,
         }
     }
@@ -522,7 +557,7 @@ mod tests {
                     },
                     NluIntentCandidate {
                         name: "affirmative".to_string(),
-                        confidence: 0.174,
+                        confidence: 0.841,
                     },
                     NluIntentCandidate {
                         name: "negative".to_string(),
@@ -566,7 +601,7 @@ mod tests {
                     },
                     NluIntentCandidate {
                         name: "negative".to_string(),
-                        confidence: 0.210,
+                        confidence: 0.812,
                     },
                 ],
             ),
@@ -574,6 +609,50 @@ mod tests {
 
         assert_eq!(rejected.reply, "Okay. What would you like to change?");
         assert!(rejected.updated_conversation.has_active_workflow());
+    }
+
+    #[test]
+    fn active_confirmation_does_not_accept_choice_candidates_below_threshold() {
+        let processor = processor();
+        let started = processor.process(
+            Conversation::new(DomainType::Restaurant),
+            "book",
+            analysis(
+                "reservation_create",
+                vec![
+                    entity("person", "Alice"),
+                    entity("date", "2099-06-12"),
+                    entity("time", "7pm"),
+                    entity("people_count", "4"),
+                ],
+            ),
+        );
+
+        let pending = processor.process(
+            started.updated_conversation,
+            "no",
+            analysis_with_candidates_and_confidence(
+                "affirmative",
+                0.159,
+                vec![],
+                vec![
+                    NluIntentCandidate {
+                        name: "affirmative".to_string(),
+                        confidence: 0.159,
+                    },
+                    NluIntentCandidate {
+                        name: "negative".to_string(),
+                        confidence: 0.134,
+                    },
+                ],
+            ),
+        );
+
+        assert_eq!(
+            pending.reply,
+            "I have the reservation details: Alice, Friday June 12 2099 at 19:00, for 4 people. Do you confirm this reservation?"
+        );
+        assert!(pending.updated_conversation.has_active_workflow());
     }
 
     #[test]
@@ -587,6 +666,25 @@ mod tests {
         );
 
         assert_eq!(result.reply, "Detected intent: not_in_catalog");
+        assert!(result.updated_conversation.is_idle());
+        assert!(conversation.is_idle());
+    }
+
+    #[test]
+    fn low_confidence_known_intent_falls_back_to_unknown_handler() {
+        let conversation = Conversation::new(DomainType::Restaurant);
+
+        let result = processor().process(
+            conversation.clone(),
+            "que pense tu des arc en rust ?",
+            analysis_with_confidence("ask_menu_dietary", 0.199, vec![]),
+        );
+
+        assert_eq!(result.reply, "I did not understand that request.");
+        assert_eq!(
+            result.handled_intent,
+            IntentId::Unknown("unknown".to_string())
+        );
         assert!(result.updated_conversation.is_idle());
         assert!(conversation.is_idle());
     }

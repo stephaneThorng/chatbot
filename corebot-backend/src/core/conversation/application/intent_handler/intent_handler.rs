@@ -581,10 +581,10 @@ mod tests {
     use chrono::NaiveTime;
 
     use super::*;
-    use crate::core::conversation::domain::date_resolver::resolve_date;
     use crate::core::conversation::domain::model::domain_type::DomainType;
     use crate::core::conversation::domain::model::intent::{IntentWorkflow, WorkflowConfig};
     use crate::core::conversation::domain::model::slot::SlotConfig;
+    use crate::core::conversation::domain::service::date_resolver::resolve_date;
 
     struct StubHandler;
 
