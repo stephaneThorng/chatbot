@@ -6,6 +6,7 @@ pub struct InferenceContext {
     pub lang: String,
     pub domain: String,
     pub task: Option<String>,
+    pub slot: Option<String>,
 }
 
 /// Preprocessed input string sent to the model, with the prefix length needed to
@@ -62,11 +63,17 @@ pub struct NluAnalysis {
 
 impl InferenceContext {
     /// Creates the inference context consumed by tagged-input preprocessing.
-    pub fn new(lang: impl Into<String>, domain: impl Into<String>, task: Option<String>) -> Self {
+    pub fn new(
+        lang: impl Into<String>,
+        domain: impl Into<String>,
+        task: Option<String>,
+        slot: Option<String>,
+    ) -> Self {
         Self {
             lang: lang.into(),
             domain: domain.into(),
             task,
+            slot,
         }
     }
 }
@@ -75,11 +82,14 @@ impl TaggedInput {
     /// Builds the tagged model input from the raw text and inference context.
     ///
     /// The tag order must stay aligned with `model_training`:
-    /// optional task, then language, then domain, then raw text.
+    /// optional task, optional slot hint, then language, then domain, then raw text.
     pub fn build(text: &str, context: &InferenceContext) -> Self {
         let mut tags = Vec::new();
         if let Some(task) = context.task.as_ref() {
             tags.push(format!("[TASK={task}]"));
+        }
+        if let Some(slot) = context.slot.as_ref() {
+            tags.push(format!("[SLOT={slot}]"));
         }
         tags.push(format!("[LANG={}]", context.lang));
         tags.push(format!("[DOMAIN={}]", context.domain));
@@ -97,7 +107,7 @@ mod tests {
 
     #[test]
     fn tagged_input_omits_task_when_missing() {
-        let context = InferenceContext::new("en", "restaurant", None);
+        let context = InferenceContext::new("en", "restaurant", None, None);
         let tagged = TaggedInput::build("Hello", &context);
         assert_eq!(tagged.text, "[LANG=en] [DOMAIN=restaurant] Hello");
     }
@@ -108,11 +118,27 @@ mod tests {
             "id",
             "restaurant",
             Some("WF_RESERVATION_CREATE".to_string()),
+            None,
         );
         let tagged = TaggedInput::build("empat orang", &context);
         assert_eq!(
             tagged.text,
             "[TASK=WF_RESERVATION_CREATE] [LANG=id] [DOMAIN=restaurant] empat orang"
+        );
+    }
+
+    #[test]
+    fn tagged_input_includes_slot_when_present() {
+        let context = InferenceContext::new(
+            "en",
+            "restaurant",
+            Some("WF_RESERVATION_CREATE".to_string()),
+            Some("people".to_string()),
+        );
+        let tagged = TaggedInput::build("4", &context);
+        assert_eq!(
+            tagged.text,
+            "[TASK=WF_RESERVATION_CREATE] [SLOT=people] [LANG=en] [DOMAIN=restaurant] 4"
         );
     }
 }

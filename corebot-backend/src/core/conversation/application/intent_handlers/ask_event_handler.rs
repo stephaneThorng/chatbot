@@ -8,7 +8,6 @@ use crate::core::conversation::application::port::outbound::restaurant_informati
 use crate::core::conversation::application::port::outbound::restaurant_queries::EventQuery;
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
-
 pub struct AskEventIntentHandler<P: RestaurantInformationPort> {
     information_port: Arc<P>,
 }
@@ -25,7 +24,10 @@ impl<P: RestaurantInformationPort + Send + Sync> IntentHandler for AskEventInten
     }
 
     fn config(&self) -> IntentConfig {
-        IntentConfig { id: self.intent(), workflow: IntentWorkflow::Informational }
+        IntentConfig {
+            id: self.intent(),
+            workflow: IntentWorkflow::Informational,
+        }
     }
 
     fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {

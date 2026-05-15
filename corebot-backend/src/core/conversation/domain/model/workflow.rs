@@ -1,6 +1,8 @@
-use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow, NluTask};
+use crate::core::conversation::domain::model::intent::{
+    IntentConfig, IntentId, IntentWorkflow, NluTask,
+};
 use crate::core::conversation::domain::model::slot::{
-    SlotBag, SlotConfig, SlotDataType, SlotDataValue, SlotError, SlotName,
+    SlotBag, SlotConfig, SlotDataValue, SlotError, SlotName,
 };
 
 /// An active multi-turn workflow collecting slots toward completion.
@@ -15,8 +17,8 @@ use crate::core::conversation::domain::model::slot::{
 pub struct Workflow {
     pub intent: IntentId,
     pub nlu_task: Option<NluTask>,
-    data_slots: Vec<SlotConfig>,
-    slots: SlotBag,
+    slot_config: Vec<SlotConfig>,
+    slot_bag: SlotBag,
     confirmed: bool,
 }
 
@@ -30,25 +32,25 @@ impl Workflow {
         Self {
             intent: config.id.clone(),
             nlu_task,
-            data_slots,
-            slots: SlotBag::new(),
+            slot_config: data_slots,
+            slot_bag: SlotBag::new(),
             confirmed: false,
         }
     }
 
     pub fn slot_definitions(&self) -> &[SlotConfig] {
-        &self.data_slots
+        &self.slot_config
     }
 
     pub fn slot_value(&self, slot_name: SlotName) -> Option<&SlotDataValue> {
-        self.slots.get(slot_name)
+        self.slot_bag.get(slot_name)
     }
 
     /// The next slot to collect.
     /// Data slots first (in order), then confirmation.
     pub fn next_required_slot(&self) -> Option<NextSlot<'_>> {
-        for def in &self.data_slots {
-            if def.required && !self.slots.is_filled(def.name) {
+        for def in &self.slot_config {
+            if def.required && !self.slot_bag.is_filled(def.name) {
                 return Some(NextSlot::Data(def));
             }
         }
@@ -58,14 +60,18 @@ impl Workflow {
         None
     }
 
-    pub fn into_slot(mut self, slot_name: SlotName, value: SlotDataValue) -> Result<Workflow, SlotError> {
+    pub fn into_slot(
+        mut self,
+        slot_name: SlotName,
+        value: SlotDataValue,
+    ) -> Result<Workflow, SlotError> {
         self.set_slot(slot_name, value)?;
         Ok(self)
     }
 
     pub fn set_slot(&mut self, slot_name: SlotName, value: SlotDataValue) -> Result<(), SlotError> {
         let expected_type = self
-            .data_slots
+            .slot_config
             .iter()
             .find(|slot| slot.name == slot_name)
             .map(|slot| slot.name.data_type())
@@ -73,7 +79,7 @@ impl Workflow {
                 slot: slot_name,
                 message: format!("Unknown slot: {}", slot_name),
             })?;
-        self.slots.set_slot(slot_name, expected_type, value)?;
+        self.slot_bag.set_slot(slot_name, expected_type, value)?;
         Ok(())
     }
 
@@ -84,16 +90,16 @@ impl Workflow {
 
     /// Remove a slot value (used to clear an invalid slot after a constraint violation).
     pub fn clear_slot(&mut self, slot_name: SlotName) {
-        self.slots.remove(slot_name);
+        self.slot_bag.remove(slot_name);
     }
 
     /// True when all required data slots are filled and confirmation not yet given.
     pub fn is_ready_for_confirmation(&self) -> bool {
         let all_data_filled = self
-            .data_slots
+            .slot_config
             .iter()
             .filter(|s| s.required)
-            .all(|s| self.slots.is_filled(s.name));
+            .all(|s| self.slot_bag.is_filled(s.name));
         all_data_filled && !self.confirmed
     }
 }
@@ -109,8 +115,12 @@ pub enum NextSlot<'a> {
 
 #[cfg(test)]
 mod tests {
+    use chrono::{NaiveDate, NaiveTime};
+
     use super::*;
-    use crate::core::conversation::domain::model::intent::{IntentWorkflow, WorkflowConfig, i18n_key};
+    use crate::core::conversation::domain::model::intent::{
+        IntentWorkflow, WorkflowConfig, i18n_key,
+    };
 
     fn book_config() -> IntentConfig {
         IntentConfig {
@@ -159,44 +169,88 @@ mod tests {
     #[test]
     fn book_first_slot_is_name() {
         let wf = Workflow::from_config(&book_config());
-        assert!(matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::Name));
+        assert!(
+            matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::Name)
+        );
     }
 
     #[test]
     fn cancel_first_slot_is_reference() {
         let wf = Workflow::from_config(&cancel_config());
-        assert!(matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::Reference));
+        assert!(
+            matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::Reference)
+        );
     }
 
     #[test]
     fn slots_advance_in_order() {
         let mut wf = Workflow::from_config(&book_config())
-            .into_slot(SlotName::Name, SlotDataValue::Text("Alice".into())).unwrap();
-        assert!(matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::Date));
-        wf = wf.into_slot(SlotName::Date, SlotDataValue::Date("2026-06-01".into())).unwrap();
-        assert!(matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::Time));
-        wf = wf.into_slot(SlotName::Time, SlotDataValue::Time("19:00".into())).unwrap();
-        assert!(matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::People));
+            .into_slot(SlotName::Name, SlotDataValue::Text("Alice".into()))
+            .unwrap();
+        assert!(
+            matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::Date)
+        );
+        wf = wf
+            .into_slot(
+                SlotName::Date,
+                SlotDataValue::Date(NaiveDate::from_ymd_opt(2026, 6, 1).unwrap()),
+            )
+            .unwrap();
+        assert!(
+            matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::Time)
+        );
+        wf = wf
+            .into_slot(
+                SlotName::Time,
+                SlotDataValue::Time(NaiveTime::from_hms_opt(19, 0, 0).unwrap()),
+            )
+            .unwrap();
+        assert!(
+            matches!(wf.next_required_slot(), Some(NextSlot::Data(d)) if d.name == SlotName::People)
+        );
     }
 
     #[test]
     fn confirmation_only_after_all_data() {
         let wf = Workflow::from_config(&book_config())
-            .into_slot(SlotName::Name, SlotDataValue::Text("Alice".into())).unwrap()
-            .into_slot(SlotName::Date, SlotDataValue::Date("2026-06-01".into())).unwrap()
-            .into_slot(SlotName::Time, SlotDataValue::Time("19:00".into())).unwrap()
-            .into_slot(SlotName::People, SlotDataValue::Number(4)).unwrap();
+            .into_slot(SlotName::Name, SlotDataValue::Text("Alice".into()))
+            .unwrap()
+            .into_slot(
+                SlotName::Date,
+                SlotDataValue::Date(NaiveDate::from_ymd_opt(2026, 6, 1).unwrap()),
+            )
+            .unwrap()
+            .into_slot(
+                SlotName::Time,
+                SlotDataValue::Time(NaiveTime::from_hms_opt(19, 0, 0).unwrap()),
+            )
+            .unwrap()
+            .into_slot(SlotName::People, SlotDataValue::Number(4))
+            .unwrap();
         assert!(wf.is_ready_for_confirmation());
-        assert!(matches!(wf.next_required_slot(), Some(NextSlot::Confirmation)));
+        assert!(matches!(
+            wf.next_required_slot(),
+            Some(NextSlot::Confirmation)
+        ));
     }
 
     #[test]
     fn complete_after_confirmation() {
         let mut wf = Workflow::from_config(&book_config())
-            .into_slot(SlotName::Name, SlotDataValue::Text("Alice".into())).unwrap()
-            .into_slot(SlotName::Date, SlotDataValue::Date("2026-06-01".into())).unwrap()
-            .into_slot(SlotName::Time, SlotDataValue::Time("19:00".into())).unwrap()
-            .into_slot(SlotName::People, SlotDataValue::Number(4)).unwrap();
+            .into_slot(SlotName::Name, SlotDataValue::Text("Alice".into()))
+            .unwrap()
+            .into_slot(
+                SlotName::Date,
+                SlotDataValue::Date(NaiveDate::from_ymd_opt(2026, 6, 1).unwrap()),
+            )
+            .unwrap()
+            .into_slot(
+                SlotName::Time,
+                SlotDataValue::Time(NaiveTime::from_hms_opt(19, 0, 0).unwrap()),
+            )
+            .unwrap()
+            .into_slot(SlotName::People, SlotDataValue::Number(4))
+            .unwrap();
         wf.confirm();
         assert!(wf.next_required_slot().is_none());
     }

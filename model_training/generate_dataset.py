@@ -95,6 +95,9 @@ VALUES = {
         "8 people",
         "10 people",
         "12 people",
+        "4 guests",
+        "6 guests",
+        "10 guests",
     ],
     "menu_item": [
         "pizza",
@@ -207,17 +210,17 @@ VALUES = {
 
 QUOTAS = {
     None: {
-        "reservation_create": 240,
+        "reservation_create": 220,
         "reservation_cancel": 80,
         "check_reservation": 117,
         "ask_opening_hours": 75,
-        "ask_menu_general": 113,
+        "ask_menu_general": 98,
         "ask_menu_dietary": 85,
         "ask_menu_item_details": 85,
         "ask_location": 40,
         "ask_contact": 30,
         "ask_payment_methods": 35,
-        "ask_price": 115,
+        "ask_price": 105,
         "ask_takeaway_delivery": 30,
         "ask_event": 25,
         "ask_facilities": 40,
@@ -239,8 +242,8 @@ QUOTAS = {
         "unknown": 5,
     },
     "WF_CHOICE": {
-        "affirmative": 18,
-        "negative": 17,
+        "affirmative": 40,
+        "negative": 40,
     },
 }
 
@@ -265,8 +268,10 @@ def row(
     intent: str,
     entities: list[tuple[str, str]] | None = None,
     task: str | None = None,
+    slot: str | None = None,
 ) -> dict[str, Any]:
     normalized_text = normalize_text(text)
+    entity_values = entities or []
     payload: dict[str, Any] = {
         "domain": "restaurant",
         "lang": LANG,
@@ -274,9 +279,26 @@ def row(
     }
     if task is not None:
         payload["task"] = task
-    payload["entities"] = span_entities(normalized_text, entities or [])
+    slot_hint = slot or infer_slot_hint(task, entity_values)
+    if slot_hint is not None:
+        payload["slot"] = slot_hint
+    payload["entities"] = span_entities(normalized_text, entity_values)
     payload["text"] = normalized_text
     return payload
+
+
+def infer_slot_hint(task: str | None, entities: list[tuple[str, str]]) -> str | None:
+    if task is None or not entities:
+        return None
+
+    entity_to_slot = {
+        "person": "name",
+        "date": "date",
+        "time": "time",
+        "people_count": "people",
+        "reservation_reference": "reference",
+    }
+    return entity_to_slot.get(entities[0][0])
 
 
 def normalize_text(text: str) -> str:
@@ -321,12 +343,12 @@ def reservation_create_row(rng: random.Random, task: str | None) -> dict[str, An
             ("{date}", [("date", date)]),
             ("{time}", [("time", time)]),
             ("{people_digits}", [("people_count", people_digits)]),
-            ("for {people}", [("people_count", people)]),
+            ("for {people}", [("people_count", people_digits)]),
             ("for {people_digits}", [("people_count", people_digits)]),
             ("{date} at {time}", [("date", date), ("time", time)]),
             (
                 "{person} for {people}",
-                [("person", person), ("people_count", people)],
+                [("person", person), ("people_count", people_digits)],
             ),
             (
                 "{person} {date} at {time}",
@@ -334,13 +356,13 @@ def reservation_create_row(rng: random.Random, task: str | None) -> dict[str, An
             ),
             (
                 "{date} at {time} for {people}",
-                [("date", date), ("time", time), ("people_count", people)],
+                [("date", date), ("time", time), ("people_count", people_digits)],
             ),
             (
                 "{person} for {people} {date} at {time}",
                 [
                     ("person", person),
-                    ("people_count", people),
+                    ("people_count", people_digits),
                     ("date", date),
                     ("time", time),
                 ],
@@ -364,26 +386,26 @@ def reservation_create_row(rng: random.Random, task: str | None) -> dict[str, An
             ("i would like to reserve a table", []),
             ("help me book a reservation", []),
             ("{person}", [("person", person)]),
-            ("for {people}", [("people_count", people)]),
+            ("for {people}", [("people_count", people_digits)]),
             ("{date}", [("date", date)]),
             ("at {time}", [("time", time)]),
             ("{date} at {time}", [("date", date), ("time", time)]),
             (
                 "book a table for {people}",
-                [("people_count", people)],
+                [("people_count", people_digits)],
             ),
             (
                 "book a table for {people} {date}",
-                [("people_count", people), ("date", date)],
+                [("people_count", people_digits), ("date", date)],
             ),
             (
                 "book a table for {people} {date} at {time}",
-                [("people_count", people), ("date", date), ("time", time)],
+                [("people_count", people_digits), ("date", date), ("time", time)],
             ),
             (
                 "book a table for {people} {date} at {time} under {person}",
                 [
-                    ("people_count", people),
+                    ("people_count", people_digits),
                     ("date", date),
                     ("time", time),
                     ("person", person),
@@ -393,7 +415,7 @@ def reservation_create_row(rng: random.Random, task: str | None) -> dict[str, An
                 "please reserve a table under {person} for {people} {date} at {time}",
                 [
                     ("person", person),
-                    ("people_count", people),
+                    ("people_count", people_digits),
                     ("date", date),
                     ("time", time),
                 ],
@@ -403,17 +425,17 @@ def reservation_create_row(rng: random.Random, task: str | None) -> dict[str, An
                 [
                     ("date", date),
                     ("time", time),
-                    ("people_count", people),
+                    ("people_count", people_digits),
                     ("person", person),
                 ],
             ),
             (
                 "reserve a table for {people} under {person}",
-                [("people_count", people), ("person", person)],
+                [("people_count", people_digits), ("person", person)],
             ),
             (
                 "i want a table for {people} {date} at {time}",
-                [("people_count", people), ("date", date), ("time", time)],
+                [("people_count", people_digits), ("date", date), ("time", time)],
             ),
         ]
 
@@ -588,6 +610,7 @@ def static_row(rng: random.Random, intent: str, task: str | None) -> dict[str, A
             "y",
             "yes",
             "Yes",
+            "YES",
             "yes please",
             "that is correct",
             "i confirm",
@@ -596,6 +619,7 @@ def static_row(rng: random.Random, intent: str, task: str | None) -> dict[str, A
             "yep",
             "ok",
             "okay",
+            "okay.",
             "yes, that is right",
             "please confirm it",
             "go ahead",
@@ -603,11 +627,33 @@ def static_row(rng: random.Random, intent: str, task: str | None) -> dict[str, A
             "confirmed",
             "yes, confirm it",
             "sure, confirm",
+            "sure",
+            "sure.",
+            "confirm it",
+            "please do",
+            "looks good",
+            "all good",
+            "this is fine",
+            "fine by me",
+            "do it",
+            "please proceed",
+            "proceed",
+            "that is fine",
+            "this works",
+            "works for me",
+            "sounds good",
+            "perfect",
+            "perfect, confirm it",
+            "approved",
+            "approved.",
+            "i approve",
         ],
         "negative": [
             "n",
             "no",
             "No",
+            "NO",
+            "no.",
             "nope",
             "nah",
             "no thanks",
@@ -622,6 +668,27 @@ def static_row(rng: random.Random, intent: str, task: str | None) -> dict[str, A
             "not correct",
             "no, that is not my request",
             "do not confirm that",
+            "change it",
+            "not this one",
+            "not that",
+            "please change it",
+            "wrong",
+            "that is wrong",
+            "this is wrong",
+            "not right",
+            "please update it",
+            "please correct it",
+            "try again",
+            "do not do that",
+            "stop",
+            "not okay",
+            "not ok",
+            "no, update it",
+            "reject",
+            "rejected",
+            "i reject that",
+            "not confirmed",
+            "please do not proceed",
         ],
         "cancel": [
             "cancel",
@@ -1034,8 +1101,10 @@ def mandatory_rows_for(task: str | None, intent: str) -> list[dict[str, Any]]:
             row("12", "reservation_create", [("people_count", "12")], task),
             row("for 4", "reservation_create", [("people_count", "4")], task),
             row("for 10", "reservation_create", [("people_count", "10")], task),
-            row("for 4 people", "reservation_create", [("people_count", "4 people")], task),
-            row("for 10 people", "reservation_create", [("people_count", "10 people")], task),
+            row("for 4 people", "reservation_create", [("people_count", "4")], task),
+            row("for 10 people", "reservation_create", [("people_count", "10")], task),
+            row("for 4 guests", "reservation_create", [("people_count", "4")], task),
+            row("for 10 guests", "reservation_create", [("people_count", "10")], task),
             row(
                 "tomorrow at 7pm",
                 "reservation_create",
@@ -1048,22 +1117,30 @@ def mandatory_rows_for(task: str | None, intent: str) -> list[dict[str, Any]]:
             row("y", "affirmative", task=task),
             row("yes", "affirmative", task=task),
             row("Yes", "affirmative", task=task),
+            row("YES", "affirmative", task=task),
             row("yes please", "affirmative", task=task),
             row("i confirm", "affirmative", task=task),
             row("confirmed", "affirmative", task=task),
             row("go ahead", "affirmative", task=task),
             row("okay", "affirmative", task=task),
+            row("ok", "affirmative", task=task),
+            row("sure", "affirmative", task=task),
+            row("confirm it", "affirmative", task=task),
         ]
     if task == "WF_CHOICE" and intent == "negative":
         return [
             row("n", "negative", task=task),
             row("no", "negative", task=task),
             row("No", "negative", task=task),
+            row("NO", "negative", task=task),
+            row("no.", "negative", task=task),
             row("nope", "negative", task=task),
             row("nah", "negative", task=task),
             row("no thanks", "negative", task=task),
             row("that is not right", "negative", task=task),
             row("i do not confirm", "negative", task=task),
+            row("change it", "negative", task=task),
+            row("please change it", "negative", task=task),
         ]
     return []
 

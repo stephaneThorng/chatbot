@@ -3,6 +3,7 @@ use crate::core::conversation::domain::model::domain_type::DomainType;
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentWorkflow, NluTask};
 use crate::core::conversation::domain::model::slot::{SlotDataValue, SlotError, SlotName};
 use crate::core::conversation::domain::model::workflow::Workflow;
+use crate::core::conversation::domain::workflow::NextSlot;
 
 /// Conversation session - one user, one domain, one optional workflow.
 ///
@@ -142,6 +143,14 @@ impl Conversation {
         workflow.nlu_task
     }
 
+    pub fn detect_slot_hint(&self) -> Option<SlotName> {
+        let workflow = self.active_workflow()?;
+        match workflow.next_required_slot()? {
+            NextSlot::Data(slot) => Some(slot.name),
+            NextSlot::Confirmation => None,
+        }
+    }
+
     pub fn is_idle(&self) -> bool {
         matches!(self.state, ConversationState::Idle)
     }
@@ -166,7 +175,9 @@ impl Conversation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow, NluTask, WorkflowConfig, i18n_key};
+    use crate::core::conversation::domain::model::intent::{
+        IntentConfig, IntentId, IntentWorkflow, NluTask, WorkflowConfig, i18n_key,
+    };
     use crate::core::conversation::domain::model::slot::{SlotConfig, SlotDataValue, SlotName};
 
     fn workflow_config(intent: IntentId) -> IntentConfig {
@@ -218,7 +229,10 @@ mod tests {
             .into_started_workflow(&workflow_config(IntentId::ReservationCreate))
             .unwrap();
         let result = conv.into_started_workflow(&workflow_config(IntentId::ReservationCancel));
-        assert_eq!(result.unwrap_err(), StartWorkflowError::ActiveWorkflowAlreadyExists);
+        assert_eq!(
+            result.unwrap_err(),
+            StartWorkflowError::ActiveWorkflowAlreadyExists
+        );
     }
 
     #[test]
@@ -269,11 +283,14 @@ mod tests {
             .into_workflow_slot(SlotName::Name, SlotDataValue::Text("Alice".to_string()))
             .unwrap();
         assert_eq!(
-            updated.active_workflow().and_then(|wf| wf.slot_value(SlotName::Name)),
+            updated
+                .active_workflow()
+                .and_then(|wf| wf.slot_value(SlotName::Name)),
             Some(&SlotDataValue::Text("Alice".to_string()))
         );
         assert_eq!(
-            conv.active_workflow().and_then(|wf| wf.slot_value(SlotName::Name)),
+            conv.active_workflow()
+                .and_then(|wf| wf.slot_value(SlotName::Name)),
             None
         );
     }
@@ -294,6 +311,7 @@ mod tests {
             .into_started_workflow(&workflow_config(IntentId::ReservationCreate))
             .unwrap();
         assert_eq!(conversation.detect_task(), Some(NluTask::ReservationCreate));
+        assert_eq!(conversation.detect_slot_hint(), Some(SlotName::Name));
     }
 
     #[test]
@@ -305,5 +323,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(conversation.detect_task(), Some(NluTask::Choice));
+        assert_eq!(conversation.detect_slot_hint(), None);
     }
 }

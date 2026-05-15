@@ -36,13 +36,16 @@ where
         let lang = command.lang;
         let domain = command.domain;
         let task = command.task;
-        let context = InferenceContext::new(lang.clone(), domain.clone(), task.clone());
+        let slot = command.slot;
+        let context =
+            InferenceContext::new(lang.clone(), domain.clone(), task.clone(), slot.clone());
         let tagged_input = TaggedInput::build(&raw_text, &context);
         log_nlu_engine_input(
             &raw_text,
             &lang,
             &domain,
             task.as_deref(),
+            slot.as_deref(),
             &tagged_input.text,
         );
         let inference = self.runtime.run(&tagged_input)?;
@@ -81,6 +84,7 @@ fn log_nlu_engine_input(
     lang: &str,
     domain: &str,
     task: Option<&str>,
+    slot: Option<&str>,
     tagged_text: &str,
 ) {
     if !debug_nlu_logging_enabled() {
@@ -88,10 +92,11 @@ fn log_nlu_engine_input(
     }
 
     println!(
-        "[nlu-engine][input] lang={} domain={} task={} raw={raw_text:?} tagged={tagged_text:?}",
+        "[nlu-engine][input] lang={} domain={} task={} slot={} raw={raw_text:?} tagged={tagged_text:?}",
         lang,
         domain,
         task.unwrap_or("-"),
+        slot.unwrap_or("-"),
     );
 }
 
@@ -218,6 +223,7 @@ mod tests {
                 lang: "en".to_string(),
                 domain: "restaurant".to_string(),
                 task: None,
+                slot: None,
             })
             .unwrap();
 

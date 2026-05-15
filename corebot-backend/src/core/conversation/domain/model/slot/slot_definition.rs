@@ -39,11 +39,17 @@ pub struct SlotConstraintEntry {
 
 impl SlotConstraintEntry {
     pub fn new(constraint: SlotConstraint) -> Self {
-        Self { constraint, error_key: None }
+        Self {
+            constraint,
+            error_key: None,
+        }
     }
 
     pub fn with_error_key(constraint: SlotConstraint, key: &str) -> Self {
-        Self { constraint, error_key: Some(I18nKey::new(key)) }
+        Self {
+            constraint,
+            error_key: Some(I18nKey::new(key)),
+        }
     }
 
     pub fn resolved_error_key(&self) -> &str {

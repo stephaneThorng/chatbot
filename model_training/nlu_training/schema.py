@@ -23,6 +23,7 @@ class TrainingExample:
     intent: str
     entities: tuple[EntitySpan, ...]
     task: str | None = None
+    slot: str | None = None
 
 
 class DatasetValidationError(ValueError):
@@ -46,6 +47,7 @@ def load_jsonl(path: str | Path) -> list[TrainingExample]:
                     for entity in payload.get("entities", [])
                 )
                 task_value = payload.get("task")
+                slot_value = payload.get("slot")
                 examples.append(
                     TrainingExample(
                         text=str(payload["text"]),
@@ -54,6 +56,7 @@ def load_jsonl(path: str | Path) -> list[TrainingExample]:
                         intent=str(payload["intent"]),
                         entities=entities,
                         task=str(task_value) if task_value is not None else None,
+                        slot=str(slot_value) if slot_value is not None else None,
                     )
                 )
             except KeyError as exc:
@@ -81,6 +84,7 @@ def validate_examples(examples: list[TrainingExample], config: dict[str, Any]) -
     languages = set(config["tags"]["languages"])
     domains = set(config["tags"]["domains"])
     tasks = set(config["tags"]["tasks"])
+    slots = set(config["tags"].get("slots", []))
     workflow_intents = {"reservation_create", "reservation_cancel"}
     workflow_choice_intents = {"affirmative", "negative", "unknown"}
 
@@ -100,6 +104,11 @@ def validate_examples(examples: list[TrainingExample], config: dict[str, Any]) -
             )
         if example.task is not None and example.task not in tasks:
             raise DatasetValidationError(f"{prefix}: unsupported task {example.task!r}")
+        if example.slot is not None:
+            if example.slot not in slots:
+                raise DatasetValidationError(f"{prefix}: unsupported slot {example.slot!r}")
+            if example.task is None:
+                raise DatasetValidationError(f"{prefix}: slot hint requires an active workflow task")
         if example.task == "WF_RESERVATION_CREATE" and example.intent not in {
             "reservation_create",
             "cancel",

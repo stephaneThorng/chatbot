@@ -1,6 +1,7 @@
 use crate::core::conversation::application::nlu_analysis_result::NluAnalysisResult;
 use crate::core::conversation::domain::domain_type::DomainType;
 use crate::core::conversation::domain::model::intent::NluTask;
+use crate::core::conversation::domain::model::slot::SlotName;
 
 pub trait NlpEngineGatewayPort {
     fn analyze(
@@ -9,5 +10,6 @@ pub trait NlpEngineGatewayPort {
         lang: &str,
         domain: DomainType,
         task: Option<NluTask>,
+        slot_hint: Option<SlotName>,
     ) -> NluAnalysisResult;
 }

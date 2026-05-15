@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::{SlotError, SlotName, SlotDataType, SlotDataValue};
+use super::{SlotDataType, SlotDataValue, SlotError, SlotName};
 
 /// Container for filled workflow slots.
 #[derive(Debug, Clone, Default)]
@@ -61,7 +61,11 @@ mod tests {
         let bag = SlotBag::new();
         let updated = bag
             .clone()
-            .into_slot(SlotName::Name, SlotDataType::Text, SlotDataValue::Text("Alice".into()))
+            .into_slot(
+                SlotName::Name,
+                SlotDataType::Text,
+                SlotDataValue::Text("Alice".into()),
+            )
             .unwrap();
         assert!(updated.is_filled(SlotName::Name));
         assert!(!bag.is_filled(SlotName::Name));
@@ -70,14 +74,23 @@ mod tests {
     #[test]
     fn reject_wrong_type() {
         let bag = SlotBag::new();
-        let result = bag.into_slot(SlotName::Name, SlotDataType::Text, SlotDataValue::Number(42));
+        let result = bag.into_slot(
+            SlotName::Name,
+            SlotDataType::Text,
+            SlotDataValue::Number(42),
+        );
         assert!(result.is_err());
     }
 
     #[test]
     fn remove_clears_slot() {
         let mut bag = SlotBag::new();
-        bag.set_slot(SlotName::Name, SlotDataType::Text, SlotDataValue::Text("Alice".into())).unwrap();
+        bag.set_slot(
+            SlotName::Name,
+            SlotDataType::Text,
+            SlotDataValue::Text("Alice".into()),
+        )
+        .unwrap();
         bag.remove(SlotName::Name);
         assert!(!bag.is_filled(SlotName::Name));
     }

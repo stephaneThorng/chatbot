@@ -38,6 +38,7 @@ where
             &conversation.lang,
             conversation.domain,
             conversation.detect_task(),
+            conversation.detect_slot_hint(),
         );
         self.log_nlu_analysis(&session_id, &command.message, &conversation, &analysis);
 
@@ -115,6 +116,10 @@ where
             .detect_task()
             .map(|value| value.as_tag().to_string())
             .unwrap_or_else(|| "-".to_string());
+        let slot = conversation
+            .detect_slot_hint()
+            .map(|value| value.as_str().to_string())
+            .unwrap_or_else(|| "-".to_string());
         let intents = if analysis.intent_candidates.is_empty() {
             "-".to_string()
         } else {
@@ -137,10 +142,11 @@ where
         };
 
         println!(
-            "[nlu] session={session_id} domain={} lang={} task={} text={message:?} intent={}:{:.3} candidates=[{}] entities=[{}]",
+            "[nlu] session={session_id} domain={} lang={} task={} slot={} text={message:?} intent={}:{:.3} candidates=[{}] entities=[{}]",
             conversation.domain.as_str(),
             conversation.lang,
             task,
+            slot,
             analysis.intent_name,
             analysis.intent_confidence,
             intents,
@@ -172,6 +178,9 @@ mod tests {
 
     use super::*;
     use crate::core::conversation::application::intent_handler::IntentHandlerRegistry;
+    use crate::core::conversation::application::nlu_analysis_result::{
+        NluAnalysisResult, NluEntityResult, NluIntentCandidate,
+    };
     use crate::core::conversation::application::port::outbound::conversation_repository_port::{
         ConversationRepositoryPort, RepositoryError,
     };
@@ -187,9 +196,6 @@ mod tests {
         RestaurantConversationDependencies, RestaurantHandlerRegistryFactory,
     };
     use crate::core::conversation::domain::model::intent::NluTask;
-    use crate::core::conversation::application::nlu_analysis_result::{
-        NluAnalysisResult, NluEntityResult, NluIntentCandidate,
-    };
 
     #[derive(Clone)]
     struct StubInformationPort {
@@ -267,7 +273,7 @@ mod tests {
     struct StubReservationPort;
 
     impl RestaurantReservationPort for StubReservationPort {
-        fn create_reservation(&self, _: ReservationCreateQuery) -> Result<String, crate::core::conversation::application::port::outbound::restaurant_queries::ReservationFailure> {
+        fn create_reservation(&self, _: ReservationCreateQuery) -> Result<String, crate::core::conversation::application::port::outbound::restaurant_queries::ReservationFailure>{
             Ok("created:REST-NEW123".to_string())
         }
 
@@ -345,6 +351,7 @@ mod tests {
     struct StubNlpAnalyzer {
         responses: Arc<Mutex<Vec<NluAnalysisResult>>>,
         tasks: Arc<Mutex<Vec<Option<String>>>>,
+        slots: Arc<Mutex<Vec<Option<String>>>>,
         langs: Arc<Mutex<Vec<String>>>,
         domains: Arc<Mutex<Vec<String>>>,
     }
@@ -354,6 +361,7 @@ mod tests {
             Self {
                 responses: Arc::new(Mutex::new(responses.into_iter().rev().collect())),
                 tasks: Arc::new(Mutex::new(vec![])),
+                slots: Arc::new(Mutex::new(vec![])),
                 langs: Arc::new(Mutex::new(vec![])),
                 domains: Arc::new(Mutex::new(vec![])),
             }
@@ -365,6 +373,10 @@ mod tests {
 
         fn recorded_langs(&self) -> Vec<String> {
             self.langs.lock().unwrap().clone()
+        }
+
+        fn recorded_slots(&self) -> Vec<Option<String>> {
+            self.slots.lock().unwrap().clone()
         }
 
         fn recorded_domains(&self) -> Vec<String> {
@@ -379,12 +391,17 @@ mod tests {
             lang: &str,
             domain: DomainType,
             task: Option<NluTask>,
+            slot_hint: Option<crate::core::conversation::domain::model::slot::SlotName>,
         ) -> NluAnalysisResult {
             let _ = text;
             self.tasks
                 .lock()
                 .unwrap()
                 .push(task.map(|current| current.as_tag().to_string()));
+            self.slots
+                .lock()
+                .unwrap()
+                .push(slot_hint.map(|current| current.as_str().to_string()));
             self.langs.lock().unwrap().push(lang.to_string());
             self.domains
                 .lock()
@@ -397,7 +414,6 @@ mod tests {
                 .expect("missing stub NLU response")
         }
     }
-
 
     fn analysis(intent_name: &'static str, entities: Vec<NluEntityResult>) -> NluAnalysisResult {
         NluAnalysisResult {
@@ -520,10 +536,7 @@ mod tests {
                     entity("time", "7pm"),
                 ],
             ),
-            analysis(
-                "reservation_create",
-                vec![entity("people_count", "4 people")],
-            ),
+            analysis("reservation_create", vec![entity("people_count", "4")]),
         ]);
         let parts = make_use_case(analyzer.clone());
 
@@ -534,13 +547,17 @@ mod tests {
 
         assert!(start.reply.ends_with("For how many people?"));
         assert!(next.reply.contains("Jean Martin"));
-        assert!(next.reply.contains("7pm"));
+        assert!(next.reply.contains("19:00"));
         assert!(next.reply.contains("4 people"));
         assert!(next.reply.contains("Do you confirm this reservation?"));
         let recorded = analyzer.recorded_tasks();
         assert_eq!(recorded.len(), 2);
         assert!(recorded[0].is_none());
         assert_eq!(recorded[1], Some("WF_RESERVATION_CREATE".to_string()));
+        assert_eq!(
+            analyzer.recorded_slots(),
+            vec![None, Some("people".to_string())]
+        );
     }
 
     #[test]
@@ -552,7 +569,7 @@ mod tests {
                     entity("person", "Jean Martin"),
                     entity("date", "2099-06-12"),
                     entity("time", "7pm"),
-                    entity("people_count", "4 people"),
+                    entity("people_count", "4"),
                 ],
             ),
             analysis("affirmative", vec![]),
@@ -565,23 +582,22 @@ mod tests {
             .handle_message(make_command("yes", Some(&start.session_id)));
 
         assert!(start.reply.contains("Jean Martin"));
-        assert!(start.reply.contains("7pm"));
+        assert!(start.reply.contains("19:00"));
         assert!(start.reply.contains("Do you confirm this reservation?"));
         assert!(confirm.reply.contains("Jean Martin"));
+        assert!(confirm.reply.contains("19:00"));
         assert!(confirm.reply.contains("REST-NEW123"));
         let recorded = analyzer.recorded_tasks();
         assert_eq!(recorded.len(), 2);
         assert!(recorded[0].is_none());
         assert_eq!(recorded[1], Some("WF_CHOICE".to_string()));
+        assert_eq!(analyzer.recorded_slots(), vec![None, None]);
     }
 
     #[test]
     fn cancel_intent_cancels_active_workflow() {
         let analyzer = StubNlpAnalyzer::new(vec![
-            analysis(
-                "reservation_create",
-                vec![entity("person", "Jean Martin")],
-            ),
+            analysis("reservation_create", vec![entity("person", "Jean Martin")]),
             analysis("cancel", vec![]),
         ]);
         let parts = make_use_case(analyzer);

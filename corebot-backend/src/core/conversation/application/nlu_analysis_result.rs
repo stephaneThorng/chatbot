@@ -29,4 +29,3 @@ pub struct NluEntityResult {
     pub end: usize,
     pub confidence: f32,
 }
-

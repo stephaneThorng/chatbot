@@ -41,8 +41,12 @@ impl IntentHandler for ReservationCancelIntentHandler {
                     },
                 ],
                 starting_message: None,
-                confirmation_prompt: Some(i18n_key("workflow.reservation_cancel.confirmation.prompt")),
-                completion_response: Some(i18n_key("workflow.reservation_cancel.completion.success")),
+                confirmation_prompt: Some(i18n_key(
+                    "workflow.reservation_cancel.confirmation.prompt",
+                )),
+                completion_response: Some(i18n_key(
+                    "workflow.reservation_cancel.completion.success",
+                )),
             }),
         }
     }

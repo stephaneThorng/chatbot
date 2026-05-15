@@ -15,16 +15,16 @@ The runtime API is intentionally out of scope. This folder produces a model arti
 JSONL rows store raw user text. Entity spans are character offsets inside `text`, not inside the tagged model input.
 
 ```json
-{"text":"Jean for 4 people tomorrow at 8pm","task":"WF_RESERVATION_CREATE","lang":"en","domain":"restaurant","intent":"reservation_create","entities":[{"start":0,"end":4,"type":"person"},{"start":9,"end":17,"type":"people_count"},{"start":18,"end":26,"type":"date"},{"start":30,"end":33,"type":"time"}]}
+{"text":"Jean for 4 people tomorrow at 8pm","task":"WF_RESERVATION_CREATE","slot":"name","lang":"en","domain":"restaurant","intent":"reservation_create","entities":[{"start":0,"end":4,"type":"person"},{"start":9,"end":10,"type":"people_count"},{"start":18,"end":26,"type":"date"},{"start":30,"end":33,"type":"time"}]}
 ```
 
 Model input is built at training time:
 
 ```text
-[TASK=WF_RESERVATION_CREATE] [LANG=en] [DOMAIN=restaurant] Jean for 4 people tomorrow at 8pm
+[TASK=WF_RESERVATION_CREATE] [SLOT=name] [LANG=en] [DOMAIN=restaurant] Jean for 4 people tomorrow at 8pm
 ```
 
-Rows outside an active workflow omit `task`, so the input starts with `[LANG=...] [DOMAIN=...]`.
+Rows outside an active workflow omit `task` and `slot`, so the input starts with `[LANG=...] [DOMAIN=...]`.
 
 ## Commands
 
@@ -101,7 +101,7 @@ python export_onnx.py --model-dir outputs/restaurant_xlmr
 The ONNX export preserves the exact tagged input contract used at training time:
 
 ```text
-[TASK=WF_RESERVATION_CREATE] [LANG=id] [DOMAIN=restaurant] empat orang besok 20.30
+[TASK=WF_RESERVATION_CREATE] [SLOT=people] [LANG=id] [DOMAIN=restaurant] empat orang besok 20.30
 ```
 
 If `task` is absent, the input starts with `[LANG=...] [DOMAIN=...]`.

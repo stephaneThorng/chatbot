@@ -19,6 +19,8 @@ def build_tagged_text(example: TrainingExample) -> TaggedExample:
     tags = []
     if example.task is not None:
         tags.append(f"[TASK={example.task}]")
+    if example.slot is not None:
+        tags.append(f"[SLOT={example.slot}]")
     tags.append(f"[LANG={example.lang}]")
     tags.append(f"[DOMAIN={example.domain}]")
     prefix = " ".join(tags)

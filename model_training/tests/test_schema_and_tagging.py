@@ -44,11 +44,12 @@ def test_tagged_text_shifts_entity_offsets_after_workflow_tags() -> None:
         intent="reservation_create",
         entities=(EntitySpan(0, 4, "person"),),
         task="WF_RESERVATION_CREATE",
+        slot="name",
     )
 
     tagged = build_tagged_text(example)
 
-    assert tagged.text == "[TASK=WF_RESERVATION_CREATE] [LANG=en] [DOMAIN=restaurant] Jean"
+    assert tagged.text == "[TASK=WF_RESERVATION_CREATE] [SLOT=name] [LANG=en] [DOMAIN=restaurant] Jean"
     assert tagged.entity_spans[0].start == tagged.text.index("Jean")
     assert tagged.entity_spans[0].end == tagged.text.index("Jean") + 4
 
@@ -64,15 +65,18 @@ def test_bio_alignment_keeps_custom_tags_outside_entities() -> None:
         intent="reservation_create",
         entities=(EntitySpan(0, 4, "person"),),
         task="WF_RESERVATION_CREATE",
+        slot="name",
     )
     tagged = build_tagged_text(example)
     jean_start = tagged.text.index("Jean")
     task_start = tagged.text.index("[TASK=WF_RESERVATION_CREATE]")
+    slot_start = tagged.text.index("[SLOT=name]")
     lang_start = tagged.text.index("[LANG=en]")
     domain_start = tagged.text.index("[DOMAIN=restaurant]")
     offsets = [
         (0, 0),
         (task_start, task_start + len("[TASK=WF_RESERVATION_CREATE]")),
+        (slot_start, slot_start + len("[SLOT=name]")),
         (lang_start, lang_start + len("[LANG=en]")),
         (domain_start, domain_start + len("[DOMAIN=restaurant]")),
         (jean_start, jean_start + 2),
@@ -82,4 +86,4 @@ def test_bio_alignment_keeps_custom_tags_outside_entities() -> None:
 
     labels = [ner_id2label[label_id] if label_id != -100 else "IGN" for label_id in align_bio_labels(tagged, offsets, ner_label2id)]
 
-    assert labels == ["IGN", "O", "O", "O", "B-person", "I-person", "IGN"]
+    assert labels == ["IGN", "O", "O", "O", "O", "B-person", "I-person", "IGN"]

@@ -177,12 +177,21 @@ mod tests {
 
     #[test]
     fn known_intent_label_maps_to_typed_variant() {
-        assert_eq!(IntentId::from("ask_opening_hours"), IntentId::AskOpeningHours);
+        assert_eq!(
+            IntentId::from("ask_opening_hours"),
+            IntentId::AskOpeningHours
+        );
     }
 
     #[test]
     fn unknown_intent_label_is_preserved() {
-        assert_eq!(IntentId::from("new_model_label"), IntentId::Unknown("new_model_label".to_string()));
-        assert_eq!(IntentId::from("new_model_label").as_str(), "new_model_label");
+        assert_eq!(
+            IntentId::from("new_model_label"),
+            IntentId::Unknown("new_model_label".to_string())
+        );
+        assert_eq!(
+            IntentId::from("new_model_label").as_str(),
+            "new_model_label"
+        );
     }
 }

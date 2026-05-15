@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use rust_i18n::t;
 
 use super::intent_handler::{IntentHandlerInput, IntentHandlerRegistry, StateHandlerResult};
-use crate::core::conversation::application::nlu_analysis_result::{NluAnalysisResult, NluEntityResult};
+use crate::core::conversation::application::nlu_analysis_result::{
+    NluAnalysisResult, NluEntityResult,
+};
 use crate::core::conversation::domain::model::conversation::Conversation;
 use crate::core::conversation::domain::model::domain_type::DomainType;
 use crate::core::conversation::domain::model::intent::IntentId;
@@ -48,10 +50,12 @@ impl ConversationProcessor {
             };
         };
 
-        let analysis_intent = IntentId::from(&analysis.intent_name);
-        let analysis_entities = analysis.entities;
+        let mut analysis_intent = IntentId::from(&analysis.intent_name);
         let analysis_config = intent_registry.find_config(&analysis_intent);
         if let Some(workflow) = conversation.active_workflow() {
+            analysis_intent =
+                self.resolve_active_workflow_intent(workflow, &analysis, &analysis_intent);
+            let analysis_entities = analysis.entities;
             let handler = intent_registry
                 .get(&workflow.intent)
                 .expect("workflow handler must exist for active workflow");
@@ -64,6 +68,7 @@ impl ConversationProcessor {
         }
 
         if analysis_config.is_some_and(|cfg| cfg.workflow.is_workflow()) {
+            let analysis_entities = analysis.entities;
             let handler = intent_registry
                 .get(&analysis_intent)
                 .expect("workflow handler must exist for workflow config");
@@ -80,8 +85,35 @@ impl ConversationProcessor {
             conversation,
             analysis_intent,
             message,
-            &analysis_entities,
+            &analysis.entities,
         )
+    }
+
+    fn resolve_active_workflow_intent(
+        &self,
+        workflow: &crate::core::conversation::domain::model::workflow::Workflow,
+        analysis: &NluAnalysisResult,
+        analysis_intent: &IntentId,
+    ) -> IntentId {
+        if !workflow.is_ready_for_confirmation() || !analysis.entities.is_empty() {
+            return analysis_intent.clone();
+        }
+
+        analysis
+            .intent_candidates
+            .iter()
+            .filter_map(|candidate| {
+                let intent = IntentId::from(candidate.name.as_str());
+                match intent {
+                    IntentId::Affirmative | IntentId::Negative | IntentId::Cancel => {
+                        Some((intent, candidate.confidence))
+                    }
+                    _ => None,
+                }
+            })
+            .max_by(|left, right| left.1.total_cmp(&right.1))
+            .map(|(intent, _)| intent)
+            .unwrap_or_else(|| analysis_intent.clone())
     }
 
     fn process_idle_intent(
@@ -170,6 +202,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+    use crate::core::conversation::application::nlu_analysis_result::NluIntentCandidate;
     use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
     use crate::core::conversation::application::port::outbound::restaurant_queries::{
         EventQuery, FacilityQuery, LocationQuery, MenuDietaryQuery, MenuItemDetailsQuery,
@@ -180,7 +213,6 @@ mod tests {
         RestaurantConversationDependencies, RestaurantHandlerRegistryFactory,
     };
     use crate::core::conversation::domain::model::domain_type::DomainType;
-    use crate::core::conversation::application::nlu_analysis_result::NluIntentCandidate;
 
     struct StubInformationPort;
 
@@ -241,7 +273,7 @@ mod tests {
     struct StubReservationPort;
 
     impl RestaurantReservationPort for StubReservationPort {
-        fn create_reservation(&self, _: ReservationCreateQuery) -> Result<String, crate::core::conversation::application::port::outbound::restaurant_queries::ReservationFailure> {
+        fn create_reservation(&self, _: ReservationCreateQuery) -> Result<String, crate::core::conversation::application::port::outbound::restaurant_queries::ReservationFailure>{
             Ok("created:REST-NEW123".to_string())
         }
 
@@ -268,6 +300,19 @@ mod tests {
         }
     }
 
+    fn analysis_with_candidates(
+        intent_name: &'static str,
+        entities: Vec<NluEntityResult>,
+        intent_candidates: Vec<NluIntentCandidate>,
+    ) -> NluAnalysisResult {
+        NluAnalysisResult {
+            intent_name: intent_name.to_string(),
+            intent_confidence: 1.0,
+            intent_candidates,
+            entities,
+        }
+    }
+
     fn entity(entity_label: &'static str, value: &str) -> NluEntityResult {
         NluEntityResult {
             entity_label: entity_label.to_string(),
@@ -286,10 +331,7 @@ mod tests {
         let result = processor().process(
             conversation.clone(),
             "tell me about ramen",
-            analysis(
-                "ask_menu_item_details",
-                vec![entity("menu_item", "ramen")],
-            ),
+            analysis("ask_menu_item_details", vec![entity("menu_item", "ramen")]),
         );
 
         assert_eq!(
@@ -328,7 +370,11 @@ mod tests {
             analysis("reservation_create", vec![]),
         );
 
-        assert!(result.reply.ends_with("What name should I use for the reservation?"));
+        assert!(
+            result
+                .reply
+                .ends_with("What name should I use for the reservation?")
+        );
         assert!(result.updated_conversation.has_active_workflow());
         assert!(conversation.is_idle());
     }
@@ -442,6 +488,90 @@ mod tests {
         assert_eq!(reply.reply, "What name should I use for the reservation?");
         assert!(reply.updated_conversation.has_active_workflow());
         assert!(conversation.is_idle());
+    }
+
+    #[test]
+    fn active_confirmation_prefers_affirmative_candidate_over_workflow_intent() {
+        let processor = processor();
+        let started = processor.process(
+            Conversation::new(DomainType::Restaurant),
+            "book",
+            analysis(
+                "reservation_create",
+                vec![
+                    entity("person", "Alice"),
+                    entity("date", "2099-06-12"),
+                    entity("time", "7pm"),
+                    entity("people_count", "4"),
+                ],
+            ),
+        );
+
+        let confirmed = processor.process(
+            started.updated_conversation,
+            "yes",
+            analysis_with_candidates(
+                "reservation_create",
+                vec![],
+                vec![
+                    NluIntentCandidate {
+                        name: "reservation_create".to_string(),
+                        confidence: 0.305,
+                    },
+                    NluIntentCandidate {
+                        name: "affirmative".to_string(),
+                        confidence: 0.174,
+                    },
+                    NluIntentCandidate {
+                        name: "negative".to_string(),
+                        confidence: 0.073,
+                    },
+                ],
+            ),
+        );
+
+        assert!(confirmed.reply.contains("REST-NEW123"));
+        assert!(confirmed.updated_conversation.is_idle());
+    }
+
+    #[test]
+    fn active_confirmation_prefers_negative_candidate_over_workflow_intent() {
+        let processor = processor();
+        let started = processor.process(
+            Conversation::new(DomainType::Restaurant),
+            "book",
+            analysis(
+                "reservation_create",
+                vec![
+                    entity("person", "Alice"),
+                    entity("date", "2099-06-12"),
+                    entity("time", "7pm"),
+                    entity("people_count", "4"),
+                ],
+            ),
+        );
+
+        let rejected = processor.process(
+            started.updated_conversation,
+            "no",
+            analysis_with_candidates(
+                "reservation_create",
+                vec![],
+                vec![
+                    NluIntentCandidate {
+                        name: "reservation_create".to_string(),
+                        confidence: 0.320,
+                    },
+                    NluIntentCandidate {
+                        name: "negative".to_string(),
+                        confidence: 0.210,
+                    },
+                ],
+            ),
+        );
+
+        assert_eq!(rejected.reply, "Okay. What would you like to change?");
+        assert!(rejected.updated_conversation.has_active_workflow());
     }
 
     #[test]

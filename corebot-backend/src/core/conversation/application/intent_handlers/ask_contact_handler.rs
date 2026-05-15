@@ -25,7 +25,10 @@ impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
     }
 
     fn config(&self) -> IntentConfig {
-        IntentConfig { id: self.intent(), workflow: IntentWorkflow::Informational }
+        IntentConfig {
+            id: self.intent(),
+            workflow: IntentWorkflow::Informational,
+        }
     }
 
     fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {

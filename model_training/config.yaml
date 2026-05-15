@@ -28,6 +28,15 @@ tags:
     - WF_RESERVATION_CREATE
     - WF_RESERVATION_CANCEL
     - WF_CHOICE
+  slots:
+    - name
+    - date
+    - time
+    - people
+    - reference
+    - menu_item
+    - allergen
+    - dietary_requirement
 
 intents:
   domains:
@@ -100,8 +109,8 @@ intents:
     greeting: 1.0
     thanks: 1.0
     goodbye: 1.4
-    affirmative: 1.3
-    negative: 1.8
+    affirmative: 2.4
+    negative: 3.2
     unknown: 1.0
 
 entities:

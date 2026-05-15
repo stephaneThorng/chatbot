@@ -1,9 +1,9 @@
 {"domain": "restaurant", "lang": "en", "intent": "reservation_create", "entities": [], "text": "book"}
-{"domain": "restaurant", "lang": "en", "intent": "reservation_create", "task": "WF_RESERVATION_CREATE", "entities": [{"start": 0, "end": 1, "type": "people_count"}], "text": "1"}
+{"domain": "restaurant", "lang": "en", "intent": "reservation_create", "task": "WF_RESERVATION_CREATE", "slot": "people", "entities": [{"start": 0, "end": 1, "type": "people_count"}], "text": "1"}
 {"domain": "restaurant", "lang": "en", "intent": "reservation_cancel", "entities": [], "text": "cancel my booking"}
-{"domain": "restaurant", "lang": "en", "intent": "reservation_cancel", "task": "WF_RESERVATION_CANCEL", "entities": [{"start": 4, "end": 14, "type": "date"}], "text": "for 2026-08-23"}
+{"domain": "restaurant", "lang": "en", "intent": "reservation_cancel", "task": "WF_RESERVATION_CANCEL", "slot": "date", "entities": [{"start": 4, "end": 14, "type": "date"}], "text": "for 2026-08-23"}
 {"domain": "restaurant", "lang": "en", "intent": "cancel", "task": "WF_RESERVATION_CREATE", "entities": [], "text": "abort the current flow"}
-{"domain": "restaurant", "lang": "en", "intent": "cancel", "task": "WF_RESERVATION_CANCEL", "entities": [], "text": "cancel"}
+{"domain": "restaurant", "lang": "en", "intent": "cancel", "task": "WF_RESERVATION_CANCEL", "entities": [], "text": "abort the current flow"}
 {"domain": "restaurant", "lang": "en", "intent": "check_reservation", "entities": [], "text": "can i check my reservation"}
 {"domain": "restaurant", "lang": "en", "intent": "ask_opening_hours", "entities": [], "text": "what are your opening hours"}
 {"domain": "restaurant", "lang": "en", "intent": "ask_menu_general", "entities": [], "text": "can i see the menu"}
@@ -21,8 +21,8 @@
 {"domain": "restaurant", "lang": "en", "intent": "greeting", "entities": [], "text": "evening"}
 {"domain": "restaurant", "lang": "en", "intent": "thanks", "entities": [], "text": "appreciate it"}
 {"domain": "restaurant", "lang": "en", "intent": "goodbye", "entities": [], "text": "bye"}
-{"domain": "restaurant", "lang": "en", "intent": "affirmative", "task": "WF_CHOICE", "entities": [], "text": "confirmed"}
-{"domain": "restaurant", "lang": "en", "intent": "negative", "task": "WF_CHOICE", "entities": [], "text": "do not confirm that"}
+{"domain": "restaurant", "lang": "en", "intent": "affirmative", "task": "WF_CHOICE", "entities": [], "text": "all good"}
+{"domain": "restaurant", "lang": "en", "intent": "negative", "task": "WF_CHOICE", "entities": [], "text": "change it"}
 {"domain": "restaurant", "lang": "en", "intent": "unknown", "entities": [], "text": "can you book me a flight"}
-{"domain": "restaurant", "lang": "en", "intent": "unknown", "task": "WF_RESERVATION_CREATE", "entities": [], "text": "can you dance"}
-{"domain": "restaurant", "lang": "en", "intent": "unknown", "task": "WF_RESERVATION_CANCEL", "entities": [], "text": "do you like movies"}
+{"domain": "restaurant", "lang": "en", "intent": "unknown", "task": "WF_RESERVATION_CREATE", "entities": [], "text": "can you book me a flight"}
+{"domain": "restaurant", "lang": "en", "intent": "unknown", "task": "WF_RESERVATION_CANCEL", "entities": [], "text": "can you drive me home"}

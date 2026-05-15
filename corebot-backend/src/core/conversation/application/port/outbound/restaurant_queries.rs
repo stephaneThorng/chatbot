@@ -72,4 +72,3 @@ pub enum ReservationFailure {
     /// `next_slot` is a pre-formatted human-readable string when available.
     NoAvailability { next_slot: Option<String> },
 }
-

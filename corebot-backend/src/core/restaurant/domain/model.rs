@@ -87,9 +87,18 @@ impl RestaurantConfig {
             closing: NaiveTime::from_hms_opt(22, 0, 0).unwrap(),
             slot_mins: 120,
             tables: vec![
-                TableConfig { capacity: 6, count: 2 },
-                TableConfig { capacity: 4, count: 3 },
-                TableConfig { capacity: 2, count: 3 },
+                TableConfig {
+                    capacity: 6,
+                    count: 2,
+                },
+                TableConfig {
+                    capacity: 4,
+                    count: 3,
+                },
+                TableConfig {
+                    capacity: 2,
+                    count: 3,
+                },
             ],
         }
     }
@@ -108,7 +117,5 @@ pub enum ReservationError {
     /// No table combination can seat the party at the requested slot.
     /// The optional field carries the next available slot if one exists
     /// within the same day or the next few days.
-    NoAvailability {
-        next_slot: Option<NaiveDateTime>,
-    },
+    NoAvailability { next_slot: Option<NaiveDateTime> },
 }

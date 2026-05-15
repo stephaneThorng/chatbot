@@ -12,6 +12,9 @@ use corebot_backend::core::conversation::adapter::outbound::restaurant_domain_ga
 use corebot_backend::core::conversation::application::conversation_processor::ConversationProcessor;
 use corebot_backend::core::conversation::application::conversation_service::HandleConversationService;
 use corebot_backend::core::conversation::application::intent_handler::IntentHandlerRegistry;
+use corebot_backend::core::conversation::application::nlu_analysis_result::{
+    NluAnalysisResult, NluEntityResult, NluIntentCandidate,
+};
 use corebot_backend::core::conversation::application::port::outbound::language_detector_port::LanguageDetectorPort;
 use corebot_backend::core::conversation::application::port::outbound::nlp_engine_gateway_port::NlpEngineGatewayPort;
 use corebot_backend::core::conversation::application::restaurant_handler_registry_factory::{
@@ -19,16 +22,14 @@ use corebot_backend::core::conversation::application::restaurant_handler_registr
 };
 use corebot_backend::core::conversation::domain::domain_type::DomainType;
 use corebot_backend::core::conversation::domain::model::intent::NluTask;
-use corebot_backend::core::conversation::application::nlu_analysis_result::{
-    NluAnalysisResult, NluEntityResult, NluIntentCandidate,
-};
-use corebot_backend::core::restaurant::application::restaurant_service::RestaurantService;
+use corebot_backend::core::conversation::domain::model::slot::SlotName;
 use corebot_backend::core::restaurant::application::port::inbound::restaurant_information_port::RestaurantInformationUseCase;
 use corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::{
     EventQuery, FacilityQuery, LocationQuery, MenuDietaryQuery, MenuItemDetailsQuery, MenuQuery,
     PaymentMethodQuery, PriceQuery, ReservationCreateQuery, ReservationLookupQuery,
 };
 use corebot_backend::core::restaurant::application::port::inbound::restaurant_reservation_port::RestaurantReservationUseCase;
+use corebot_backend::core::restaurant::application::restaurant_service::RestaurantService;
 
 struct StubRestaurant;
 
@@ -87,7 +88,10 @@ impl RestaurantInformationUseCase for StubRestaurant {
 }
 
 impl RestaurantReservationUseCase for StubRestaurant {
-    fn create_reservation(&self, _: ReservationCreateQuery) -> Result<String, corebot_backend::core::restaurant::domain::model::ReservationError> {
+    fn create_reservation(
+        &self,
+        _: ReservationCreateQuery,
+    ) -> Result<String, corebot_backend::core::restaurant::domain::model::ReservationError> {
         Ok("created:REST-NEW123".to_string())
     }
 
@@ -107,8 +111,9 @@ impl NlpEngineGatewayPort for StubNlpAnalyzer {
         lang: &str,
         domain: DomainType,
         task: Option<NluTask>,
+        slot_hint: Option<SlotName>,
     ) -> NluAnalysisResult {
-        let _ = (lang, domain, task, text);
+        let _ = (lang, domain, task, slot_hint, text);
         NluAnalysisResult {
             intent_name: self.intent_name.to_string(),
             intent_confidence: 1.0,
@@ -138,6 +143,7 @@ impl NlpEngineGatewayPort for ScriptedNlpAnalyzer {
         _lang: &str,
         _domain: DomainType,
         _task: Option<NluTask>,
+        _slot_hint: Option<SlotName>,
     ) -> NluAnalysisResult {
         self.responses
             .lock()
@@ -280,21 +286,12 @@ async fn multi_turn_reservation_flow_returns_summary_reference_and_supports_chec
     let server = make_scripted_server(vec![
         analysis("greeting", vec![]),
         analysis("reservation_create", vec![]),
+        analysis("reservation_create", vec![entity("person", "Stephane")]),
         analysis(
             "reservation_create",
-            vec![entity("person", "Stephane")],
+            vec![entity("date", "tomorrow"), entity("time", "7pm")],
         ),
-        analysis(
-            "reservation_create",
-            vec![
-                entity("date", "tomorrow"),
-                entity("time", "7pm"),
-            ],
-        ),
-        analysis(
-            "reservation_create",
-            vec![entity("people_count", "4")],
-        ),
+        analysis("reservation_create", vec![entity("people_count", "4")]),
         analysis("affirmative", vec![]),
         analysis("check_reservation", vec![]),
         analysis("ask_location", vec![]),
@@ -317,10 +314,12 @@ async fn multi_turn_reservation_flow_returns_summary_reference_and_supports_chec
         .await
         .json::<serde_json::Value>();
     // starting_message is prepended — just verify the slot prompt is included
-    assert!(start["reply"]
-        .as_str()
-        .unwrap()
-        .contains("What name should I use for the reservation?"));
+    assert!(
+        start["reply"]
+            .as_str()
+            .unwrap()
+            .contains("What name should I use for the reservation?")
+    );
 
     let name = server
         .post("/api/v1/conversation/send_message")
@@ -343,7 +342,7 @@ async fn multi_turn_reservation_flow_returns_summary_reference_and_supports_chec
         .json::<serde_json::Value>();
     let people_reply = people["reply"].as_str().unwrap();
     assert!(people_reply.contains("Stephane"));
-    assert!(people_reply.contains("7pm"));
+    assert!(people_reply.contains("19:00"));
     assert!(people_reply.contains("4 people"));
     assert!(people_reply.contains("Do you confirm this reservation?"));
 
@@ -354,7 +353,7 @@ async fn multi_turn_reservation_flow_returns_summary_reference_and_supports_chec
         .json::<serde_json::Value>();
     let confirmation_reply = confirm["reply"].as_str().unwrap();
     assert!(confirmation_reply.contains("Your reservation is confirmed for Stephane"));
-    assert!(confirmation_reply.contains("7pm"));
+    assert!(confirmation_reply.contains("19:00"));
     assert!(confirmation_reply.contains("4 people"));
     assert!(confirmation_reply.contains("Your reference is REST-00000B."));
 

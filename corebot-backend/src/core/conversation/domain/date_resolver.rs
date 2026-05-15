@@ -1,5 +1,5 @@
 use chrono::{Local, NaiveDate, NaiveTime};
-use human_date_parser::{from_human_time, ParseResult};
+use human_date_parser::{ParseResult, from_human_time};
 
 /// Domain error for date resolution.
 #[derive(Debug, Clone, PartialEq)]
@@ -60,7 +60,7 @@ pub enum TimeResolveError {
 /// - 12-hour with am/pm: `"7pm"`, `"7 pm"`, `"7:30 pm"`, `"12:00 am"`
 /// - Bare hour with am/pm suffix: `"7pm"`, `"9am"`
 pub fn resolve_time(raw: &str) -> Result<NaiveTime, TimeResolveError> {
-    let s = raw.trim().to_lowercase();
+    let s = normalize_time_text(raw);
 
     // Try explicit 12h suffix first (most reliable for chatbot input)
     let normalized = s.replace(" pm", "pm").replace(" am", "am");
@@ -93,6 +93,31 @@ pub fn resolve_time(raw: &str) -> Result<NaiveTime, TimeResolveError> {
     }
 
     Err(TimeResolveError::Unparseable)
+}
+
+fn normalize_time_text(raw: &str) -> String {
+    let normalized = raw.trim().to_lowercase();
+    let normalized = normalized
+        .strip_prefix("jam ")
+        .or_else(|| normalized.strip_prefix("pukul "))
+        .unwrap_or(normalized.as_str())
+        .trim()
+        .to_string();
+
+    if let Some(rest) = normalized.strip_suffix(" malam") {
+        return format!("{}pm", rest.trim());
+    }
+    if let Some(rest) = normalized.strip_suffix(" pagi") {
+        return format!("{}am", rest.trim());
+    }
+    if let Some(rest) = normalized.strip_suffix(" sore") {
+        return format!("{}pm", rest.trim());
+    }
+    if let Some(rest) = normalized.strip_suffix(" siang") {
+        return format!("{}pm", rest.trim());
+    }
+
+    normalized
 }
 
 fn parse_12h(rest: &str, pm: bool) -> Option<NaiveTime> {
@@ -202,5 +227,13 @@ mod tests {
     #[test]
     fn resolve_time_unparseable() {
         assert_eq!(resolve_time("blah"), Err(TimeResolveError::Unparseable));
+    }
+
+    #[test]
+    fn resolve_time_indonesian_evening_format() {
+        assert_eq!(
+            resolve_time("jam 7 malam"),
+            Ok(NaiveTime::from_hms_opt(19, 0, 0).unwrap())
+        );
     }
 }

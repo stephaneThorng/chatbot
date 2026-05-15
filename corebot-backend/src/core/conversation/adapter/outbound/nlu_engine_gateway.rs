@@ -4,6 +4,7 @@ use crate::core::conversation::application::nlu_analysis_result::{
 use crate::core::conversation::application::port::outbound::nlp_engine_gateway_port::NlpEngineGatewayPort;
 use crate::core::conversation::domain::domain_type::DomainType;
 use crate::core::conversation::domain::model::intent::NluTask;
+use crate::core::conversation::domain::model::slot::SlotName;
 use crate::core::nlu_engine::application::AnalyzeTextCommand;
 use crate::core::nlu_engine::application::port::inbound::analyze_text_usecase::AnalyzeTextUseCase;
 use crate::core::nlu_engine::domain::analysis::NluAnalysis;
@@ -29,6 +30,7 @@ impl<A: AnalyzeTextUseCase> NlpEngineGatewayPort for NluEngineGateway<A> {
         lang: &str,
         domain: DomainType,
         task: Option<NluTask>,
+        slot_hint: Option<SlotName>,
     ) -> NluAnalysisResult {
         let nlu_result = self
             .nlu_engine_gateway
@@ -37,6 +39,7 @@ impl<A: AnalyzeTextUseCase> NlpEngineGatewayPort for NluEngineGateway<A> {
                 lang: lang.to_string(),
                 domain: domain.as_str().to_string(),
                 task: task.map(|t| t.as_tag().to_string()),
+                slot: slot_hint.map(|slot| slot.as_str().to_string()),
             })
             .unwrap_or_else(|error| {
                 if debug_nlu_logging_enabled() {

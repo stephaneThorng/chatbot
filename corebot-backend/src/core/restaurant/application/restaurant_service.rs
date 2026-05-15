@@ -57,15 +57,41 @@ impl RestaurantService {
             MenuItem::new("pizza", &["vegetarian"], &["gluten", "dairy"], 12),
             MenuItem::new(
                 "salad",
-                &["vegan", "vegetarian", "gluten-free", "dairy-free", "nut-free"],
+                &[
+                    "vegan",
+                    "vegetarian",
+                    "gluten-free",
+                    "dairy-free",
+                    "nut-free",
+                ],
                 &[],
                 8,
             ),
-            MenuItem::new("chocolate cake", &["vegetarian"], &["gluten", "dairy", "eggs"], 6),
+            MenuItem::new(
+                "chocolate cake",
+                &["vegetarian"],
+                &["gluten", "dairy", "eggs"],
+                6,
+            ),
             MenuItem::new("fried rice", &["gluten-free"], &["eggs", "soy"], 10),
-            MenuItem::new("vegetarian pasta", &["vegetarian"], &["gluten", "dairy", "eggs"], 11),
-            MenuItem::new("seafood soup", &["gluten-free", "dairy-free"], &["shellfish", "soy"], 14),
-            MenuItem::new("beef burger", &[], &["gluten", "dairy", "eggs", "sesame"], 14),
+            MenuItem::new(
+                "vegetarian pasta",
+                &["vegetarian"],
+                &["gluten", "dairy", "eggs"],
+                11,
+            ),
+            MenuItem::new(
+                "seafood soup",
+                &["gluten-free", "dairy-free"],
+                &["shellfish", "soy"],
+                14,
+            ),
+            MenuItem::new(
+                "beef burger",
+                &[],
+                &["gluten", "dairy", "eggs", "sesame"],
+                14,
+            ),
             MenuItem::new(
                 "chicken satay",
                 &["halal", "gluten-free", "dairy-free"],
@@ -78,14 +104,29 @@ impl RestaurantService {
                 &["soy"],
                 11,
             ),
-            MenuItem::new("kids pasta", &["vegetarian"], &["gluten", "dairy", "eggs"], 8),
+            MenuItem::new(
+                "kids pasta",
+                &["vegetarian"],
+                &["gluten", "dairy", "eggs"],
+                8,
+            ),
             MenuItem::new("set menu", &[], &["gluten", "dairy"], 35),
             MenuItem::new("lunch special", &[], &["gluten"], 15),
             MenuItem::new("kids menu", &["vegetarian"], &["gluten", "dairy"], 10),
-            MenuItem::new("breakfast menu", &["vegetarian"], &["gluten", "dairy", "eggs"], 12),
+            MenuItem::new(
+                "breakfast menu",
+                &["vegetarian"],
+                &["gluten", "dairy", "eggs"],
+                12,
+            ),
             MenuItem::new("family menu", &[], &["gluten", "dairy"], 60),
             MenuItem::new("tasting menu", &[], &["gluten", "dairy", "shellfish"], 75),
-            MenuItem::new("dessert menu", &["vegetarian"], &["gluten", "dairy", "eggs"], 18),
+            MenuItem::new(
+                "dessert menu",
+                &["vegetarian"],
+                &["gluten", "dairy", "eggs"],
+                18,
+            ),
         ]
     }
 
@@ -150,8 +191,8 @@ impl RestaurantService {
             return false;
         }
         // Compute slot end; if it overflows midnight the slot is outside opening hours
-        let slot_end_secs = time.num_seconds_from_midnight() as i64
-            + (self.config.slot_mins as i64 * 60);
+        let slot_end_secs =
+            time.num_seconds_from_midnight() as i64 + (self.config.slot_mins as i64 * 60);
         let closing_secs = self.config.closing.num_seconds_from_midnight() as i64;
         slot_end_secs <= closing_secs
     }
@@ -278,7 +319,9 @@ impl RestaurantService {
     // -----------------------------------------------------------------------
 
     fn reservations(&self) -> std::sync::MutexGuard<'_, Vec<Reservation>> {
-        self.reservations.lock().expect("reservations mutex poisoned")
+        self.reservations
+            .lock()
+            .expect("reservations mutex poisoned")
     }
 
     fn generate_reference(reservations: &[Reservation]) -> String {
@@ -374,8 +417,11 @@ impl RestaurantService {
 
     fn find_menu_dietary_internal(&self, query: MenuDietaryQuery) -> String {
         if let Some(requirement) = query.dietary_requirement {
-            let matches: Vec<&MenuItem> =
-                self.menu.iter().filter(|i| i.has_dietary(&requirement)).collect();
+            let matches: Vec<&MenuItem> = self
+                .menu
+                .iter()
+                .filter(|i| i.has_dietary(&requirement))
+                .collect();
             if matches.is_empty() {
                 return format!("no_dietary:{requirement}");
             }
@@ -407,15 +453,29 @@ impl RestaurantService {
                     .iter()
                     .find(|i| i.name.to_lowercase().contains(&item_name.to_lowercase()))
                 {
-                    let dietary = if item.dietary.is_empty() { "none".to_string() } else { item.dietary.join(", ") };
-                    let allergens = if item.allergens.is_empty() { "none".to_string() } else { item.allergens.join(", ") };
-                    return format!("item_details:{}|{}|{}|{}", item.name, item.price_euros, dietary, allergens);
+                    let dietary = if item.dietary.is_empty() {
+                        "none".to_string()
+                    } else {
+                        item.dietary.join(", ")
+                    };
+                    let allergens = if item.allergens.is_empty() {
+                        "none".to_string()
+                    } else {
+                        item.allergens.join(", ")
+                    };
+                    return format!(
+                        "item_details:{}|{}|{}|{}",
+                        item.name, item.price_euros, dietary, allergens
+                    );
                 }
                 format!("item_unknown:{item_name}")
             }
             (None, Some(allergen)) => {
-                let matches: Vec<&MenuItem> =
-                    self.menu.iter().filter(|i| i.has_allergen(&allergen)).collect();
+                let matches: Vec<&MenuItem> = self
+                    .menu
+                    .iter()
+                    .filter(|i| i.has_allergen(&allergen))
+                    .collect();
                 if matches.is_empty() {
                     return format!("no_allergen_match:{allergen}");
                 }
@@ -467,7 +527,12 @@ impl RestaurantService {
                 .iter()
                 .map(|item| format!("{} (EUR {})", item.name, item.price_euros))
                 .collect();
-            return format!("price_results:{}|{}|{}", filter.comparator, filter.amount, names.join(", "));
+            return format!(
+                "price_results:{}|{}|{}",
+                filter.comparator,
+                filter.amount,
+                names.join(", ")
+            );
         }
         if let Some(item_name) = query.item {
             if let Some(item) = self
@@ -485,7 +550,9 @@ impl RestaurantService {
     fn find_event_info_internal(&self, query: EventQuery) -> String {
         let event_spaces = ["terrace", "private room"];
         if let Some(location) = query.location {
-            let available = event_spaces.iter().any(|s| location.to_lowercase().contains(s));
+            let available = event_spaces
+                .iter()
+                .any(|s| location.to_lowercase().contains(s));
             if available {
                 return format!(
                     "event_space_available:{}|Contact us at events@example.com to book.",
@@ -572,34 +639,57 @@ impl RestaurantInformationUseCase for RestaurantService {
         )
     }
 
-    fn find_menu(&self, query: MenuQuery) -> String { self.find_menu_internal(query) }
-    fn find_menu_dietary(&self, query: MenuDietaryQuery) -> String { self.find_menu_dietary_internal(query) }
-    fn find_menu_item_details(&self, query: MenuItemDetailsQuery) -> String { self.find_menu_item_details_internal(query) }
-    fn find_location(&self, query: LocationQuery) -> String { self.find_location_internal(query) }
-    fn get_contact(&self) -> String { "contact:+33123456789|booking@example.com".to_string() }
-    fn find_payment_methods(&self, query: PaymentMethodQuery) -> String { self.find_payment_methods_internal(query) }
-    fn find_price(&self, query: PriceQuery) -> String { self.find_price_internal(query) }
-    fn get_takeaway_info(&self) -> String { "takeaway:yes|We offer takeaway and delivery. Order by phone or at the counter.".to_string() }
-    fn find_event_info(&self, query: EventQuery) -> String { self.find_event_info_internal(query) }
-    fn find_facility_info(&self, query: FacilityQuery) -> String { self.find_facility_info_internal(query) }
-    fn get_accessibility_info(&self) -> String { "accessibility:yes|The restaurant is wheelchair accessible with step-free access at the main entrance. Strollers are welcome.".to_string() }
-    fn get_entertainment_info(&self) -> String { "entertainment:yes|We have live music every Friday and Saturday evening. A DJ performs on Saturday nights.".to_string() }
+    fn find_menu(&self, query: MenuQuery) -> String {
+        self.find_menu_internal(query)
+    }
+    fn find_menu_dietary(&self, query: MenuDietaryQuery) -> String {
+        self.find_menu_dietary_internal(query)
+    }
+    fn find_menu_item_details(&self, query: MenuItemDetailsQuery) -> String {
+        self.find_menu_item_details_internal(query)
+    }
+    fn find_location(&self, query: LocationQuery) -> String {
+        self.find_location_internal(query)
+    }
+    fn get_contact(&self) -> String {
+        "contact:+33123456789|booking@example.com".to_string()
+    }
+    fn find_payment_methods(&self, query: PaymentMethodQuery) -> String {
+        self.find_payment_methods_internal(query)
+    }
+    fn find_price(&self, query: PriceQuery) -> String {
+        self.find_price_internal(query)
+    }
+    fn get_takeaway_info(&self) -> String {
+        "takeaway:yes|We offer takeaway and delivery. Order by phone or at the counter.".to_string()
+    }
+    fn find_event_info(&self, query: EventQuery) -> String {
+        self.find_event_info_internal(query)
+    }
+    fn find_facility_info(&self, query: FacilityQuery) -> String {
+        self.find_facility_info_internal(query)
+    }
+    fn get_accessibility_info(&self) -> String {
+        "accessibility:yes|The restaurant is wheelchair accessible with step-free access at the main entrance. Strollers are welcome.".to_string()
+    }
+    fn get_entertainment_info(&self) -> String {
+        "entertainment:yes|We have live music every Friday and Saturday evening. A DJ performs on Saturday nights.".to_string()
+    }
 }
 
 impl RestaurantReservationUseCase for RestaurantService {
-    fn create_reservation(&self, query: ReservationCreateQuery) -> Result<String, ReservationError> {
+    fn create_reservation(
+        &self,
+        query: ReservationCreateQuery,
+    ) -> Result<String, ReservationError> {
         if !self.is_open(query.time) {
             return Err(ReservationError::RestaurantClosed);
         }
 
         let mut reservations = self.reservations();
         if !self.can_seat(&reservations, query.date, query.time, query.people_count) {
-            let next_slot = self.next_available_slot(
-                &reservations,
-                query.date,
-                query.time,
-                query.people_count,
-            );
+            let next_slot =
+                self.next_available_slot(&reservations, query.date, query.time, query.people_count);
             return Err(ReservationError::NoAvailability { next_slot });
         }
 
@@ -703,7 +793,10 @@ mod tests {
             time: time(19, 0),
             people_count: 35,
         });
-        assert!(matches!(result, Err(ReservationError::NoAvailability { .. })));
+        assert!(matches!(
+            result,
+            Err(ReservationError::NoAvailability { .. })
+        ));
     }
 
     #[test]
@@ -746,16 +839,26 @@ mod tests {
 
     #[test]
     fn check_reservation_unknown_reference_returns_not_found() {
-        assert!(service()
-            .check_reservation(ReservationLookupQuery { reference: Some("REST-UNKNOWN".to_string()), name: None })
-            .starts_with("not_found:"));
+        assert!(
+            service()
+                .check_reservation(ReservationLookupQuery {
+                    reference: Some("REST-UNKNOWN".to_string()),
+                    name: None
+                })
+                .starts_with("not_found:")
+        );
     }
 
     #[test]
     fn check_reservation_no_reference_returns_no_reference() {
-        assert!(service()
-            .check_reservation(ReservationLookupQuery { reference: None, name: None })
-            .starts_with("no_reference_or_name:"));
+        assert!(
+            service()
+                .check_reservation(ReservationLookupQuery {
+                    reference: None,
+                    name: None
+                })
+                .starts_with("no_reference_or_name:")
+        );
     }
 
     #[test]
@@ -791,21 +894,22 @@ mod tests {
 
     #[test]
     fn get_payment_methods_accepted() {
-        assert!(service()
-            .find_payment_methods(PaymentMethodQuery { method: Some("credit card".to_string()) })
-            .starts_with("method_accepted:"));
+        assert!(
+            service()
+                .find_payment_methods(PaymentMethodQuery {
+                    method: Some("credit card".to_string())
+                })
+                .starts_with("method_accepted:")
+        );
     }
 
     #[test]
     fn get_facility_available() {
         assert_eq!(
-            service().find_facility_info(FacilityQuery { facility: Some("wifi".to_string()) }),
+            service().find_facility_info(FacilityQuery {
+                facility: Some("wifi".to_string())
+            }),
             "facility_available:wifi"
         );
     }
 }
-
-
-
-
-

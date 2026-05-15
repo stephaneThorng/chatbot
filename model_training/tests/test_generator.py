@@ -16,6 +16,7 @@ def to_examples(rows: list[dict]) -> list[TrainingExample]:
             domain=row["domain"],
             intent=row["intent"],
             task=row.get("task"),
+            slot=row.get("slot"),
             entities=tuple(EntitySpan(entity["start"], entity["end"], entity["type"]) for entity in row["entities"]),
         )
         for row in rows
@@ -126,6 +127,8 @@ def test_generator_covers_bare_people_count_slot_replies() -> None:
     texts = {row["text"] for row in workflow_rows}
 
     assert {"4", "10", "for 4", "for 10", "for 4 people", "for 10 people"}.issubset(texts)
+    slot_hinted = {row["text"] for row in workflow_rows if row.get("slot") == "people"}
+    assert {"4", "10", "for 4", "for 10", "for 4 people", "for 10 people"}.issubset(slot_hinted)
 
 
 def test_generator_covers_choice_short_forms() -> None:
