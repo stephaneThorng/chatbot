@@ -1,0 +1,151 @@
+model:
+  name: xlm-roberta-base
+  max_length: 160
+
+training:
+  seed: 42
+  num_epochs: 4
+  batch_size: 8
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  output_dir: outputs/restaurant_xlmr
+  logging_steps: 25
+
+data:
+  train: data/restaurant/train.jsonl
+  validation: data/restaurant/validation.jsonl
+  eval: data/restaurant/eval.jsonl
+
+tags:
+  languages:
+    - en
+  domains:
+    - restaurant
+  future_domains:
+    - hotel
+  tasks:
+    - WF_RESERVATION_CREATE
+    - WF_RESERVATION_CANCEL
+    - WF_CHOICE
+  slots:
+    - name
+    - date
+    - time
+    - people
+    - reference
+    - menu_item
+    - allergen
+    - dietary_requirement
+
+intents:
+  domains:
+    restaurant:
+      - reservation_create
+      - reservation_cancel
+      - cancel
+      - check_reservation
+      - ask_opening_hours
+      - ask_menu_general
+      - ask_menu_dietary
+      - ask_menu_item_details
+      - ask_location
+      - ask_contact
+      - ask_payment_methods
+      - ask_price
+      - ask_takeaway_delivery
+      - ask_event
+      - ask_facilities
+      - ask_accessibility
+      - ask_entertainment
+      - greeting
+      - thanks
+      - goodbye
+      - affirmative
+      - negative
+      - unknown
+  labels:
+    - reservation_create
+    - reservation_cancel
+    - cancel
+    - check_reservation
+    - ask_opening_hours
+    - ask_menu_general
+    - ask_menu_dietary
+    - ask_menu_item_details
+    - ask_location
+    - ask_contact
+    - ask_payment_methods
+    - ask_price
+    - ask_takeaway_delivery
+    - ask_event
+    - ask_facilities
+    - ask_accessibility
+    - ask_entertainment
+    - greeting
+    - thanks
+    - goodbye
+    - affirmative
+    - negative
+    - unknown
+  class_weights:
+    reservation_create: 1.5
+    reservation_cancel: 1.5
+    cancel: 1.2
+    check_reservation: 1.0
+    ask_opening_hours: 1.0
+    ask_menu_general: 1.0
+    ask_menu_dietary: 1.0
+    ask_menu_item_details: 1.0
+    ask_location: 1.0
+    ask_contact: 1.0
+    ask_payment_methods: 1.0
+    ask_price: 1.0
+    ask_takeaway_delivery: 1.0
+    ask_event: 1.0
+    ask_facilities: 1.0
+    ask_accessibility: 1.0
+    ask_entertainment: 1.0
+    greeting: 1.0
+    thanks: 1.0
+    goodbye: 1.4
+    affirmative: 2.4
+    negative: 3.2
+    unknown: 1.0
+
+entities:
+  domains:
+    restaurant:
+      - person
+      - date
+      - time
+      - people_count
+      - menu_item
+      - price_item
+      - location
+      - phone
+      - email
+      - dietary_requirement
+      - allergen
+      - facility
+      - payment_method
+      - reservation_reference
+      - price_comparator
+      - price_amount
+  labels:
+    - person
+    - date
+    - time
+    - people_count
+    - menu_item
+    - price_item
+    - location
+    - phone
+    - email
+    - dietary_requirement
+    - allergen
+    - facility
+    - payment_method
+    - reservation_reference
+    - price_comparator
+    - price_amount

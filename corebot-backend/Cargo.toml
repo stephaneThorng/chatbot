@@ -1,0 +1,32 @@
+[package]
+name = "corebot-backend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = { version = "0.8.9", features = ["json"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.52.2", features = ["full"] }
+uuid = { version = "1.23.1", features = ["v4"] }
+ndarray = "0.17.2"
+ort = { version = "2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "download-binaries", "copy-dylibs", "tls-native", "api-24"] }
+thiserror = "2.0.12"
+tokenizers = { version = "0.22.1", default-features = false, features = ["fancy-regex"] }
+langdetect-rs = "0.2.3"
+rust-i18n = "4.0.0"
+chrono = "0.4"
+tower-http = { version = "0.6.6", features = ["cors"] }
+dotenvy = "0.15.7"
+human-date-parser = "0.3.1"
+text2num = "1"
+
+[package.metadata.i18n]
+available-locales = ["en", "id"]
+default-locale = "en"
+load-path = "locales"
+
+[dev-dependencies]
+axum-test = "20.0.0"
+arch_test_core = "0.1"
+tempfile = "3.20.0"
