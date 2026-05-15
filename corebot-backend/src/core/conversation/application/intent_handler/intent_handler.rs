@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 
-use chrono::Local;
-use rust_i18n::t;
 use crate::core::conversation::application::dto::nlu_analysis_result::NluEntityResult;
 use crate::core::conversation::domain::conversation::Conversation;
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, WorkflowConfig};
@@ -9,6 +7,8 @@ use crate::core::conversation::domain::model::slot::{
     SlotConstraint, SlotDataType, SlotDataValue, SlotName,
 };
 use crate::core::conversation::domain::workflow::NextSlot;
+use chrono::Local;
+use rust_i18n::t;
 
 /// Stateless input passed to an intent-specific handler.
 pub struct IntentHandlerInput<'a> {
@@ -60,127 +60,181 @@ pub trait IntentHandler: Send + Sync {
     }
 
     fn handle_workflow(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
-        let mut updated_conversation = input.conversation;
         let config = self.config();
         let workflow_cfg = config.workflow.workflow_config();
+        let (mut updated_conversation, just_started) =
+            match self.start_or_cancel_workflow(&input, &config) {
+                Ok(state) => state,
+                Err(result) => return result,
+            };
 
+        let (next_conversation, updated_any_slot) =
+            match self.collect_workflow_updates(&input, workflow_cfg, updated_conversation) {
+                Ok(state) => state,
+                Err(result) => return result,
+            };
+        updated_conversation = next_conversation;
+
+        if !self.is_ready_for_confirmation(&updated_conversation) {
+            return self.build_collection_reply(workflow_cfg, updated_conversation, just_started);
+        }
+
+        self.build_confirmation_reply(
+            workflow_cfg,
+            input.analysis_intent,
+            updated_conversation,
+            updated_any_slot,
+        )
+    }
+
+    fn start_or_cancel_workflow(
+        &self,
+        input: &IntentHandlerInput<'_>,
+        config: &IntentConfig,
+    ) -> Result<(Conversation, bool), StateHandlerResult> {
+        let mut updated_conversation = input.conversation.clone();
         let just_started = !updated_conversation.has_active_workflow();
+
         if just_started {
             updated_conversation = updated_conversation
-                .into_started_workflow(&config)
+                .into_started_workflow(config)
                 .expect("workflow handler config must start a workflow");
         }
 
         if input.analysis_intent == &IntentId::Cancel {
             updated_conversation = updated_conversation.into_cancelled_workflow();
-            let reply = t!(
-                "system.workflow_cancelled",
-                locale = updated_conversation.lang.as_str()
-            )
-            .to_string();
-            return StateHandlerResult {
-                updated_conversation,
-                reply,
-                handled_intent: self.intent(),
-            };
-        }
-
-        let extracted_updates =
-            self.extract_slot_updates(&updated_conversation, input.text, input.analysis_entities);
-        let update_result = self.apply_slot_updates(updated_conversation, extracted_updates);
-        let updated_any_slot = update_result.updated_any_slot;
-        let invalid_slot = update_result.invalid_slot;
-        updated_conversation = update_result.updated_conversation;
-
-        if let Some(invalid_slot) = invalid_slot {
-            let reply = self.slot_prompt(
-                workflow_cfg,
-                invalid_slot,
-                updated_conversation.lang.as_str(),
-            );
-            return StateHandlerResult {
-                updated_conversation,
-                reply,
-                handled_intent: self.intent(),
-            };
-        }
-
-        if let Some(violation) = self.validate_constraints(workflow_cfg, &mut updated_conversation)
-        {
-            return StateHandlerResult {
-                updated_conversation,
-                reply: violation,
-                handled_intent: self.intent(),
-            };
-        }
-
-        let ready_for_confirmation = updated_conversation
-            .active_workflow()
-            .is_some_and(|workflow| workflow.is_ready_for_confirmation());
-
-        if !ready_for_confirmation {
-            let slot_prompt = self.next_slot_prompt(&updated_conversation, workflow_cfg);
-            let reply = if just_started {
-                self.starting_reply(
-                    workflow_cfg,
-                    updated_conversation.lang.as_str(),
-                    &slot_prompt,
+            return Err(StateHandlerResult {
+                reply: t!(
+                    "system.workflow_cancelled",
+                    locale = updated_conversation.lang.as_str()
                 )
-            } else {
-                slot_prompt
-            };
-            return StateHandlerResult {
+                .to_string(),
+                updated_conversation,
+                handled_intent: self.intent(),
+            });
+        }
+
+        Ok((updated_conversation, just_started))
+    }
+
+    fn collect_workflow_updates(
+        &self,
+        input: &IntentHandlerInput<'_>,
+        workflow_cfg: &WorkflowConfig,
+        conversation: Conversation,
+    ) -> Result<(Conversation, bool), StateHandlerResult> {
+        let extracted_updates =
+            self.extract_slot_updates(&conversation, input.text, input.analysis_entities);
+        let update_result = self.apply_slot_updates(conversation, extracted_updates);
+        let mut updated_conversation = update_result.updated_conversation;
+
+        if let Some(invalid_slot) = update_result.invalid_slot {
+            return Err(StateHandlerResult {
+                reply: self.slot_prompt(
+                    workflow_cfg,
+                    invalid_slot,
+                    updated_conversation.lang.as_str(),
+                ),
+                updated_conversation,
+                handled_intent: self.intent(),
+            });
+        }
+
+        if let Some(reply) = self.validate_constraints(workflow_cfg, &mut updated_conversation) {
+            return Err(StateHandlerResult {
                 updated_conversation,
                 reply,
                 handled_intent: self.intent(),
-            };
+            });
         }
 
-        match input.analysis_intent {
+        Ok((updated_conversation, update_result.updated_any_slot))
+    }
+
+    fn is_ready_for_confirmation(&self, conversation: &Conversation) -> bool {
+        conversation
+            .active_workflow()
+            .is_some_and(|workflow| workflow.is_ready_for_confirmation())
+    }
+
+    fn build_collection_reply(
+        &self,
+        workflow_cfg: &WorkflowConfig,
+        updated_conversation: Conversation,
+        just_started: bool,
+    ) -> StateHandlerResult {
+        let slot_prompt = self.next_slot_prompt(&updated_conversation, workflow_cfg);
+        let reply = if just_started {
+            self.starting_reply(
+                workflow_cfg,
+                updated_conversation.lang.as_str(),
+                &slot_prompt,
+            )
+        } else {
+            slot_prompt
+        };
+
+        StateHandlerResult {
+            updated_conversation,
+            reply,
+            handled_intent: self.intent(),
+        }
+    }
+
+    fn build_confirmation_reply(
+        &self,
+        workflow_cfg: &WorkflowConfig,
+        analysis_intent: &IntentId,
+        updated_conversation: Conversation,
+        updated_any_slot: bool,
+    ) -> StateHandlerResult {
+        match analysis_intent {
             IntentId::Affirmative if !updated_any_slot => {
+                self.confirm_workflow(workflow_cfg, updated_conversation)
+            }
+            IntentId::Negative if !updated_any_slot => StateHandlerResult {
+                reply: self.negative_prompt(updated_conversation.lang.as_str()),
+                updated_conversation,
+                handled_intent: self.intent(),
+            },
+            _ => StateHandlerResult {
+                reply: self.confirmation_prompt(workflow_cfg, &updated_conversation),
+                updated_conversation,
+                handled_intent: self.intent(),
+            },
+        }
+    }
+
+    fn confirm_workflow(
+        &self,
+        workflow_cfg: &WorkflowConfig,
+        mut updated_conversation: Conversation,
+    ) -> StateHandlerResult {
+        let lang = updated_conversation.lang.clone();
+        updated_conversation = updated_conversation.into_confirmed_workflow();
+
+        match self.post_process(lang.as_str(), updated_conversation) {
+            WorkflowPostProcessResult::Succeeded {
+                mut updated_conversation,
+                reply,
+            } => {
                 let lang = updated_conversation.lang.clone();
-                updated_conversation = updated_conversation.into_confirmed_workflow();
-                match self.post_process(lang.as_str(), updated_conversation) {
-                    WorkflowPostProcessResult::Succeeded {
-                        mut updated_conversation,
-                        reply,
-                    } => {
-                        let lang = updated_conversation.lang.clone();
-                        updated_conversation = updated_conversation.into_completed_workflow();
-                        let reply = reply
-                            .unwrap_or_else(|| self.completion_reply(workflow_cfg, lang.as_str()));
-                        StateHandlerResult {
-                            updated_conversation,
-                            reply,
-                            handled_intent: self.intent(),
-                        }
-                    }
-                    WorkflowPostProcessResult::Failed {
-                        updated_conversation,
-                        reply,
-                    } => StateHandlerResult {
-                        updated_conversation,
-                        reply,
-                        handled_intent: self.intent(),
-                    },
-                }
-            }
-            IntentId::Negative if !updated_any_slot => {
-                let reply = self.negative_prompt(updated_conversation.lang.as_str());
+                updated_conversation = updated_conversation.into_completed_workflow();
                 StateHandlerResult {
+                    reply: reply
+                        .unwrap_or_else(|| self.completion_reply(workflow_cfg, lang.as_str())),
                     updated_conversation,
-                    reply,
                     handled_intent: self.intent(),
                 }
             }
-            _ => {
-                let reply = self.confirmation_prompt(workflow_cfg, &updated_conversation);
-                StateHandlerResult {
-                    updated_conversation,
-                    reply,
-                    handled_intent: self.intent(),
-                }
-            }
+            WorkflowPostProcessResult::Failed {
+                updated_conversation,
+                reply,
+            } => StateHandlerResult {
+                updated_conversation,
+                reply,
+                handled_intent: self.intent(),
+            },
         }
     }
 

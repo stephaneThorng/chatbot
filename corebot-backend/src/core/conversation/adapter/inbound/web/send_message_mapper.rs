@@ -1,5 +1,7 @@
-use crate::core::conversation::application::dto::conversation_command::{HandleConversationCommand, HandleConversationResult};
 use super::send_message_dto::{SendMessageRequest, SendMessageResponse};
+use crate::core::conversation::application::dto::conversation_command::{
+    HandleConversationCommand, HandleConversationResult,
+};
 
 impl From<SendMessageRequest> for HandleConversationCommand {
     fn from(req: SendMessageRequest) -> Self {

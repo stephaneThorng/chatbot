@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
-use super::dto::conversation_command::{HandleConversationCommand, HandleConversationResult};
 use super::conversation_processor::ConversationProcessor;
+use super::dto::conversation_command::{HandleConversationCommand, HandleConversationResult};
 use super::port::inbound::conversation_usecase::HandleConversationUseCase;
 use super::port::outbound::conversation_repository_port::ConversationRepositoryPort;
 use super::port::outbound::language_detector_port::LanguageDetectorPort;

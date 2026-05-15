@@ -2,9 +2,11 @@ use std::collections::HashMap;
 
 use rust_i18n::t;
 
-use crate::core::conversation::application::intent_handler::intent_handler::{IntentHandlerInput, IntentHandlerRegistry, StateHandlerResult};
 use crate::core::conversation::application::dto::nlu_analysis_result::{
     NluAnalysisResult, NluEntityResult,
+};
+use crate::core::conversation::application::intent_handler::intent_handler::{
+    IntentHandlerInput, IntentHandlerRegistry, StateHandlerResult,
 };
 use crate::core::conversation::domain::model::conversation::Conversation;
 use crate::core::conversation::domain::model::domain_type::DomainType;
