@@ -20,7 +20,9 @@ use corebot_backend::core::conversation::domain::domain_type::DomainType;
 use corebot_backend::core::conversation::domain::model::intent::NluTask;
 use corebot_backend::core::conversation::domain::model::slot::SlotName;
 use corebot_backend::core::restaurant::application::database_restaurant_service::DatabaseRestaurantService;
-use corebot_backend::core::restaurant::application::port::inbound::restaurant_information_port::RestaurantInformationUseCase;
+use corebot_backend::core::restaurant::application::port::inbound::restaurant_availability_usecase::RestaurantAvailabilityUseCase;
+use corebot_backend::core::restaurant::application::port::inbound::restaurant_business_info_usecase::RestaurantBusinessInfoUseCase;
+use corebot_backend::core::restaurant::application::port::inbound::restaurant_menu_usecase::RestaurantMenuUseCase;
 use corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::{
     EventQuery, FacilityQuery, LocationQuery, MenuDietaryQuery, MenuItemDetailsQuery, MenuQuery,
     PaymentMethodQuery, PriceQuery, ReservationCancelQuery, ReservationCreateQuery,
@@ -39,14 +41,18 @@ use corebot_backend::core::restaurant::domain::model::{
 use chrono::{NaiveDate, NaiveTime, Weekday};
 use uuid::Uuid;
 
+#[derive(Clone)]
 struct StubRestaurant;
 
 #[async_trait::async_trait]
-impl RestaurantInformationUseCase for StubRestaurant {
+impl RestaurantAvailabilityUseCase for StubRestaurant {
     async fn get_opening_hours(&self) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult{
         corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult::new("Mon-Sun 9am-10pm")
     }
+}
 
+#[async_trait::async_trait]
+impl RestaurantMenuUseCase for StubRestaurant {
     async fn find_menu(&self, _: MenuQuery) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::MenuSearchResult{
         corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::MenuSearchResult::new("full_menu:stub")
     }
@@ -59,6 +65,13 @@ impl RestaurantInformationUseCase for StubRestaurant {
         corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::MenuItemDetailsResult::new("details_no_filter:")
     }
 
+    async fn find_price(&self, _: PriceQuery) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::MenuSearchResult{
+        corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::MenuSearchResult::new("price_general:stub")
+    }
+}
+
+#[async_trait::async_trait]
+impl RestaurantBusinessInfoUseCase for StubRestaurant {
     async fn find_location(&self, _: LocationQuery) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult{
         corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult::new("address:stub")
     }
@@ -69,10 +82,6 @@ impl RestaurantInformationUseCase for StubRestaurant {
 
     async fn find_payment_methods(&self, _: PaymentMethodQuery) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::PaymentMethodsResult{
         corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::PaymentMethodsResult::new("all_methods:cash")
-    }
-
-    async fn find_price(&self, _: PriceQuery) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::MenuSearchResult{
-        corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::MenuSearchResult::new("price_general:stub")
     }
 
     async fn get_takeaway_info(&self) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult{
@@ -179,7 +188,7 @@ impl LanguageDetectorPort for StubLanguageDetector {
 }
 
 fn restaurant_gateways<T>(
-    restaurant: Arc<T>,
+    restaurant: T,
 ) -> (
     Arc<
         dyn corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_opening_hours_gateway_port::RestaurantOpeningHoursGatewayPort,
@@ -225,11 +234,17 @@ fn restaurant_gateways<T>(
     >,
 )
 where
-    T: RestaurantInformationUseCase + RestaurantReservationUseCase + Send + Sync + 'static,
+    T: RestaurantAvailabilityUseCase
+        + RestaurantBusinessInfoUseCase
+        + RestaurantMenuUseCase
+        + RestaurantReservationUseCase
+        + Clone
+        + Send
+        + Sync
+        + 'static,
 {
-    let business_info_gateway =
-        Arc::new(RestaurantBusinessInfoGateway::new(Arc::clone(&restaurant)));
-    let menu_gateway = Arc::new(RestaurantMenuGateway::new(Arc::clone(&restaurant)));
+    let business_info_gateway = Arc::new(RestaurantBusinessInfoGateway::new(restaurant.clone()));
+    let menu_gateway = Arc::new(RestaurantMenuGateway::new(restaurant.clone()));
     let reservation_gateway = Arc::new(RestaurantReservationGateway::new(restaurant));
 
     (
@@ -464,7 +479,7 @@ impl RestaurantAvailabilityRepositoryPort for FakeRepository {
 }
 
 fn make_server(intent_name: &'static str) -> TestServer {
-    let restaurant = Arc::new(StubRestaurant);
+    let restaurant = StubRestaurant;
     let processor = ConversationProcessor::new();
     let analyzer = StubNlpAnalyzer { intent_name };
     let repository = InMemoryConversationRepository::new();
@@ -531,14 +546,14 @@ fn entity(entity_label: &'static str, value: &str) -> NluEntityResult {
 
 fn make_scripted_server(responses: Vec<NluAnalysisResult>) -> TestServer {
     let repository = FakeRepository::new();
-    let restaurant = Arc::new(DatabaseRestaurantService::new(
+    let restaurant = DatabaseRestaurantService::new(
         business_id(),
         "en",
         repository.clone(),
         repository.clone(),
         repository.clone(),
         repository,
-    ));
+    );
     let processor = ConversationProcessor::new();
     let analyzer = ScriptedNlpAnalyzer::new(responses);
     let repository = InMemoryConversationRepository::new();

@@ -47,18 +47,17 @@ async fn main() {
     let menu_repository = PostgresMenuRepository::new(pool.clone());
     let reservation_repository = PostgresReservationRepository::new(pool.clone());
     let availability_repository = PostgresAvailabilityRepository::new(pool);
-    let restaurant = Arc::new(DatabaseRestaurantService::new(
+    let restaurant = DatabaseRestaurantService::new(
         default_business_id(),
         "en",
         business_info_repository,
         menu_repository,
         reservation_repository,
         availability_repository,
-    ));
-    let business_info_gateway =
-        Arc::new(RestaurantBusinessInfoGateway::new(Arc::clone(&restaurant)));
-    let menu_gateway = Arc::new(RestaurantMenuGateway::new(Arc::clone(&restaurant)));
-    let reservation_gateway = Arc::new(RestaurantReservationGateway::new(Arc::clone(&restaurant)));
+    );
+    let business_info_gateway = Arc::new(RestaurantBusinessInfoGateway::new(restaurant.clone()));
+    let menu_gateway = Arc::new(RestaurantMenuGateway::new(restaurant.clone()));
+    let reservation_gateway = Arc::new(RestaurantReservationGateway::new(restaurant));
     let processor = ConversationProcessor::new();
 
     let runtime = OnnxNluRuntime::from_env()

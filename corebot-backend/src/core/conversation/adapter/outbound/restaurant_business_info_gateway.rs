@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::core::conversation::application::port::outbound::restaurant::business_info_queries::{
     EventQuery as ConversationEventQuery, FacilityQuery as ConversationFacilityQuery,
     LocationQuery as ConversationLocationQuery,
@@ -14,24 +12,25 @@ use crate::core::conversation::application::port::outbound::restaurant::restaura
 use crate::core::conversation::application::port::outbound::restaurant::restaurant_opening_hours_gateway_port::RestaurantOpeningHoursGatewayPort;
 use crate::core::conversation::application::port::outbound::restaurant::restaurant_payment_methods_gateway_port::RestaurantPaymentMethodsGatewayPort;
 use crate::core::conversation::application::port::outbound::restaurant::restaurant_takeaway_gateway_port::RestaurantTakeawayGatewayPort;
-use crate::core::restaurant::application::port::inbound::restaurant_information_port::RestaurantInformationUseCase as RestaurantInformationInboundPort;
+use crate::core::restaurant::application::port::inbound::restaurant_availability_usecase::RestaurantAvailabilityUseCase;
+use crate::core::restaurant::application::port::inbound::restaurant_business_info_usecase::RestaurantBusinessInfoUseCase;
 use crate::core::restaurant::application::port::inbound::restaurant_queries::{
     EventQuery as RestaurantEventQuery, FacilityQuery as RestaurantFacilityQuery,
     LocationQuery as RestaurantLocationQuery, PaymentMethodQuery as RestaurantPaymentMethodQuery,
 };
 
-pub struct RestaurantBusinessInfoGateway<R: RestaurantInformationInboundPort> {
-    restaurant: Arc<R>,
+pub struct RestaurantBusinessInfoGateway<R> {
+    restaurant: R,
 }
 
-impl<R: RestaurantInformationInboundPort> RestaurantBusinessInfoGateway<R> {
-    pub fn new(restaurant: Arc<R>) -> Self {
+impl<R> RestaurantBusinessInfoGateway<R> {
+    pub fn new(restaurant: R) -> Self {
         Self { restaurant }
     }
 }
 
 #[async_trait::async_trait]
-impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantOpeningHoursGatewayPort
+impl<R: RestaurantAvailabilityUseCase + Send + Sync> RestaurantOpeningHoursGatewayPort
     for RestaurantBusinessInfoGateway<R>
 {
     async fn get_opening_hours(&self) -> String {
@@ -40,7 +39,7 @@ impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantOpeningHoursGa
 }
 
 #[async_trait::async_trait]
-impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantLocationGatewayPort
+impl<R: RestaurantBusinessInfoUseCase + Send + Sync> RestaurantLocationGatewayPort
     for RestaurantBusinessInfoGateway<R>
 {
     async fn find_location(&self, query: ConversationLocationQuery) -> String {
@@ -52,7 +51,7 @@ impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantLocationGatewa
 }
 
 #[async_trait::async_trait]
-impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantContactGatewayPort
+impl<R: RestaurantBusinessInfoUseCase + Send + Sync> RestaurantContactGatewayPort
     for RestaurantBusinessInfoGateway<R>
 {
     async fn get_contact(&self) -> String {
@@ -61,7 +60,7 @@ impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantContactGateway
 }
 
 #[async_trait::async_trait]
-impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantPaymentMethodsGatewayPort
+impl<R: RestaurantBusinessInfoUseCase + Send + Sync> RestaurantPaymentMethodsGatewayPort
     for RestaurantBusinessInfoGateway<R>
 {
     async fn find_payment_methods(&self, query: ConversationPaymentMethodQuery) -> String {
@@ -75,7 +74,7 @@ impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantPaymentMethods
 }
 
 #[async_trait::async_trait]
-impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantTakeawayGatewayPort
+impl<R: RestaurantBusinessInfoUseCase + Send + Sync> RestaurantTakeawayGatewayPort
     for RestaurantBusinessInfoGateway<R>
 {
     async fn get_takeaway_info(&self) -> String {
@@ -84,7 +83,7 @@ impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantTakeawayGatewa
 }
 
 #[async_trait::async_trait]
-impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantEventGatewayPort
+impl<R: RestaurantBusinessInfoUseCase + Send + Sync> RestaurantEventGatewayPort
     for RestaurantBusinessInfoGateway<R>
 {
     async fn find_event_info(&self, query: ConversationEventQuery) -> String {
@@ -98,7 +97,7 @@ impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantEventGatewayPo
 }
 
 #[async_trait::async_trait]
-impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantFacilitiesGatewayPort
+impl<R: RestaurantBusinessInfoUseCase + Send + Sync> RestaurantFacilitiesGatewayPort
     for RestaurantBusinessInfoGateway<R>
 {
     async fn find_facility_info(&self, query: ConversationFacilityQuery) -> String {
@@ -112,7 +111,7 @@ impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantFacilitiesGate
 }
 
 #[async_trait::async_trait]
-impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantAccessibilityGatewayPort
+impl<R: RestaurantBusinessInfoUseCase + Send + Sync> RestaurantAccessibilityGatewayPort
     for RestaurantBusinessInfoGateway<R>
 {
     async fn get_accessibility_info(&self) -> String {
@@ -121,7 +120,7 @@ impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantAccessibilityG
 }
 
 #[async_trait::async_trait]
-impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantEntertainmentGatewayPort
+impl<R: RestaurantBusinessInfoUseCase + Send + Sync> RestaurantEntertainmentGatewayPort
     for RestaurantBusinessInfoGateway<R>
 {
     async fn get_entertainment_info(&self) -> String {

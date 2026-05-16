@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::core::conversation::application::port::outbound::restaurant::menu_queries::{
     MenuDietaryQuery as ConversationMenuDietaryQuery,
     MenuItemDetailsQuery as ConversationMenuItemDetailsQuery, MenuQuery as ConversationMenuQuery,
@@ -9,19 +7,19 @@ use crate::core::conversation::application::port::outbound::restaurant::restaura
 use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_item_details_gateway_port::RestaurantMenuItemDetailsGatewayPort;
 use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_gateway_port::RestaurantMenuGatewayPort;
 use crate::core::conversation::application::port::outbound::restaurant::restaurant_price_gateway_port::RestaurantPriceGatewayPort;
-use crate::core::restaurant::application::port::inbound::restaurant_information_port::RestaurantInformationUseCase as RestaurantInformationInboundPort;
+use crate::core::restaurant::application::port::inbound::restaurant_menu_usecase::RestaurantMenuUseCase;
 use crate::core::restaurant::application::port::inbound::restaurant_queries::{
     MenuDietaryQuery as RestaurantMenuDietaryQuery,
     MenuItemDetailsQuery as RestaurantMenuItemDetailsQuery, MenuQuery as RestaurantMenuQuery,
     PriceFilter as RestaurantPriceFilter, PriceQuery as RestaurantPriceQuery,
 };
 
-pub struct RestaurantMenuGateway<R: RestaurantInformationInboundPort> {
-    restaurant: Arc<R>,
+pub struct RestaurantMenuGateway<R> {
+    restaurant: R,
 }
 
-impl<R: RestaurantInformationInboundPort> RestaurantMenuGateway<R> {
-    pub fn new(restaurant: Arc<R>) -> Self {
+impl<R> RestaurantMenuGateway<R> {
+    pub fn new(restaurant: R) -> Self {
         Self { restaurant }
     }
 }
@@ -34,7 +32,7 @@ fn map_price_filter(filter: ConversationPriceFilter) -> RestaurantPriceFilter {
 }
 
 #[async_trait::async_trait]
-impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantMenuGatewayPort
+impl<R: RestaurantMenuUseCase + Send + Sync> RestaurantMenuGatewayPort
     for RestaurantMenuGateway<R>
 {
     async fn find_menu(&self, query: ConversationMenuQuery) -> String {
@@ -49,7 +47,7 @@ impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantMenuGatewayPor
 }
 
 #[async_trait::async_trait]
-impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantMenuDietaryGatewayPort
+impl<R: RestaurantMenuUseCase + Send + Sync> RestaurantMenuDietaryGatewayPort
     for RestaurantMenuGateway<R>
 {
     async fn find_menu_dietary(&self, query: ConversationMenuDietaryQuery) -> String {
@@ -63,7 +61,7 @@ impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantMenuDietaryGat
 }
 
 #[async_trait::async_trait]
-impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantMenuItemDetailsGatewayPort
+impl<R: RestaurantMenuUseCase + Send + Sync> RestaurantMenuItemDetailsGatewayPort
     for RestaurantMenuGateway<R>
 {
     async fn find_menu_item_details(&self, query: ConversationMenuItemDetailsQuery) -> String {
@@ -78,7 +76,7 @@ impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantMenuItemDetail
 }
 
 #[async_trait::async_trait]
-impl<R: RestaurantInformationInboundPort + Send + Sync> RestaurantPriceGatewayPort
+impl<R: RestaurantMenuUseCase + Send + Sync> RestaurantPriceGatewayPort
     for RestaurantMenuGateway<R>
 {
     async fn find_price(&self, query: ConversationPriceQuery) -> String {

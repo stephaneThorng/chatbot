@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::core::conversation::application::port::outbound::restaurant::reservation_queries::{
     ReservationCancelFailure, ReservationCancelQuery as ConversationReservationCancelQuery,
     ReservationCreateQuery as ConversationReservationCreateQuery, ReservationFailure,
@@ -15,11 +13,11 @@ use crate::core::restaurant::application::port::inbound::restaurant_reservation_
 use crate::core::restaurant::domain::model::{ReservationCancelError, ReservationError};
 
 pub struct RestaurantReservationGateway<R: RestaurantReservationInboundPort> {
-    restaurant: Arc<R>,
+    restaurant: R,
 }
 
 impl<R: RestaurantReservationInboundPort> RestaurantReservationGateway<R> {
-    pub fn new(restaurant: Arc<R>) -> Self {
+    pub fn new(restaurant: R) -> Self {
         Self { restaurant }
     }
 }
