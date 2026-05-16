@@ -18,7 +18,8 @@ The Rust backend follows feature-based hexagonal architecture under `corebot-bac
 
 - `conversation`: session lifecycle, workflow state, slot filling, reply generation
 - `nlu_engine`: local NLU inference orchestration and decoding
-- `restaurant`: static restaurant data for v1
+- `restaurant`: transitional restaurant data and reservation capability, currently backed by PostgreSQL
+- `configuration` or `back_office`: future client-facing restaurant configuration and CRUD
 
 Each feature is split into:
 
@@ -44,6 +45,7 @@ Each feature is split into:
 - Input adapters may depend on input ports and DTO/mapper code only.
 - Output adapters implement output ports and may use concrete infrastructure libraries.
 - Cross-feature access should go through ports or stable domain contracts, not through another feature's concrete adapter.
+- The target direction is for `conversation` to own chatbot-facing restaurant reads and reservation workflows, while client-facing CRUD lives in `configuration` or `back_office`.
 
 ## NLU Runtime Contract
 

@@ -48,7 +48,8 @@
 - Keep workflow states coarse and model detailed progress with generic requirements.
 - Put requirement validation and transformation in value-type/domain classes or dedicated domain/application services, not in route handlers.
 - Sessions are in-memory for v1 and must not be treated as durable storage.
-- Restaurant business data is a static in-memory dataset for v1.
+- Restaurant business data is persisted in PostgreSQL for the Rust backend.
+- Chatbot-facing restaurant behavior should move toward the `conversation` feature. Client-facing restaurant configuration belongs in a separate `configuration` or `back_office` feature.
 
 ## Model Training Boundary
 

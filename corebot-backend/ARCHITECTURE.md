@@ -10,33 +10,74 @@ The main architectural goal is strict separation of concerns:
 - application code owns use-case orchestration and ports;
 - adapters own concrete protocols, runtimes, clients, repositories, and DTOs.
 
-## Module Structure
+## Target Feature Ownership
+
+The long-term target is to keep two separate product responsibilities:
+
+- `conversation`: owns the chatbot experience, including restaurant-oriented conversational reads and reservation workflows.
+- `configuration` or `back_office`: owns the client-facing restaurant configuration UI and CRUD use cases.
+
+The current `restaurant` feature is transitional. It contains useful restaurant read, reservation, and PostgreSQL code, but most chatbot-facing behavior is expected to move into `conversation` over time.
+
+The important separation is:
+
+- conversational behavior: deterministic replies, intents, workflows, slot filling, restaurant data projections for the bot;
+- client configuration behavior: editable restaurant records, IDs, complete forms, validation for business owners.
+
+Both may use the same PostgreSQL schema, but they should not share the same application models by default. Conversation models can be small projections. Configuration models should carry stable IDs and editable fields.
+
+## Target Module Structure
 
 ```text
 src/
-├── lib.rs
-├── main.rs
-└── core/
-    ├── conversation/
-    │   ├── domain/
-    │   ├── application/
-    │   │   └── port/
-    │   │       ├── input/
-    │   │       └── output/
-    │   └── adapter/
-    │       ├── input/web/
-    │       └── output/
-    ├── nlu_engine/
-    │   ├── domain/
-    │   ├── application/
-    │   │   └── port/
-    │   │       ├── input/
-    │   │       └── output/
-    │   └── adapter/outbound/
-    └── restaurant/
-        ├── application/port/inbound/
-        └── adapter/inbound/
+|-- lib.rs
+|-- main.rs
+`-- core/
+    |-- conversation/
+    |   |-- domain/
+    |   |-- application/
+    |   |   |-- intent_handler/
+    |   |   |-- service/
+    |   |   |   `-- restaurant/
+    |   |   `-- port/
+    |   |       |-- inbound/
+    |   |       `-- outbound/
+    |   |           `-- restaurant/
+    |   `-- adapter/
+    |       |-- inbound/web/
+    |       `-- outbound/
+    |           `-- postgres_restaurant/
+    |               |-- menu/
+    |               |-- business_info/
+    |               |-- availability/
+    |               `-- reservation/
+    |-- nlu_engine/
+    |   |-- domain/
+    |   |-- application/
+    |   `-- adapter/outbound/
+    |-- restaurant/
+    |   |-- application/
+    |   `-- adapter/outbound/
+    `-- configuration/
+        |-- domain/
+        |   |-- menu/
+        |   |-- business_info/
+        |   |-- opening_hours/
+        |   `-- reservations/
+        |-- application/
+        |   |-- menu/
+        |   |-- business_info/
+        |   |-- opening_hours/
+        |   |-- reservations/
+        |   `-- port/
+        |       |-- inbound/
+        |       `-- outbound/
+        `-- adapter/
+            |-- inbound/web/
+            `-- outbound/postgres/
 ```
+
+The `configuration` feature does not need to exist immediately. When introduced, its subfolders must make the client-facing responsibility visible: menu editing, opening-hours editing, closures, contacts, payment methods, facilities, facts, tables, and reservation settings.
 
 ## Layer Rules
 
@@ -52,14 +93,18 @@ src/
 Dependency direction must point inward:
 
 ```text
-adapter/inbound  ─┐
-                ├─> application ports/use cases ─> domain
-adapter/outbound ─┘
+adapter/inbound
+        |
+        v
+application ports/use cases -> domain
+        ^
+        |
+adapter/outbound
 ```
 
 Cross-feature dependency must use a port. A feature must not reach into another feature's adapter or concrete use case.
 
-The production composition root lives in `src/main.rs`. Inbound HTTP adapter modules expose route construction that accepts already-built use-case dependencies instead of instantiating concrete output adapters directly.
+During the migration toward `conversation` owning chatbot restaurant capabilities, avoid adding new conversation-to-restaurant inbound gateways unless they are temporary. Prefer moving chatbot-facing restaurant ports and adapters into `conversation/application/port/outbound/restaurant` and `conversation/adapter/outbound/postgres_restaurant`.
 
 ## Method and Object Placement
 
@@ -71,12 +116,84 @@ The production composition root lives in `src/main.rs`. Inbound HTTP adapter mod
 - Put concrete runtime/client/repository code in `adapter/outbound/`.
 - Keep framework, serialization, filesystem, ONNX, tokenizer, and HTTP concerns out of domain objects.
 - Keep concrete adapter APIs out of application methods. Application calls traits; adapters implement traits.
+- Keep `Arc` out of adapter structs when a generic owned dependency works. Use `Arc` in the composition root only when dependencies must be shared across multiple constructed objects.
+- Prefer generic adapter structs such as `Gateway<R>` over `Gateway<Arc<R>>`. The caller may still pass a cloneable concrete service or a boxed trait object when needed.
+- In repository modules, keep `mod.rs` as wiring/export only. Put implementation logic in explicit files such as `menu_repository.rs`, `reservation_repository.rs`, or `business_info_repository.rs`.
+- Keep SQL row structs close to the repository query that owns them. Name projections precisely, for example `MenuItemSummaryRow` instead of `MenuItemRow` when the struct is not a full table mirror.
 
 When a behavior appears to need multiple layers, split it explicitly:
 
 - adapter: retrieve or produce raw boundary data;
 - application: validate, orchestrate, decode, and decide;
 - domain: enforce business invariants and represent business state.
+
+## Feature Responsibilities
+
+### Conversation
+
+- Owns session lifecycle, workflow state, slot filling, conversation policy, and deterministic replies.
+- Calls NLU through an analyzer port; it must not call ONNX runtime or tokenizer code directly.
+- Owns chatbot-facing restaurant capabilities in the target architecture: menu reads, business-info reads, opening-hours reads, reservation creation, lookup, and cancellation.
+- May keep restaurant-specific outbound ports under `application/port/outbound/restaurant/` to make the responsibility visible without creating a separate feature boundary.
+- Uses read projections optimized for deterministic replies. These models do not need to expose every SQL column or stable IDs unless the chatbot workflow needs them.
+
+### NLU Engine
+
+- Owns local NLP inference behavior: tagged input construction, artifact validation, tokenization boundary, ONNX execution, intent ranking, and BIO entity decoding.
+- Application layer owns preprocessing, artifact validation, model-output decoding, and final `NluAnalysis` construction.
+- `adapter/outbound/onnx_nlu_runtime.rs` owns only artifact loading, tokenizer integration, ONNX Runtime execution, and returning raw logits plus token metadata through the output port.
+- Do not add keyword intent classifiers here or in conversation code.
+
+### Restaurant
+
+- Transitional feature. Existing restaurant use cases and PostgreSQL repositories can be moved into `conversation` as the chatbot boundary becomes the owner.
+- Must not become the client configuration boundary. Client-facing CRUD belongs in `configuration` or `back_office`.
+
+### Configuration / Back Office
+
+- Owns client-facing restaurant setup and CRUD behavior.
+- Uses models with stable IDs and complete editable fields.
+- Has its own inbound HTTP routes, commands, results, use cases, and outbound repository ports.
+- May use the same PostgreSQL tables as conversation, but it should not reuse conversation reply projections as form/edit models.
+
+## Restaurant Absorption Migration Plan
+
+The migration should be incremental. Public HTTP behavior and deterministic chatbot replies must stay stable at each step.
+
+1. Rename intent-facing restaurant ports inside `conversation` to read/write capabilities.
+
+Examples: `RestaurantMenuGatewayPort`, `RestaurantBusinessInfoGatewayPort`, `RestaurantReservationGatewayPort`.
+
+2. Move restaurant query/result types used only by conversation into `conversation/application/port/outbound/restaurant/`.
+
+These stay projection-oriented and do not need to expose all database fields.
+
+3. Move restaurant application policies used only by chatbot workflows into `conversation/application/service/restaurant/`.
+
+Examples: reservation availability policy, reservation response formatting, menu response formatting.
+
+4. Move PostgreSQL adapters used only by the chatbot into `conversation/adapter/outbound/postgres_restaurant/`.
+
+Keep subfolders visible by responsibility: `menu`, `business_info`, `availability`, `reservation`.
+
+5. Delete the conversation-to-restaurant gateway layer once conversation has direct outbound ports implemented by PostgreSQL adapters.
+
+After this step, the flow becomes:
+
+```text
+conversation handler
+  -> conversation restaurant outbound port
+  -> conversation postgres_restaurant adapter
+  -> PostgreSQL
+```
+
+6. Keep or delete `core/restaurant` only after all callers have moved.
+
+If no other feature consumes it, remove it. If it still contains shared pure domain value objects, move those objects to the feature that owns the behavior or to a deliberately named shared kernel.
+
+7. Introduce `configuration` or `back_office` separately for client-facing CRUD.
+
+This feature gets its own models with IDs and complete editable fields. Do not reuse conversation projections for CRUD forms.
 
 ## Conversation Do / Don't
 
@@ -108,26 +225,6 @@ When a behavior appears to need multiple layers, split it explicitly:
 | Route file | `routes.rs` | `adapter/inbound/web/routes.rs` |
 | Integration test | `<feature>_routes_integration_test.rs` | `conversation_routes_integration_test.rs` |
 
-## Feature Responsibilities
-
-### Conversation
-
-- Owns session lifecycle, workflow state, slot filling, conversation policy, and deterministic replies.
-- Calls NLU through an analyzer port; it must not call ONNX runtime or tokenizer code directly.
-- May use restaurant data through a domain gateway port.
-
-### NLU Engine
-
-- Owns local NLP inference behavior: tagged input construction, artifact validation, tokenization boundary, ONNX execution, intent ranking, and BIO entity decoding.
-- Application layer owns preprocessing, artifact validation, model-output decoding, and final `NluAnalysis` construction.
-- `adapter/outbound/onnx_nlu_runtime.rs` owns only artifact loading, tokenizer integration, ONNX Runtime execution, and returning raw logits plus token metadata through the output port.
-- Do not add keyword intent classifiers here or in conversation code.
-
-### Restaurant
-
-- Owns static restaurant business data for v1.
-- Remains in-memory unless a persistence port is explicitly introduced.
-
 ## NLU Engine Flow
 
 ```text
@@ -158,18 +255,5 @@ Architecture-sensitive changes must test the layer that now owns the behavior. F
 
 Executable architecture boundary checks live in:
 
-- [tests/architecture_test.rs](/C:/Users/steph/git/chatbot/corebot-backend/tests/architecture_test.rs): stable layer-access rules with `arch_test_core`
-- [tests/architecture_source_rules_test.rs](/C:/Users/steph/git/chatbot/corebot-backend/tests/architecture_source_rules_test.rs): source-level checks for forbidden imports across layers and features
-
-## Rust Architecture Tooling
-
-Useful crates/tools for architecture checks:
-
-- `arch-lint`: AST-based architecture linter that can run in `cargo test` with `arch_lint::check!()` and configuration in `arch-lint.toml`.
-- `arch_test_core` / `cargo-archtest-cli`: rule-based architecture tests for module/layer access rules such as `MayNotAccess`, `MayOnlyAccess`, and cyclic dependency checks. This repository currently uses `arch_test_core` for layer-access rules.
-- `dep_graph_rs`: internal module dependency graph visualization from `use crate::...` statements. Useful for audits, not a hard warning system by itself.
-- `cargo-deny`: dependency graph policy checks for third-party crates, licenses, advisories, and duplicate/banned dependencies. It does not enforce internal hexagonal layers.
-
-Recommended next step: add an architecture test with `arch_test_core` or `arch-lint` once the layer rules are stable enough to enforce in CI.
-
-
+- [tests/architecture_test.rs](/C:/Users/Stephyu/git/chatbot/corebot-backend/tests/architecture_test.rs): stable layer-access rules with `arch_test_core`
+- [tests/architecture_source_rules_test.rs](/C:/Users/Stephyu/git/chatbot/corebot-backend/tests/architecture_source_rules_test.rs): source-level checks for forbidden imports across layers and features
