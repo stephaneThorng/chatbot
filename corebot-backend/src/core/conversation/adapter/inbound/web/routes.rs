@@ -12,7 +12,7 @@ async fn send_message<U>(
 where
     U: HandleConversationUseCase + Send + Sync + 'static,
 {
-    let result = usecase.handle_message(request.into());
+    let result = usecase.handle_message(request.into()).await;
     Json(result.into())
 }
 

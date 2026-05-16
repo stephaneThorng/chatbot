@@ -37,6 +37,7 @@ pub enum WorkflowPostProcessResult {
 }
 
 /// Stateless application component that handles one intent.
+#[async_trait::async_trait]
 pub trait IntentHandler: Send + Sync {
     fn intent(&self) -> IntentId;
     fn config(&self) -> IntentConfig;
@@ -45,7 +46,7 @@ pub trait IntentHandler: Send + Sync {
         self.config().workflow.is_workflow()
     }
 
-    fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult;
+    async fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult;
 
     fn lookup_entity_value<'a>(
         &self,
@@ -59,7 +60,7 @@ pub trait IntentHandler: Send + Sync {
             .map(|entity| entity.value.as_str())
     }
 
-    fn handle_workflow(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
+    async fn handle_workflow(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let config = self.config();
         let workflow_cfg = config.workflow.workflow_config();
         let (mut updated_conversation, just_started) =
@@ -85,6 +86,7 @@ pub trait IntentHandler: Send + Sync {
             updated_conversation,
             updated_any_slot,
         )
+        .await
     }
 
     fn start_or_cancel_workflow(
@@ -181,7 +183,7 @@ pub trait IntentHandler: Send + Sync {
         }
     }
 
-    fn build_confirmation_reply(
+    async fn build_confirmation_reply(
         &self,
         workflow_cfg: &WorkflowConfig,
         analysis_intent: &IntentId,
@@ -191,6 +193,7 @@ pub trait IntentHandler: Send + Sync {
         match analysis_intent {
             IntentId::Affirmative if !updated_any_slot => {
                 self.confirm_workflow(workflow_cfg, updated_conversation)
+                    .await
             }
             IntentId::Negative if !updated_any_slot => StateHandlerResult {
                 reply: self.negative_prompt(updated_conversation.lang.as_str()),
@@ -205,7 +208,7 @@ pub trait IntentHandler: Send + Sync {
         }
     }
 
-    fn confirm_workflow(
+    async fn confirm_workflow(
         &self,
         workflow_cfg: &WorkflowConfig,
         mut updated_conversation: Conversation,
@@ -213,7 +216,7 @@ pub trait IntentHandler: Send + Sync {
         let lang = updated_conversation.lang.clone();
         updated_conversation = updated_conversation.into_confirmed_workflow();
 
-        match self.post_process(lang.as_str(), updated_conversation) {
+        match self.post_process(lang.as_str(), updated_conversation).await {
             WorkflowPostProcessResult::Succeeded {
                 mut updated_conversation,
                 reply,
@@ -238,7 +241,11 @@ pub trait IntentHandler: Send + Sync {
         }
     }
 
-    fn post_process(&self, _lang: &str, conversation: Conversation) -> WorkflowPostProcessResult {
+    async fn post_process(
+        &self,
+        _lang: &str,
+        conversation: Conversation,
+    ) -> WorkflowPostProcessResult {
         WorkflowPostProcessResult::Succeeded {
             updated_conversation: conversation,
             reply: None,
@@ -588,6 +595,7 @@ mod tests {
 
     struct StubHandler;
 
+    #[async_trait::async_trait]
     impl IntentHandler for StubHandler {
         fn intent(&self) -> IntentId {
             IntentId::AskOpeningHours
@@ -600,7 +608,7 @@ mod tests {
             }
         }
 
-        fn handle(&self, _input: IntentHandlerInput<'_>) -> StateHandlerResult {
+        async fn handle(&self, _input: IntentHandlerInput<'_>) -> StateHandlerResult {
             StateHandlerResult {
                 updated_conversation: Conversation::new(DomainType::Restaurant),
                 reply: "handled".to_string(),
@@ -625,6 +633,7 @@ mod tests {
 
     struct StubWorkflowHandler;
 
+    #[async_trait::async_trait]
     impl IntentHandler for StubWorkflowHandler {
         fn intent(&self) -> IntentId {
             IntentId::ReservationCreate
@@ -676,8 +685,18 @@ mod tests {
             }
         }
 
-        fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
-            self.handle_workflow(input)
+        async fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
+            self.handle_workflow(input).await
+        }
+    }
+
+    impl StubWorkflowHandler {
+        fn handle_blocking(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("test runtime should be created")
+                .block_on(<Self as IntentHandler>::handle(self, input))
         }
     }
 
@@ -704,7 +723,7 @@ mod tests {
             .into_workflow_slot(SlotName::Name, SlotDataValue::Text("Alice".to_string()))
             .unwrap();
 
-        let result = workflow_handler().handle(IntentHandlerInput {
+        let result = workflow_handler().handle_blocking(IntentHandlerInput {
             conversation,
             analysis_intent: &IntentId::ReservationCreate,
             text: "in 2 days",
@@ -724,7 +743,7 @@ mod tests {
             .into_workflow_slot(SlotName::Name, SlotDataValue::Text("Alice".to_string()))
             .unwrap();
 
-        let result = workflow_handler().handle(IntentHandlerInput {
+        let result = workflow_handler().handle_blocking(IntentHandlerInput {
             conversation,
             analysis_intent: &IntentId::ReservationCreate,
             text: "tomorrow at 7pm for 4 people",
@@ -770,7 +789,7 @@ mod tests {
             )
             .unwrap();
 
-        let result = workflow_handler().handle(IntentHandlerInput {
+        let result = workflow_handler().handle_blocking(IntentHandlerInput {
             conversation,
             analysis_intent: &IntentId::ReservationCreate,
             text: "six",

@@ -1,10 +1,10 @@
 use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult, WorkflowPostProcessResult,
 };
-use crate::core::conversation::application::port::outbound::restaurant_queries::{
+use crate::core::conversation::application::port::outbound::restaurant::reservation_queries::{
     ReservationCreateQuery, ReservationFailure,
 };
-use crate::core::conversation::application::port::outbound::restaurant_reservation_port::RestaurantReservationPort;
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_reservation_gateway_port::RestaurantReservationGatewayPort;
 use crate::core::conversation::application::util::reservation_create_presenter;
 use crate::core::conversation::application::util::workflow_slot_reader::ReservationCreateSlots;
 use crate::core::conversation::domain::model::conversation::Conversation;
@@ -15,17 +15,32 @@ use crate::core::conversation::domain::model::slot::{
     SlotConfig, SlotConstraint, SlotConstraintEntry, SlotName,
 };
 
-pub struct ReservationCreateIntentHandler<'a, P: RestaurantReservationPort + ?Sized> {
-    reservation_port: &'a P,
+pub struct ReservationCreateIntentHandler<'a, P: RestaurantReservationGatewayPort + ?Sized> {
+    reservation_create_gateway_port: &'a P,
 }
 
-impl<'a, P: RestaurantReservationPort + ?Sized> ReservationCreateIntentHandler<'a, P> {
+impl<'a, P: RestaurantReservationGatewayPort + ?Sized> ReservationCreateIntentHandler<'a, P> {
     pub fn new(reservation_port: &'a P) -> Self {
-        Self { reservation_port }
+        Self {
+            reservation_create_gateway_port: reservation_port,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn handle_blocking(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult
+    where
+        P: Send + Sync,
+    {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime should be created")
+            .block_on(<Self as IntentHandler>::handle(self, input))
     }
 }
 
-impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
+#[async_trait::async_trait]
+impl<P: RestaurantReservationGatewayPort + Send + Sync + ?Sized> IntentHandler
     for ReservationCreateIntentHandler<'_, P>
 {
     fn intent(&self) -> IntentId {
@@ -81,8 +96,8 @@ impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
         }
     }
 
-    fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
-        self.handle_workflow(input)
+    async fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
+        self.handle_workflow(input).await
     }
 
     fn negative_prompt(&self, lang: &str) -> String {
@@ -98,7 +113,7 @@ impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
         reservation_create_presenter::confirmation_summary(&slots, conversation.lang.as_str())
     }
 
-    fn post_process(
+    async fn post_process(
         &self,
         lang: &str,
         mut conversation: Conversation,
@@ -131,13 +146,15 @@ impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
         };
 
         match self
-            .reservation_port
+            .reservation_create_gateway_port
             .create_reservation(ReservationCreateQuery {
                 name: slots.name.clone(),
                 date,
                 time,
                 people_count: slots.people_count,
-            }) {
+            })
+            .await
+        {
             Ok(creation) => {
                 let reference = creation
                     .strip_prefix("created:")
@@ -190,29 +207,38 @@ impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
 mod tests {
     use super::*;
     use crate::core::conversation::application::dto::nlu_analysis_result::NluEntityResult;
-    use crate::core::conversation::application::port::outbound::restaurant_queries::ReservationFailure;
+    use crate::core::conversation::application::port::outbound::restaurant::reservation_queries::ReservationFailure;
+    use crate::core::conversation::application::port::outbound::restaurant::reservation_queries::{ReservationCancelFailure, ReservationCancelQuery, ReservationLookupQuery};
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_reservation_gateway_port::RestaurantReservationGatewayPort;
     use crate::core::conversation::domain::conversation::Conversation;
     use crate::core::conversation::domain::domain_type::DomainType;
     use crate::core::conversation::domain::model::slot::{SlotDataValue, SlotName};
     struct StubReservationPort;
-    impl RestaurantReservationPort for StubReservationPort {
-        fn create_reservation(
+    #[async_trait::async_trait]
+    impl RestaurantReservationGatewayPort for StubReservationPort {
+        async fn create_reservation(
             &self,
             _: ReservationCreateQuery,
         ) -> Result<String, ReservationFailure> {
             Ok("created:REST-NEW123".to_string())
         }
-        fn check_reservation(
+
+        async fn cancel_reservation(
             &self,
-            _: crate::core::conversation::application::port::outbound::restaurant_queries::ReservationLookupQuery,
-        ) -> String {
+            _: ReservationCancelQuery,
+        ) -> Result<String, ReservationCancelFailure> {
+            Ok("cancelled:REST-NEW123".to_string())
+        }
+
+        async fn check_reservation(&self, _: ReservationLookupQuery) -> String {
             "no_reference_or_name:".to_string()
         }
     }
 
     struct FullStubReservationPort;
-    impl RestaurantReservationPort for FullStubReservationPort {
-        fn create_reservation(
+    #[async_trait::async_trait]
+    impl RestaurantReservationGatewayPort for FullStubReservationPort {
+        async fn create_reservation(
             &self,
             _: ReservationCreateQuery,
         ) -> Result<String, ReservationFailure> {
@@ -220,26 +246,37 @@ mod tests {
                 next_slot: Some("Monday June 1 at 21:00".to_string()),
             })
         }
-        fn check_reservation(
+
+        async fn cancel_reservation(
             &self,
-            _: crate::core::conversation::application::port::outbound::restaurant_queries::ReservationLookupQuery,
-        ) -> String {
+            _: ReservationCancelQuery,
+        ) -> Result<String, ReservationCancelFailure> {
+            Ok("cancelled:REST-NEW123".to_string())
+        }
+
+        async fn check_reservation(&self, _: ReservationLookupQuery) -> String {
             "no_reference_or_name:".to_string()
         }
     }
 
     struct ClosedStubReservationPort;
-    impl RestaurantReservationPort for ClosedStubReservationPort {
-        fn create_reservation(
+    #[async_trait::async_trait]
+    impl RestaurantReservationGatewayPort for ClosedStubReservationPort {
+        async fn create_reservation(
             &self,
             _: ReservationCreateQuery,
         ) -> Result<String, ReservationFailure> {
             Err(ReservationFailure::RestaurantClosed)
         }
-        fn check_reservation(
+
+        async fn cancel_reservation(
             &self,
-            _: crate::core::conversation::application::port::outbound::restaurant_queries::ReservationLookupQuery,
-        ) -> String {
+            _: ReservationCancelQuery,
+        ) -> Result<String, ReservationCancelFailure> {
+            Ok("cancelled:REST-NEW123".to_string())
+        }
+
+        async fn check_reservation(&self, _: ReservationLookupQuery) -> String {
             "no_reference_or_name:".to_string()
         }
     }
@@ -266,7 +303,7 @@ mod tests {
         text: &str,
         entities: Vec<NluEntityResult>,
     ) -> StateHandlerResult {
-        handler().handle(IntentHandlerInput {
+        handler().handle_blocking(IntentHandlerInput {
             conversation,
             analysis_intent: &intent,
             text,
@@ -340,7 +377,7 @@ mod tests {
             ],
         )
         .updated_conversation;
-        let result = handler().handle(IntentHandlerInput {
+        let result = handler().handle_blocking(IntentHandlerInput {
             conversation,
             analysis_intent: &IntentId::ReservationCreate,
             text: "10",
@@ -369,7 +406,7 @@ mod tests {
             ],
         )
         .updated_conversation;
-        let result = handler().handle(IntentHandlerInput {
+        let result = handler().handle_blocking(IntentHandlerInput {
             conversation,
             analysis_intent: &IntentId::ReservationCreate,
             text: "six",
@@ -516,7 +553,7 @@ mod tests {
         )
         .updated_conversation;
         let reservation_port = FullStubReservationPort;
-        let result = ReservationCreateIntentHandler::new(&reservation_port).handle(
+        let result = ReservationCreateIntentHandler::new(&reservation_port).handle_blocking(
             IntentHandlerInput {
                 conversation,
                 analysis_intent: &IntentId::Affirmative,
@@ -546,13 +583,14 @@ mod tests {
         )
         .updated_conversation;
         let reservation_port = ClosedStubReservationPort;
-        let result = ReservationCreateIntentHandler::new(&reservation_port)
-            .handle(IntentHandlerInput {
+        let result = ReservationCreateIntentHandler::new(&reservation_port).handle_blocking(
+            IntentHandlerInput {
                 conversation,
                 analysis_intent: &IntentId::Affirmative,
                 text: "",
                 analysis_entities: &[],
-            });
+            },
+        );
 
         assert!(
             result.reply.contains("closed")

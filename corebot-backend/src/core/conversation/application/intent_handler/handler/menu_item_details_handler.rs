@@ -3,21 +3,24 @@ use rust_i18n::t;
 use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
-use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
-use crate::core::conversation::application::port::outbound::restaurant_queries::MenuItemDetailsQuery;
+use crate::core::conversation::application::port::outbound::restaurant::menu_queries::MenuItemDetailsQuery;
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_item_details_gateway_port::RestaurantMenuItemDetailsGatewayPort;
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
-pub struct MenuItemDetailsIntentHandler<'a, P: RestaurantInformationPort + ?Sized> {
-    information_port: &'a P,
+pub struct MenuItemDetailsIntentHandler<'a, P: RestaurantMenuItemDetailsGatewayPort + ?Sized> {
+    menu_item_details_gateway_port: &'a P,
 }
 
-impl<'a, P: RestaurantInformationPort + ?Sized> MenuItemDetailsIntentHandler<'a, P> {
-    pub fn new(information_port: &'a P) -> Self {
-        Self { information_port }
+impl<'a, P: RestaurantMenuItemDetailsGatewayPort + ?Sized> MenuItemDetailsIntentHandler<'a, P> {
+    pub fn new(menu_item_details_port: &'a P) -> Self {
+        Self {
+            menu_item_details_gateway_port: menu_item_details_port,
+        }
     }
 }
 
-impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
+#[async_trait::async_trait]
+impl<P: RestaurantMenuItemDetailsGatewayPort + Send + Sync + ?Sized> IntentHandler
     for MenuItemDetailsIntentHandler<'_, P>
 {
     fn intent(&self) -> IntentId {
@@ -31,16 +34,17 @@ impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
         }
     }
 
-    fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
+    async fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
         let menu_item = self.lookup_entity_value(&input, "menu_item");
         let allergen = self.lookup_entity_value(&input, "allergen");
         let raw = self
-            .information_port
+            .menu_item_details_gateway_port
             .find_menu_item_details(MenuItemDetailsQuery {
                 menu_item: menu_item.map(str::to_string),
                 allergen: allergen.map(str::to_string),
-            });
+            })
+            .await;
         let reply = parse_item_details_reply(&raw, lang);
         StateHandlerResult {
             updated_conversation: input.conversation,

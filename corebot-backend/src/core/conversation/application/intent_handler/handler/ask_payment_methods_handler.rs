@@ -3,21 +3,24 @@ use rust_i18n::t;
 use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
-use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
-use crate::core::conversation::application::port::outbound::restaurant_queries::PaymentMethodQuery;
+use crate::core::conversation::application::port::outbound::restaurant::business_info_queries::PaymentMethodQuery;
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_payment_methods_gateway_port::RestaurantPaymentMethodsGatewayPort;
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
-pub struct AskPaymentMethodsIntentHandler<'a, P: RestaurantInformationPort + ?Sized> {
-    information_port: &'a P,
+pub struct AskPaymentMethodsIntentHandler<'a, P: RestaurantPaymentMethodsGatewayPort + ?Sized> {
+    payment_methods_gateway_port: &'a P,
 }
 
-impl<'a, P: RestaurantInformationPort + ?Sized> AskPaymentMethodsIntentHandler<'a, P> {
-    pub fn new(information_port: &'a P) -> Self {
-        Self { information_port }
+impl<'a, P: RestaurantPaymentMethodsGatewayPort + ?Sized> AskPaymentMethodsIntentHandler<'a, P> {
+    pub fn new(payment_methods_port: &'a P) -> Self {
+        Self {
+            payment_methods_gateway_port: payment_methods_port,
+        }
     }
 }
 
-impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
+#[async_trait::async_trait]
+impl<P: RestaurantPaymentMethodsGatewayPort + Send + Sync + ?Sized> IntentHandler
     for AskPaymentMethodsIntentHandler<'_, P>
 {
     fn intent(&self) -> IntentId {
@@ -31,14 +34,15 @@ impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
         }
     }
 
-    fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
+    async fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
         let method = self.lookup_entity_value(&input, "payment_method");
         let raw = self
-            .information_port
+            .payment_methods_gateway_port
             .find_payment_methods(PaymentMethodQuery {
                 method: method.map(str::to_string),
-            });
+            })
+            .await;
         let reply = if let Some(payload) = raw.strip_prefix("method_accepted:") {
             let mut p = payload.splitn(2, '|');
             let m = p.next().unwrap_or("");

@@ -47,6 +47,71 @@ pub struct FacilityQuery {
     pub facility: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RestaurantInfoResult {
+    pub payload: String,
+}
+
+impl RestaurantInfoResult {
+    pub fn new(payload: impl Into<String>) -> Self {
+        Self {
+            payload: payload.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MenuSearchResult {
+    pub payload: String,
+}
+
+impl MenuSearchResult {
+    pub fn new(payload: impl Into<String>) -> Self {
+        Self {
+            payload: payload.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MenuItemDetailsResult {
+    pub payload: String,
+}
+
+impl MenuItemDetailsResult {
+    pub fn new(payload: impl Into<String>) -> Self {
+        Self {
+            payload: payload.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PaymentMethodsResult {
+    pub payload: String,
+}
+
+impl PaymentMethodsResult {
+    pub fn new(payload: impl Into<String>) -> Self {
+        Self {
+            payload: payload.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FacilityResult {
+    pub payload: String,
+}
+
+impl FacilityResult {
+    pub fn new(payload: impl Into<String>) -> Self {
+        Self {
+            payload: payload.into(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ReservationLookupQuery {
     pub reference: Option<String>,
@@ -59,4 +124,34 @@ pub struct ReservationCreateQuery {
     pub date: chrono::NaiveDate,
     pub time: chrono::NaiveTime,
     pub people_count: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReservationCancelQuery {
+    pub reference: String,
+    pub name: Option<String>,
+    pub date: Option<chrono::NaiveDate>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReservationCreatedResult {
+    pub reference: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReservationCancelledResult {
+    pub reference: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReservationLookupResult {
+    pub payload: String,
+}
+
+impl ReservationLookupResult {
+    pub fn new(payload: impl Into<String>) -> Self {
+        Self {
+            payload: payload.into(),
+        }
+    }
 }

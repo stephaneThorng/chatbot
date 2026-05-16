@@ -3,20 +3,23 @@ use rust_i18n::t;
 use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
-use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_contact_gateway_port::RestaurantContactGatewayPort;
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
-pub struct AskContactIntentHandler<'a, P: RestaurantInformationPort + ?Sized> {
-    information_port: &'a P,
+pub struct AskContactIntentHandler<'a, P: RestaurantContactGatewayPort + ?Sized> {
+    contact_gateway_port: &'a P,
 }
 
-impl<'a, P: RestaurantInformationPort + ?Sized> AskContactIntentHandler<'a, P> {
-    pub fn new(information_port: &'a P) -> Self {
-        Self { information_port }
+impl<'a, P: RestaurantContactGatewayPort + ?Sized> AskContactIntentHandler<'a, P> {
+    pub fn new(contact_port: &'a P) -> Self {
+        Self {
+            contact_gateway_port: contact_port,
+        }
     }
 }
 
-impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
+#[async_trait::async_trait]
+impl<P: RestaurantContactGatewayPort + Send + Sync + ?Sized> IntentHandler
     for AskContactIntentHandler<'_, P>
 {
     fn intent(&self) -> IntentId {
@@ -30,9 +33,9 @@ impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
         }
     }
 
-    fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
+    async fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
-        let raw = self.information_port.get_contact();
+        let raw = self.contact_gateway_port.get_contact().await;
         let reply = if let Some(payload) = raw.strip_prefix("contact:") {
             let mut p = payload.splitn(2, '|');
             let phone = p.next().unwrap_or("");

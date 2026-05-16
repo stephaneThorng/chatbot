@@ -1,38 +1,30 @@
-/// In-memory domain model for the restaurant domain (v1).
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Weekday};
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MenuPriceFilter {
+    pub comparator: String,
+    pub amount: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MenuItem {
     pub name: String,
     pub dietary: Vec<String>,
     pub allergens: Vec<String>,
-    pub price_euros: u32,
+    pub price_cents: i32,
+    pub currency: String,
 }
 
-impl MenuItem {
-    pub fn new(name: &str, dietary: &[&str], allergens: &[&str], price_euros: u32) -> Self {
-        Self {
-            name: name.to_string(),
-            dietary: dietary.iter().map(|s| s.to_string()).collect(),
-            allergens: allergens.iter().map(|s| s.to_string()).collect(),
-            price_euros,
-        }
-    }
-
-    pub fn has_dietary(&self, requirement: &str) -> bool {
-        let req = requirement.to_lowercase();
-        self.dietary.iter().any(|d| d.to_lowercase().contains(&req))
-    }
-
-    pub fn has_allergen(&self, allergen: &str) -> bool {
-        let a = allergen.to_lowercase();
-        self.allergens
-            .iter()
-            .any(|al| al.to_lowercase().contains(&a))
-    }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReservationDraft {
+    pub reference: String,
+    pub name: String,
+    pub date: NaiveDate,
+    pub time: NaiveTime,
+    pub people_count: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Reservation {
     pub reference: String,
     pub name: String,
@@ -41,81 +33,77 @@ pub struct Reservation {
     pub people_count: u32,
 }
 
-impl Reservation {
-    pub fn new(
-        reference: &str,
-        name: &str,
-        date: NaiveDate,
-        time: NaiveTime,
-        people_count: u32,
-    ) -> Self {
-        Self {
-            reference: reference.to_string(),
-            name: name.to_string(),
-            date,
-            time,
-            people_count,
-        }
-    }
-}
-
-/// One type of table available in the restaurant.
-#[derive(Debug, Clone)]
-pub struct TableConfig {
-    /// Seats at this table.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TableType {
     pub capacity: u32,
-    /// How many tables of this type exist.
     pub count: u32,
 }
 
-/// Static configuration for the restaurant (v1: hardcoded).
-#[derive(Debug, Clone)]
-pub struct RestaurantConfig {
-    pub opening: NaiveTime,
-    pub closing: NaiveTime,
-    /// Duration of one reservation slot in minutes.
-    pub slot_mins: u32,
-    pub tables: Vec<TableConfig>,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReservationSettings {
+    pub slot_minutes: u32,
+    pub max_lookup_days: u32,
 }
 
-impl RestaurantConfig {
-    /// Default v1 configuration: open 11:00–22:00, 2-hour slots,
-    /// 2×6-seat, 3×4-seat, 3×2-seat tables.
-    pub fn default_v1() -> Self {
-        Self {
-            opening: NaiveTime::from_hms_opt(11, 0, 0).unwrap(),
-            closing: NaiveTime::from_hms_opt(22, 0, 0).unwrap(),
-            slot_mins: 120,
-            tables: vec![
-                TableConfig {
-                    capacity: 6,
-                    count: 2,
-                },
-                TableConfig {
-                    capacity: 4,
-                    count: 3,
-                },
-                TableConfig {
-                    capacity: 2,
-                    count: 3,
-                },
-            ],
-        }
-    }
-
-    /// Total seating capacity across all tables.
-    pub fn total_capacity(&self) -> u32 {
-        self.tables.iter().map(|t| t.capacity * t.count).sum()
-    }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OpeningHours {
+    pub day_of_week: Weekday,
+    pub opens_at: NaiveTime,
+    pub closes_at: NaiveTime,
+    pub is_closed: bool,
 }
 
-/// Error returned when a reservation cannot be created.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BusinessLocation {
+    pub address_line: String,
+    pub nearby_description: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContactChannel {
+    pub channel_type: String,
+    pub value: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PaymentMethod {
+    pub method_code: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Facility {
+    pub facility_code: String,
+    pub label: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventSpace {
+    pub name: String,
+    pub description: Option<String>,
+    pub contact: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BusinessFact {
+    pub fact_type: String,
+    pub title: Option<String>,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RestaurantRepositoryError {
+    pub message: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReservationError {
-    /// The requested time is outside opening hours.
     RestaurantClosed,
-    /// No table combination can seat the party at the requested slot.
-    /// The optional field carries the next available slot if one exists
-    /// within the same day or the next few days.
     NoAvailability { next_slot: Option<NaiveDateTime> },
+    RepositoryUnavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReservationCancelError {
+    NotFound,
+    RepositoryUnavailable,
 }

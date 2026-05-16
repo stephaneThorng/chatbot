@@ -16,6 +16,7 @@ impl StaticReplyIntentHandler {
     }
 }
 
+#[async_trait::async_trait]
 impl IntentHandler for StaticReplyIntentHandler {
     fn intent(&self) -> IntentId {
         self.intent.clone()
@@ -28,7 +29,7 @@ impl IntentHandler for StaticReplyIntentHandler {
         }
     }
 
-    fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
+    async fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let reply = t!(self.reply_key, locale = input.conversation.lang.as_str()).to_string();
         StateHandlerResult {
             updated_conversation: input.conversation,

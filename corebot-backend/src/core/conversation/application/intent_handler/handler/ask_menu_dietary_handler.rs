@@ -3,21 +3,24 @@ use rust_i18n::t;
 use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
-use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
-use crate::core::conversation::application::port::outbound::restaurant_queries::MenuDietaryQuery;
+use crate::core::conversation::application::port::outbound::restaurant::menu_queries::MenuDietaryQuery;
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_dietary_gateway_port::RestaurantMenuDietaryGatewayPort;
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
-pub struct AskMenuDietaryIntentHandler<'a, P: RestaurantInformationPort + ?Sized> {
-    information_port: &'a P,
+pub struct AskMenuDietaryIntentHandler<'a, P: RestaurantMenuDietaryGatewayPort + ?Sized> {
+    menu_dietary_gateway_port: &'a P,
 }
 
-impl<'a, P: RestaurantInformationPort + ?Sized> AskMenuDietaryIntentHandler<'a, P> {
-    pub fn new(information_port: &'a P) -> Self {
-        Self { information_port }
+impl<'a, P: RestaurantMenuDietaryGatewayPort + ?Sized> AskMenuDietaryIntentHandler<'a, P> {
+    pub fn new(menu_dietary_port: &'a P) -> Self {
+        Self {
+            menu_dietary_gateway_port: menu_dietary_port,
+        }
     }
 }
 
-impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
+#[async_trait::async_trait]
+impl<P: RestaurantMenuDietaryGatewayPort + Send + Sync + ?Sized> IntentHandler
     for AskMenuDietaryIntentHandler<'_, P>
 {
     fn intent(&self) -> IntentId {
@@ -31,12 +34,15 @@ impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
         }
     }
 
-    fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
+    async fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
         let dietary = self.lookup_entity_value(&input, "dietary_requirement");
-        let raw = self.information_port.find_menu_dietary(MenuDietaryQuery {
-            dietary_requirement: dietary.map(str::to_string),
-        });
+        let raw = self
+            .menu_dietary_gateway_port
+            .find_menu_dietary(MenuDietaryQuery {
+                dietary_requirement: dietary.map(str::to_string),
+            })
+            .await;
         let reply = parse_dietary_reply(&raw, lang, dietary);
         StateHandlerResult {
             updated_conversation: input.conversation,

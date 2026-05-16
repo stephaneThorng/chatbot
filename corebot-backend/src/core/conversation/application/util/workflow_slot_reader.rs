@@ -22,6 +22,24 @@ impl ReservationCreateSlots {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReservationCancelSlots {
+    pub reference: String,
+    pub name: Option<String>,
+    pub date: Option<NaiveDate>,
+}
+
+impl ReservationCancelSlots {
+    pub fn from_conversation(conversation: &Conversation) -> Self {
+        let name = text_slot(conversation, SlotName::Name);
+        Self {
+            reference: text_slot(conversation, SlotName::Reference),
+            name: if name.is_empty() { None } else { Some(name) },
+            date: date_slot(conversation, SlotName::Date),
+        }
+    }
+}
+
 fn slot_value(conversation: &Conversation, slot: SlotName) -> Option<&SlotDataValue> {
     conversation
         .active_workflow()

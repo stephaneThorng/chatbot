@@ -1,0 +1,17 @@
+pub mod business_info_queries;
+pub mod menu_queries;
+pub mod reservation_queries;
+pub mod restaurant_accessibility_gateway_port;
+pub mod restaurant_contact_gateway_port;
+pub mod restaurant_entertainment_gateway_port;
+pub mod restaurant_event_gateway_port;
+pub mod restaurant_facilities_gateway_port;
+pub mod restaurant_location_gateway_port;
+pub mod restaurant_menu_dietary_gateway_port;
+pub mod restaurant_menu_gateway_port;
+pub mod restaurant_menu_item_details_gateway_port;
+pub mod restaurant_opening_hours_gateway_port;
+pub mod restaurant_payment_methods_gateway_port;
+pub mod restaurant_price_gateway_port;
+pub mod restaurant_reservation_gateway_port;
+pub mod restaurant_takeaway_gateway_port;

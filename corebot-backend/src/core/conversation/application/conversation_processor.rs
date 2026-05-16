@@ -19,7 +19,22 @@ impl ConversationProcessor {
         Self
     }
 
+    #[cfg(test)]
     pub fn process(
+        &self,
+        intent_registry: &IntentHandlerRegistry<'_>,
+        conversation: Conversation,
+        message: &str,
+        analysis: NluAnalysisResult,
+    ) -> StateHandlerResult {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime should be created")
+            .block_on(self.process_async(intent_registry, conversation, message, analysis))
+    }
+
+    pub async fn process_async(
         &self,
         intent_registry: &IntentHandlerRegistry<'_>,
         conversation: Conversation,
@@ -35,12 +50,14 @@ impl ConversationProcessor {
             let handler = intent_registry
                 .get(&workflow.intent)
                 .expect("workflow handler must exist for active workflow");
-            return handler.handle(IntentHandlerInput {
-                conversation,
-                analysis_intent: &analysis_intent,
-                text: message,
-                analysis_entities: &analysis_entities,
-            });
+            return handler
+                .handle(IntentHandlerInput {
+                    conversation,
+                    analysis_intent: &analysis_intent,
+                    text: message,
+                    analysis_entities: &analysis_entities,
+                })
+                .await;
         }
 
         if analysis_config.is_some_and(|cfg| cfg.workflow.is_workflow()) {
@@ -48,12 +65,14 @@ impl ConversationProcessor {
             let handler = intent_registry
                 .get(&analysis_intent)
                 .expect("workflow handler must exist for workflow config");
-            return handler.handle(IntentHandlerInput {
-                conversation,
-                analysis_intent: &analysis_intent,
-                text: message,
-                analysis_entities: &analysis_entities,
-            });
+            return handler
+                .handle(IntentHandlerInput {
+                    conversation,
+                    analysis_intent: &analysis_intent,
+                    text: message,
+                    analysis_entities: &analysis_entities,
+                })
+                .await;
         }
 
         self.process_idle_intent(
@@ -63,6 +82,7 @@ impl ConversationProcessor {
             message,
             &analysis.entities,
         )
+        .await
     }
 
     fn resolve_active_workflow_intent(
@@ -103,7 +123,7 @@ impl ConversationProcessor {
         IntentId::from(&analysis.intent_name)
     }
 
-    fn process_idle_intent(
+    async fn process_idle_intent(
         &self,
         intent_handlers: &IntentHandlerRegistry<'_>,
         conversation: Conversation,
@@ -112,12 +132,14 @@ impl ConversationProcessor {
         entities: &[NluEntityResult],
     ) -> StateHandlerResult {
         if let Some(handler) = intent_handlers.get(&intent) {
-            return handler.handle(IntentHandlerInput {
-                conversation,
-                analysis_intent: &intent,
-                text: message,
-                analysis_entities: entities,
-            });
+            return handler
+                .handle(IntentHandlerInput {
+                    conversation,
+                    analysis_intent: &intent,
+                    text: message,
+                    analysis_entities: entities,
+                })
+                .await;
         }
 
         if intent == IntentId::Cancel {
@@ -188,12 +210,30 @@ fn system_text_i18n_key(key: &str) -> Option<&'static str> {
 mod tests {
     use super::*;
     use crate::core::conversation::application::dto::nlu_analysis_result::NluIntentCandidate;
-    use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
-    use crate::core::conversation::application::port::outbound::restaurant_queries::{
-        EventQuery, FacilityQuery, LocationQuery, MenuDietaryQuery, MenuItemDetailsQuery,
-        MenuQuery, PaymentMethodQuery, PriceQuery, ReservationCreateQuery, ReservationLookupQuery,
+    use crate::core::conversation::application::port::outbound::restaurant::business_info_queries::{
+        EventQuery, FacilityQuery, LocationQuery, PaymentMethodQuery,
     };
-    use crate::core::conversation::application::port::outbound::restaurant_reservation_port::RestaurantReservationPort;
+    use crate::core::conversation::application::port::outbound::restaurant::menu_queries::{
+        MenuDietaryQuery, MenuItemDetailsQuery, MenuQuery, PriceQuery,
+    };
+    use crate::core::conversation::application::port::outbound::restaurant::reservation_queries::{
+        ReservationCreateQuery, ReservationFailure, ReservationLookupQuery,
+    };
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_accessibility_gateway_port::RestaurantAccessibilityGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_contact_gateway_port::RestaurantContactGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_entertainment_gateway_port::RestaurantEntertainmentGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_event_gateway_port::RestaurantEventGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_facilities_gateway_port::RestaurantFacilitiesGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_location_gateway_port::RestaurantLocationGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_dietary_gateway_port::RestaurantMenuDietaryGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_item_details_gateway_port::RestaurantMenuItemDetailsGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_gateway_port::RestaurantMenuGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_opening_hours_gateway_port::RestaurantOpeningHoursGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_payment_methods_gateway_port::RestaurantPaymentMethodsGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_price_gateway_port::RestaurantPriceGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::reservation_queries::{ReservationCancelFailure, ReservationCancelQuery};
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_reservation_gateway_port::RestaurantReservationGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_takeaway_gateway_port::RestaurantTakeawayGatewayPort;
     use crate::core::conversation::application::intent_handler::restaurant_handler_registry_factory::{
         RestaurantConversationDependencies, RestaurantHandlerRegistryFactory,
     };
@@ -201,68 +241,115 @@ mod tests {
 
     struct StubInformationPort;
 
-    impl RestaurantInformationPort for StubInformationPort {
-        fn get_opening_hours(&self) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantOpeningHoursGatewayPort for StubInformationPort {
+        async fn get_opening_hours(&self) -> String {
             "Mon-Sun 9am-10pm".to_string()
         }
+    }
 
-        fn find_menu(&self, _: MenuQuery) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantMenuGatewayPort for StubInformationPort {
+        async fn find_menu(&self, _: MenuQuery) -> String {
             "full_menu:".to_string()
         }
+    }
 
-        fn find_menu_dietary(&self, _: MenuDietaryQuery) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantMenuDietaryGatewayPort for StubInformationPort {
+        async fn find_menu_dietary(&self, _: MenuDietaryQuery) -> String {
             "dietary_no_filter:".to_string()
         }
+    }
 
-        fn find_menu_item_details(&self, _: MenuItemDetailsQuery) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantMenuItemDetailsGatewayPort for StubInformationPort {
+        async fn find_menu_item_details(&self, _: MenuItemDetailsQuery) -> String {
             "details_no_filter:".to_string()
         }
+    }
 
-        fn find_location(&self, _: LocationQuery) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantLocationGatewayPort for StubInformationPort {
+        async fn find_location(&self, _: LocationQuery) -> String {
             "address:".to_string()
         }
+    }
 
-        fn get_contact(&self) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantContactGatewayPort for StubInformationPort {
+        async fn get_contact(&self) -> String {
             "contact:+33123456789|test@example.com".to_string()
         }
+    }
 
-        fn find_payment_methods(&self, _: PaymentMethodQuery) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantPaymentMethodsGatewayPort for StubInformationPort {
+        async fn find_payment_methods(&self, _: PaymentMethodQuery) -> String {
             "all_methods:cash".to_string()
         }
+    }
 
-        fn find_price(&self, _: PriceQuery) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantPriceGatewayPort for StubInformationPort {
+        async fn find_price(&self, _: PriceQuery) -> String {
             "price_general:".to_string()
         }
+    }
 
-        fn get_takeaway_info(&self) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantTakeawayGatewayPort for StubInformationPort {
+        async fn get_takeaway_info(&self) -> String {
             "takeaway:yes|Yes".to_string()
         }
+    }
 
-        fn find_event_info(&self, _: EventQuery) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantEventGatewayPort for StubInformationPort {
+        async fn find_event_info(&self, _: EventQuery) -> String {
             "event_info:Yes".to_string()
         }
+    }
 
-        fn find_facility_info(&self, _: FacilityQuery) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantFacilitiesGatewayPort for StubInformationPort {
+        async fn find_facility_info(&self, _: FacilityQuery) -> String {
             "all_facilities:wifi".to_string()
         }
+    }
 
-        fn get_accessibility_info(&self) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantAccessibilityGatewayPort for StubInformationPort {
+        async fn get_accessibility_info(&self) -> String {
             "accessibility:yes|Yes".to_string()
         }
+    }
 
-        fn get_entertainment_info(&self) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantEntertainmentGatewayPort for StubInformationPort {
+        async fn get_entertainment_info(&self) -> String {
             "entertainment:yes|Live music".to_string()
         }
     }
 
     struct StubReservationPort;
 
-    impl RestaurantReservationPort for StubReservationPort {
-        fn create_reservation(&self, _: ReservationCreateQuery) -> Result<String, crate::core::conversation::application::port::outbound::restaurant_queries::ReservationFailure>{
+    #[async_trait::async_trait]
+    impl RestaurantReservationGatewayPort for StubReservationPort {
+        async fn create_reservation(
+            &self,
+            _: ReservationCreateQuery,
+        ) -> Result<String, ReservationFailure> {
             Ok("created:REST-NEW123".to_string())
         }
+        async fn cancel_reservation(
+            &self,
+            _: ReservationCancelQuery,
+        ) -> Result<String, ReservationCancelFailure> {
+            Ok("cancelled:REST-NEW123".to_string())
+        }
 
-        fn check_reservation(&self, _: ReservationLookupQuery) -> String {
+        async fn check_reservation(&self, _: ReservationLookupQuery) -> String {
             "no_reference_or_name:".to_string()
         }
     }
@@ -315,6 +402,27 @@ mod tests {
         }
     }
 
+    fn registry() -> IntentHandlerRegistry<'static> {
+        static INFORMATION_PORT: StubInformationPort = StubInformationPort;
+        static RESERVATION_PORT: StubReservationPort = StubReservationPort;
+        RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
+            opening_hours_port: &INFORMATION_PORT,
+            menu_port: &INFORMATION_PORT,
+            menu_dietary_port: &INFORMATION_PORT,
+            menu_item_details_port: &INFORMATION_PORT,
+            price_port: &INFORMATION_PORT,
+            location_port: &INFORMATION_PORT,
+            contact_port: &INFORMATION_PORT,
+            payment_methods_port: &INFORMATION_PORT,
+            takeaway_port: &INFORMATION_PORT,
+            event_port: &INFORMATION_PORT,
+            facilities_port: &INFORMATION_PORT,
+            accessibility_port: &INFORMATION_PORT,
+            entertainment_port: &INFORMATION_PORT,
+            reservation_port: &RESERVATION_PORT,
+        })
+    }
+
     fn entity(entity_label: &'static str, value: &str) -> NluEntityResult {
         NluEntityResult {
             entity_label: entity_label.to_string(),
@@ -330,12 +438,7 @@ mod tests {
     fn informational_intent_with_ner_returns_handler_reply_and_stays_idle() {
         let conversation = Conversation::new(DomainType::Restaurant);
 
-        let information_port = StubInformationPort;
-        let reservation_port = StubReservationPort;
-        let registry = RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-            information_port: &information_port,
-            reservation_port: &reservation_port,
-        });
+        let registry = registry();
         let result = processor().process(
             &registry,
             conversation.clone(),
@@ -355,12 +458,7 @@ mod tests {
     fn informational_intent_missing_ner_returns_custom_reply_and_stays_idle() {
         let conversation = Conversation::new(DomainType::Restaurant);
 
-        let information_port = StubInformationPort;
-        let reservation_port = StubReservationPort;
-        let registry = RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-            information_port: &information_port,
-            reservation_port: &reservation_port,
-        });
+        let registry = registry();
         let result = processor().process(
             &registry,
             conversation.clone(),
@@ -380,13 +478,9 @@ mod tests {
     fn workflow_intent_starts_workflow_and_prompts_next_slot() {
         let conversation = Conversation::new(DomainType::Restaurant);
 
-        let information_port = StubInformationPort;
-        let reservation_port = StubReservationPort;
-        let registry = RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-            information_port: &information_port,
-            reservation_port: &reservation_port,
-        });
-        let result = processor().process(&registry,
+        let registry = registry();
+        let result = processor().process(
+            &registry,
             conversation.clone(),
             "book",
             analysis("reservation_create", vec![]),
@@ -405,13 +499,9 @@ mod tests {
     fn reservation_cancel_starts_workflow_and_prompts_reference() {
         let conversation = Conversation::new(DomainType::Restaurant);
 
-        let information_port = StubInformationPort;
-        let reservation_port = StubReservationPort;
-        let registry = RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-            information_port: &information_port,
-            reservation_port: &reservation_port,
-        });
-        let result = processor().process(&registry,
+        let registry = registry();
+        let result = processor().process(
+            &registry,
             conversation.clone(),
             "cancel my booking",
             analysis("reservation_cancel", vec![]),
@@ -426,13 +516,9 @@ mod tests {
     fn reservation_cancel_with_reference_asks_for_confirmation() {
         let conversation = Conversation::new(DomainType::Restaurant);
 
-        let information_port = StubInformationPort;
-        let reservation_port = StubReservationPort;
-        let registry = RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-            information_port: &information_port,
-            reservation_port: &reservation_port,
-        });
-        let result = processor().process(&registry,
+        let registry = registry();
+        let result = processor().process(
+            &registry,
             conversation.clone(),
             "cancel ABC123",
             analysis(
@@ -453,13 +539,9 @@ mod tests {
     fn price_condition_returns_deterministic_reply() {
         let conversation = Conversation::new(DomainType::Restaurant);
 
-        let information_port = StubInformationPort;
-        let reservation_port = StubReservationPort;
-        let registry = RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-            information_port: &information_port,
-            reservation_port: &reservation_port,
-        });
-        let result = processor().process(&registry,
+        let registry = registry();
+        let result = processor().process(
+            &registry,
             conversation.clone(),
             "do you have meals under 20 euros",
             analysis(
@@ -494,13 +576,7 @@ mod tests {
         ];
 
         for intent in informational_intents {
-            let information_port = StubInformationPort;
-            let reservation_port = StubReservationPort;
-            let registry =
-                RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-                    information_port: &information_port,
-                    reservation_port: &reservation_port,
-                });
+            let registry = registry();
             let result = processor().process(
                 &registry,
                 Conversation::new(DomainType::Restaurant),
@@ -521,12 +597,7 @@ mod tests {
     fn active_workflow_ignores_informational_handler_routing() {
         let conversation = Conversation::new(DomainType::Restaurant);
         let processor = processor();
-        let information_port = StubInformationPort;
-        let reservation_port = StubReservationPort;
-        let registry = RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-            information_port: &information_port,
-            reservation_port: &reservation_port,
-        });
+        let registry = registry();
 
         let start = processor.process(
             &registry,
@@ -549,12 +620,7 @@ mod tests {
     #[test]
     fn active_confirmation_prefers_affirmative_candidate_over_workflow_intent() {
         let processor = processor();
-        let information_port = StubInformationPort;
-        let reservation_port = StubReservationPort;
-        let registry = RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-            information_port: &information_port,
-            reservation_port: &reservation_port,
-        });
+        let registry = registry();
         let started = processor.process(
             &registry,
             Conversation::new(DomainType::Restaurant),
@@ -601,12 +667,7 @@ mod tests {
     #[test]
     fn active_confirmation_prefers_negative_candidate_over_workflow_intent() {
         let processor = processor();
-        let information_port = StubInformationPort;
-        let reservation_port = StubReservationPort;
-        let registry = RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-            information_port: &information_port,
-            reservation_port: &reservation_port,
-        });
+        let registry = registry();
         let started = processor.process(
             &registry,
             Conversation::new(DomainType::Restaurant),
@@ -649,12 +710,7 @@ mod tests {
     #[test]
     fn active_confirmation_does_not_accept_choice_candidates_below_threshold() {
         let processor = processor();
-        let information_port = StubInformationPort;
-        let reservation_port = StubReservationPort;
-        let registry = RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-            information_port: &information_port,
-            reservation_port: &reservation_port,
-        });
+        let registry = registry();
         let started = processor.process(
             &registry,
             Conversation::new(DomainType::Restaurant),
@@ -702,12 +758,7 @@ mod tests {
     fn unknown_intent_returns_deterministic_fallback() {
         let conversation = Conversation::new(DomainType::Restaurant);
 
-        let information_port = StubInformationPort;
-        let reservation_port = StubReservationPort;
-        let registry = RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-            information_port: &information_port,
-            reservation_port: &reservation_port,
-        });
+        let registry = registry();
         let result = processor().process(
             &registry,
             conversation.clone(),
@@ -724,12 +775,7 @@ mod tests {
     fn low_confidence_known_intent_falls_back_to_unknown_handler() {
         let conversation = Conversation::new(DomainType::Restaurant);
 
-        let information_port = StubInformationPort;
-        let reservation_port = StubReservationPort;
-        let registry = RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-            information_port: &information_port,
-            reservation_port: &reservation_port,
-        });
+        let registry = registry();
         let result = processor().process(
             &registry,
             conversation.clone(),

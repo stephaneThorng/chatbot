@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: corebot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: corebot
+      POSTGRES_USER: corebot
+      POSTGRES_PASSWORD: corebot
+    ports:
+      - "5432:5432"
+    volumes:
+      - corebot_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U corebot -d corebot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  corebot_postgres_data:

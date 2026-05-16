@@ -8,15 +8,21 @@ use corebot_backend::core::conversation::adapter::inbound::web::routes::conversa
 use corebot_backend::core::conversation::adapter::outbound::in_memory_conversation_repository::InMemoryConversationRepository;
 use corebot_backend::core::conversation::adapter::outbound::langdetect_language_detector::LangdetectLanguageDetector;
 use corebot_backend::core::conversation::adapter::outbound::nlu_engine_gateway::NluEngineGateway;
-use corebot_backend::core::conversation::adapter::outbound::restaurant_domain_gateway::{
-    RestaurantInformationGateway, RestaurantReservationGateway,
-};
+use corebot_backend::core::conversation::adapter::outbound::restaurant_business_info_gateway::RestaurantBusinessInfoGateway;
+use corebot_backend::core::conversation::adapter::outbound::restaurant_menu_gateway::RestaurantMenuGateway;
+use corebot_backend::core::conversation::adapter::outbound::restaurant_reservation_gateway::RestaurantReservationGateway;
 use corebot_backend::core::conversation::application::conversation_processor::ConversationProcessor;
 use corebot_backend::core::conversation::application::conversation_service::HandleConversationService;
 use corebot_backend::core::conversation::domain::domain_type::DomainType;
 use corebot_backend::core::nlu_engine::adapter::outbound::onnx_nlu_runtime::OnnxNluRuntime;
 use corebot_backend::core::nlu_engine::application::AnalyzeTextService;
-use corebot_backend::core::restaurant::application::restaurant_service::RestaurantService;
+use corebot_backend::core::restaurant::adapter::outbound::postgres_restaurant_repository::availability_repository::PostgresAvailabilityRepository;
+use corebot_backend::core::restaurant::adapter::outbound::postgres_restaurant_repository::business_info_repository::PostgresBusinessInfoRepository;
+use corebot_backend::core::restaurant::adapter::outbound::postgres_restaurant_repository::menu_repository::PostgresMenuRepository;
+use corebot_backend::core::restaurant::adapter::outbound::postgres_restaurant_repository::reservation_repository::PostgresReservationRepository;
+use corebot_backend::core::restaurant::application::database_restaurant_service::DatabaseRestaurantService;
+use sqlx::PgPool;
+use uuid::Uuid;
 
 const BIND_ADDRESS: &str = "0.0.0.0:3000";
 
@@ -29,9 +35,30 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let restaurant = Arc::new(RestaurantService::new());
-    let information_port = RestaurantInformationGateway::new(Arc::clone(&restaurant));
-    let reservation_port = RestaurantReservationGateway::new(Arc::clone(&restaurant));
+    let pool = PgPool::connect(&database_url())
+        .await
+        .unwrap_or_else(|error| panic!("Failed to connect to PostgreSQL: {error}"));
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .unwrap_or_else(|error| panic!("Failed to run database migrations: {error}"));
+
+    let business_info_repository = PostgresBusinessInfoRepository::new(pool.clone());
+    let menu_repository = PostgresMenuRepository::new(pool.clone());
+    let reservation_repository = PostgresReservationRepository::new(pool.clone());
+    let availability_repository = PostgresAvailabilityRepository::new(pool);
+    let restaurant = Arc::new(DatabaseRestaurantService::new(
+        default_business_id(),
+        "en",
+        business_info_repository,
+        menu_repository,
+        reservation_repository,
+        availability_repository,
+    ));
+    let business_info_gateway =
+        Arc::new(RestaurantBusinessInfoGateway::new(Arc::clone(&restaurant)));
+    let menu_gateway = Arc::new(RestaurantMenuGateway::new(Arc::clone(&restaurant)));
+    let reservation_gateway = Arc::new(RestaurantReservationGateway::new(Arc::clone(&restaurant)));
     let processor = ConversationProcessor::new();
 
     let runtime = OnnxNluRuntime::from_env()
@@ -46,8 +73,20 @@ async fn main() {
         analyzer,
         conversation_repository,
         language_detector,
-        information_port,
-        reservation_port,
+        business_info_gateway.clone(),
+        menu_gateway.clone(),
+        menu_gateway.clone(),
+        menu_gateway.clone(),
+        menu_gateway,
+        business_info_gateway.clone(),
+        business_info_gateway.clone(),
+        business_info_gateway.clone(),
+        business_info_gateway.clone(),
+        business_info_gateway.clone(),
+        business_info_gateway.clone(),
+        business_info_gateway.clone(),
+        business_info_gateway,
+        reservation_gateway,
     ));
     let app = Router::new()
         .merge(conversation_routes_with_use_case(use_case))
@@ -100,6 +139,31 @@ fn log_environment(env_result: Result<Option<PathBuf>, String>) {
         "[startup] COREBOT_NLU_ONNX_DIR={}",
         std::env::var("COREBOT_NLU_ONNX_DIR").unwrap_or_else(|_| "<unset>".to_string())
     );
+    println!(
+        "[startup] DATABASE_URL={}",
+        std::env::var("DATABASE_URL")
+            .map(|_| "<set>".to_string())
+            .unwrap_or_else(|_| "<unset>".to_string())
+    );
+    println!(
+        "[startup] COREBOT_DEFAULT_BUSINESS_ID={}",
+        std::env::var("COREBOT_DEFAULT_BUSINESS_ID").unwrap_or_else(|_| "<unset>".to_string())
+    );
+}
+
+fn database_url() -> String {
+    std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| panic!("DATABASE_URL must be set for PostgreSQL persistence"))
+}
+
+fn default_business_id() -> Uuid {
+    std::env::var("COREBOT_DEFAULT_BUSINESS_ID")
+        .ok()
+        .and_then(|value| Uuid::parse_str(&value).ok())
+        .unwrap_or_else(|| {
+            Uuid::parse_str("11111111-1111-1111-1111-111111111111")
+                .expect("default business id literal must be a valid UUID")
+        })
 }
 
 fn debug_nlu_logging_enabled() -> bool {

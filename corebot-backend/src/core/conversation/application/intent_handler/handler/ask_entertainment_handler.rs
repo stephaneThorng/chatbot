@@ -3,20 +3,23 @@ use rust_i18n::t;
 use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
-use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_entertainment_gateway_port::RestaurantEntertainmentGatewayPort;
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
-pub struct AskEntertainmentIntentHandler<'a, P: RestaurantInformationPort + ?Sized> {
-    information_port: &'a P,
+pub struct AskEntertainmentIntentHandler<'a, P: RestaurantEntertainmentGatewayPort + ?Sized> {
+    entertainment_gateway_port: &'a P,
 }
 
-impl<'a, P: RestaurantInformationPort + ?Sized> AskEntertainmentIntentHandler<'a, P> {
-    pub fn new(information_port: &'a P) -> Self {
-        Self { information_port }
+impl<'a, P: RestaurantEntertainmentGatewayPort + ?Sized> AskEntertainmentIntentHandler<'a, P> {
+    pub fn new(entertainment_port: &'a P) -> Self {
+        Self {
+            entertainment_gateway_port: entertainment_port,
+        }
     }
 }
 
-impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
+#[async_trait::async_trait]
+impl<P: RestaurantEntertainmentGatewayPort + Send + Sync + ?Sized> IntentHandler
     for AskEntertainmentIntentHandler<'_, P>
 {
     fn intent(&self) -> IntentId {
@@ -30,9 +33,12 @@ impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
         }
     }
 
-    fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
+    async fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
-        let raw = self.information_port.get_entertainment_info();
+        let raw = self
+            .entertainment_gateway_port
+            .get_entertainment_info()
+            .await;
         let reply = if let Some(info) = raw.strip_prefix("entertainment:yes|") {
             t!(
                 "intent.ask_entertainment.confirmed.reply",

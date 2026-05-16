@@ -1,4 +1,5 @@
 use std::str::FromStr;
+use std::sync::Arc;
 
 use super::conversation_processor::ConversationProcessor;
 use super::dto::conversation_command::{HandleConversationCommand, HandleConversationResult};
@@ -10,39 +11,60 @@ use super::port::inbound::conversation_usecase::HandleConversationUseCase;
 use super::port::outbound::conversation_repository_port::ConversationRepositoryPort;
 use super::port::outbound::language_detector_port::LanguageDetectorPort;
 use super::port::outbound::nlp_engine_gateway_port::NlpEngineGatewayPort;
-use super::port::outbound::restaurant_information_port::RestaurantInformationPort;
-use super::port::outbound::restaurant_reservation_port::RestaurantReservationPort;
+use super::port::outbound::restaurant::restaurant_accessibility_gateway_port::RestaurantAccessibilityGatewayPort;
+use super::port::outbound::restaurant::restaurant_contact_gateway_port::RestaurantContactGatewayPort;
+use super::port::outbound::restaurant::restaurant_entertainment_gateway_port::RestaurantEntertainmentGatewayPort;
+use super::port::outbound::restaurant::restaurant_event_gateway_port::RestaurantEventGatewayPort;
+use super::port::outbound::restaurant::restaurant_facilities_gateway_port::RestaurantFacilitiesGatewayPort;
+use super::port::outbound::restaurant::restaurant_location_gateway_port::RestaurantLocationGatewayPort;
+use super::port::outbound::restaurant::restaurant_menu_dietary_gateway_port::RestaurantMenuDietaryGatewayPort;
+use super::port::outbound::restaurant::restaurant_menu_gateway_port::RestaurantMenuGatewayPort;
+use super::port::outbound::restaurant::restaurant_menu_item_details_gateway_port::RestaurantMenuItemDetailsGatewayPort;
+use super::port::outbound::restaurant::restaurant_opening_hours_gateway_port::RestaurantOpeningHoursGatewayPort;
+use super::port::outbound::restaurant::restaurant_payment_methods_gateway_port::RestaurantPaymentMethodsGatewayPort;
+use super::port::outbound::restaurant::restaurant_price_gateway_port::RestaurantPriceGatewayPort;
+use super::port::outbound::restaurant::restaurant_reservation_gateway_port::RestaurantReservationGatewayPort;
+use super::port::outbound::restaurant::restaurant_takeaway_gateway_port::RestaurantTakeawayGatewayPort;
 use crate::core::conversation::application::dto::nlu_analysis_result::NluAnalysisResult;
 use crate::core::conversation::domain::conversation::Conversation;
 use crate::core::conversation::domain::conversation_id::ConversationId;
 use crate::core::conversation::domain::domain_type::DomainType;
 
-pub struct HandleConversationService<N, R, L, I, S>
+pub struct HandleConversationService<N, R, L>
 where
     N: NlpEngineGatewayPort,
     R: ConversationRepositoryPort,
     L: LanguageDetectorPort,
-    I: RestaurantInformationPort,
-    S: RestaurantReservationPort,
 {
     domain: DomainType,
     nlu_engine_gateway: N,
     conversation_repository: R,
     language_detector: L,
     processor: ConversationProcessor,
-    restaurant_information_port: I,
-    restaurant_reservation_port: S,
+    opening_hours_port: Arc<dyn RestaurantOpeningHoursGatewayPort>,
+    menu_port: Arc<dyn RestaurantMenuGatewayPort>,
+    menu_dietary_port: Arc<dyn RestaurantMenuDietaryGatewayPort>,
+    menu_item_details_port: Arc<dyn RestaurantMenuItemDetailsGatewayPort>,
+    price_port: Arc<dyn RestaurantPriceGatewayPort>,
+    location_port: Arc<dyn RestaurantLocationGatewayPort>,
+    contact_port: Arc<dyn RestaurantContactGatewayPort>,
+    payment_methods_port: Arc<dyn RestaurantPaymentMethodsGatewayPort>,
+    takeaway_port: Arc<dyn RestaurantTakeawayGatewayPort>,
+    event_port: Arc<dyn RestaurantEventGatewayPort>,
+    facilities_port: Arc<dyn RestaurantFacilitiesGatewayPort>,
+    accessibility_port: Arc<dyn RestaurantAccessibilityGatewayPort>,
+    entertainment_port: Arc<dyn RestaurantEntertainmentGatewayPort>,
+    reservation_port: Arc<dyn RestaurantReservationGatewayPort>,
 }
 
-impl<N, R, L, I, S> HandleConversationUseCase for HandleConversationService<N, R, L, I, S>
+#[async_trait::async_trait]
+impl<N, R, L> HandleConversationUseCase for HandleConversationService<N, R, L>
 where
-    N: NlpEngineGatewayPort,
-    R: ConversationRepositoryPort,
-    L: LanguageDetectorPort,
-    I: RestaurantInformationPort + Send + Sync,
-    S: RestaurantReservationPort + Send + Sync,
+    N: NlpEngineGatewayPort + Send + Sync,
+    R: ConversationRepositoryPort + Send + Sync,
+    L: LanguageDetectorPort + Send + Sync,
 {
-    fn handle_message(&self, command: HandleConversationCommand) -> HandleConversationResult {
+    async fn handle_message(&self, command: HandleConversationCommand) -> HandleConversationResult {
         let (conversation, session_id) =
             self.load_or_create_conversation(command.session_id.as_deref(), &command.message);
         let analysis = self.nlu_engine_gateway.analyze(
@@ -57,15 +79,33 @@ where
         let restaurant_registry = match conversation.domain {
             DomainType::Restaurant => {
                 RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-                    information_port: &self.restaurant_information_port,
-                    reservation_port: &self.restaurant_reservation_port,
+                    opening_hours_port: self.opening_hours_port.as_ref(),
+                    menu_port: self.menu_port.as_ref(),
+                    menu_dietary_port: self.menu_dietary_port.as_ref(),
+                    menu_item_details_port: self.menu_item_details_port.as_ref(),
+                    price_port: self.price_port.as_ref(),
+                    location_port: self.location_port.as_ref(),
+                    contact_port: self.contact_port.as_ref(),
+                    payment_methods_port: self.payment_methods_port.as_ref(),
+                    takeaway_port: self.takeaway_port.as_ref(),
+                    event_port: self.event_port.as_ref(),
+                    facilities_port: self.facilities_port.as_ref(),
+                    accessibility_port: self.accessibility_port.as_ref(),
+                    entertainment_port: self.entertainment_port.as_ref(),
+                    reservation_port: self.reservation_port.as_ref(),
                 })
             }
             DomainType::Hotel => IntentHandlerRegistry::new(vec![]),
         };
         let process_result = self
             .processor
-            .process(&restaurant_registry, conversation, &command.message, analysis);
+            .process_async(
+                &restaurant_registry,
+                conversation,
+                &command.message,
+                analysis,
+            )
+            .await;
 
         let _ = self
             .conversation_repository
@@ -78,13 +118,11 @@ where
     }
 }
 
-impl<N, R, L, I, S> HandleConversationService<N, R, L, I, S>
+impl<N, R, L> HandleConversationService<N, R, L>
 where
     N: NlpEngineGatewayPort,
     R: ConversationRepositoryPort,
     L: LanguageDetectorPort,
-    I: RestaurantInformationPort,
-    S: RestaurantReservationPort,
 {
     pub fn new(
         domain: DomainType,
@@ -92,8 +130,20 @@ where
         nlu_engine_gateway: N,
         conversation_repository: R,
         language_detector: L,
-        restaurant_information_port: I,
-        restaurant_reservation_port: S,
+        opening_hours_port: Arc<dyn RestaurantOpeningHoursGatewayPort>,
+        menu_port: Arc<dyn RestaurantMenuGatewayPort>,
+        menu_dietary_port: Arc<dyn RestaurantMenuDietaryGatewayPort>,
+        menu_item_details_port: Arc<dyn RestaurantMenuItemDetailsGatewayPort>,
+        price_port: Arc<dyn RestaurantPriceGatewayPort>,
+        location_port: Arc<dyn RestaurantLocationGatewayPort>,
+        contact_port: Arc<dyn RestaurantContactGatewayPort>,
+        payment_methods_port: Arc<dyn RestaurantPaymentMethodsGatewayPort>,
+        takeaway_port: Arc<dyn RestaurantTakeawayGatewayPort>,
+        event_port: Arc<dyn RestaurantEventGatewayPort>,
+        facilities_port: Arc<dyn RestaurantFacilitiesGatewayPort>,
+        accessibility_port: Arc<dyn RestaurantAccessibilityGatewayPort>,
+        entertainment_port: Arc<dyn RestaurantEntertainmentGatewayPort>,
+        reservation_port: Arc<dyn RestaurantReservationGatewayPort>,
     ) -> Self {
         Self {
             domain,
@@ -101,9 +151,37 @@ where
             conversation_repository,
             language_detector,
             processor,
-            restaurant_information_port,
-            restaurant_reservation_port,
+            opening_hours_port,
+            menu_port,
+            menu_dietary_port,
+            menu_item_details_port,
+            price_port,
+            location_port,
+            contact_port,
+            payment_methods_port,
+            takeaway_port,
+            event_port,
+            facilities_port,
+            accessibility_port,
+            entertainment_port,
+            reservation_port,
         }
+    }
+
+    #[cfg(test)]
+    pub fn handle_message(&self, command: HandleConversationCommand) -> HandleConversationResult
+    where
+        N: Send + Sync,
+        R: Send + Sync,
+        L: Send + Sync,
+    {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime should be created")
+            .block_on(<Self as HandleConversationUseCase>::handle_message(
+                self, command,
+            ))
     }
 
     fn load_or_create_conversation(
@@ -212,12 +290,30 @@ mod tests {
     };
     use crate::core::conversation::application::port::outbound::language_detector_port::LanguageDetectorPort;
     use crate::core::conversation::application::port::outbound::nlp_engine_gateway_port::NlpEngineGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
-    use crate::core::conversation::application::port::outbound::restaurant_queries::{
-        EventQuery, FacilityQuery, LocationQuery, MenuDietaryQuery, MenuItemDetailsQuery,
-        MenuQuery, PaymentMethodQuery, PriceQuery, ReservationCreateQuery, ReservationLookupQuery,
+    use crate::core::conversation::application::port::outbound::restaurant::business_info_queries::{
+        EventQuery, FacilityQuery, LocationQuery, PaymentMethodQuery,
     };
-    use crate::core::conversation::application::port::outbound::restaurant_reservation_port::RestaurantReservationPort;
+    use crate::core::conversation::application::port::outbound::restaurant::menu_queries::{
+        MenuDietaryQuery, MenuItemDetailsQuery, MenuQuery, PriceQuery,
+    };
+    use crate::core::conversation::application::port::outbound::restaurant::reservation_queries::{
+        ReservationCancelFailure, ReservationCancelQuery, ReservationCreateQuery,
+        ReservationFailure, ReservationLookupQuery,
+    };
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_accessibility_gateway_port::RestaurantAccessibilityGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_contact_gateway_port::RestaurantContactGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_entertainment_gateway_port::RestaurantEntertainmentGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_event_gateway_port::RestaurantEventGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_facilities_gateway_port::RestaurantFacilitiesGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_location_gateway_port::RestaurantLocationGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_dietary_gateway_port::RestaurantMenuDietaryGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_item_details_gateway_port::RestaurantMenuItemDetailsGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_gateway_port::RestaurantMenuGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_opening_hours_gateway_port::RestaurantOpeningHoursGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_payment_methods_gateway_port::RestaurantPaymentMethodsGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_price_gateway_port::RestaurantPriceGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_reservation_gateway_port::RestaurantReservationGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_takeaway_gateway_port::RestaurantTakeawayGatewayPort;
     use crate::core::conversation::domain::model::intent::NluTask;
 
     #[derive(Clone)]
@@ -237,57 +333,94 @@ mod tests {
         }
     }
 
-    impl RestaurantInformationPort for StubInformationPort {
-        fn get_opening_hours(&self) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantOpeningHoursGatewayPort for StubInformationPort {
+        async fn get_opening_hours(&self) -> String {
             *self.calls.lock().unwrap() += 1;
             "Mon-Sun 9am-10pm".to_string()
         }
+    }
 
-        fn find_menu(&self, _: MenuQuery) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantMenuGatewayPort for StubInformationPort {
+        async fn find_menu(&self, _: MenuQuery) -> String {
             "full_menu:".to_string()
         }
+    }
 
-        fn find_menu_dietary(&self, _: MenuDietaryQuery) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantMenuDietaryGatewayPort for StubInformationPort {
+        async fn find_menu_dietary(&self, _: MenuDietaryQuery) -> String {
             "dietary_no_filter:".to_string()
         }
+    }
 
-        fn find_menu_item_details(&self, _: MenuItemDetailsQuery) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantMenuItemDetailsGatewayPort for StubInformationPort {
+        async fn find_menu_item_details(&self, _: MenuItemDetailsQuery) -> String {
             "details_no_filter:".to_string()
         }
+    }
 
-        fn find_location(&self, _: LocationQuery) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantLocationGatewayPort for StubInformationPort {
+        async fn find_location(&self, _: LocationQuery) -> String {
             "address:".to_string()
         }
+    }
 
-        fn get_contact(&self) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantContactGatewayPort for StubInformationPort {
+        async fn get_contact(&self) -> String {
             "contact:+33123456789|test@example.com".to_string()
         }
+    }
 
-        fn find_payment_methods(&self, _: PaymentMethodQuery) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantPaymentMethodsGatewayPort for StubInformationPort {
+        async fn find_payment_methods(&self, _: PaymentMethodQuery) -> String {
             "all_methods:cash".to_string()
         }
+    }
 
-        fn find_price(&self, _: PriceQuery) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantPriceGatewayPort for StubInformationPort {
+        async fn find_price(&self, _: PriceQuery) -> String {
             "price_general:".to_string()
         }
+    }
 
-        fn get_takeaway_info(&self) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantTakeawayGatewayPort for StubInformationPort {
+        async fn get_takeaway_info(&self) -> String {
             "takeaway:yes|Yes".to_string()
         }
+    }
 
-        fn find_event_info(&self, _: EventQuery) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantEventGatewayPort for StubInformationPort {
+        async fn find_event_info(&self, _: EventQuery) -> String {
             "event_info:Yes".to_string()
         }
+    }
 
-        fn find_facility_info(&self, _: FacilityQuery) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantFacilitiesGatewayPort for StubInformationPort {
+        async fn find_facility_info(&self, _: FacilityQuery) -> String {
             "all_facilities:wifi".to_string()
         }
+    }
 
-        fn get_accessibility_info(&self) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantAccessibilityGatewayPort for StubInformationPort {
+        async fn get_accessibility_info(&self) -> String {
             "accessibility:yes|Yes".to_string()
         }
+    }
 
-        fn get_entertainment_info(&self) -> String {
+    #[async_trait::async_trait]
+    impl RestaurantEntertainmentGatewayPort for StubInformationPort {
+        async fn get_entertainment_info(&self) -> String {
             "entertainment:yes|Live music".to_string()
         }
     }
@@ -295,12 +428,22 @@ mod tests {
     #[derive(Clone)]
     struct StubReservationPort;
 
-    impl RestaurantReservationPort for StubReservationPort {
-        fn create_reservation(&self, _: ReservationCreateQuery) -> Result<String, crate::core::conversation::application::port::outbound::restaurant_queries::ReservationFailure>{
+    #[async_trait::async_trait]
+    impl RestaurantReservationGatewayPort for StubReservationPort {
+        async fn create_reservation(
+            &self,
+            _: ReservationCreateQuery,
+        ) -> Result<String, ReservationFailure> {
             Ok("created:REST-NEW123".to_string())
         }
+        async fn cancel_reservation(
+            &self,
+            _: ReservationCancelQuery,
+        ) -> Result<String, ReservationCancelFailure> {
+            Ok("cancelled:REST-NEW123".to_string())
+        }
 
-        fn check_reservation(&self, _: ReservationLookupQuery) -> String {
+        async fn check_reservation(&self, _: ReservationLookupQuery) -> String {
             "no_reference_or_name:".to_string()
         }
     }
@@ -462,8 +605,6 @@ mod tests {
         StubNlpAnalyzer,
         StubConversationRepository,
         StubLanguageDetector,
-        StubInformationPort,
-        StubReservationPort,
     >;
 
     struct UseCaseParts {
@@ -471,6 +612,45 @@ mod tests {
         repo: StubConversationRepository,
         detector: StubLanguageDetector,
         information_port: StubInformationPort,
+    }
+
+    fn restaurant_gateways(
+        information_port: StubInformationPort,
+        reservation_port: StubReservationPort,
+    ) -> (
+        Arc<dyn RestaurantOpeningHoursGatewayPort>,
+        Arc<dyn RestaurantMenuGatewayPort>,
+        Arc<dyn RestaurantMenuDietaryGatewayPort>,
+        Arc<dyn RestaurantMenuItemDetailsGatewayPort>,
+        Arc<dyn RestaurantPriceGatewayPort>,
+        Arc<dyn RestaurantLocationGatewayPort>,
+        Arc<dyn RestaurantContactGatewayPort>,
+        Arc<dyn RestaurantPaymentMethodsGatewayPort>,
+        Arc<dyn RestaurantTakeawayGatewayPort>,
+        Arc<dyn RestaurantEventGatewayPort>,
+        Arc<dyn RestaurantFacilitiesGatewayPort>,
+        Arc<dyn RestaurantAccessibilityGatewayPort>,
+        Arc<dyn RestaurantEntertainmentGatewayPort>,
+        Arc<dyn RestaurantReservationGatewayPort>,
+    ) {
+        let information_port = Arc::new(information_port);
+        let reservation_port = Arc::new(reservation_port);
+        (
+            information_port.clone(),
+            information_port.clone(),
+            information_port.clone(),
+            information_port.clone(),
+            information_port.clone(),
+            information_port.clone(),
+            information_port.clone(),
+            information_port.clone(),
+            information_port.clone(),
+            information_port.clone(),
+            information_port.clone(),
+            information_port.clone(),
+            information_port,
+            reservation_port,
+        )
     }
 
     fn make_use_case(analyzer: StubNlpAnalyzer) -> UseCaseParts {
@@ -487,13 +667,41 @@ mod tests {
         let information_port = StubInformationPort::new();
         let reservation_port = StubReservationPort;
         let processor = ConversationProcessor::new();
+        let (
+            opening_hours_port,
+            menu_port,
+            menu_dietary_port,
+            menu_item_details_port,
+            price_port,
+            location_port,
+            contact_port,
+            payment_methods_port,
+            takeaway_port,
+            event_port,
+            facilities_port,
+            accessibility_port,
+            entertainment_port,
+            reservation_port,
+        ) = restaurant_gateways(information_port.clone(), reservation_port);
         let use_case = HandleConversationService::new(
             domain,
             processor,
             analyzer,
             repo.clone(),
             detector.clone(),
-            information_port.clone(),
+            opening_hours_port,
+            menu_port,
+            menu_dietary_port,
+            menu_item_details_port,
+            price_port,
+            location_port,
+            contact_port,
+            payment_methods_port,
+            takeaway_port,
+            event_port,
+            facilities_port,
+            accessibility_port,
+            entertainment_port,
             reservation_port,
         );
         UseCaseParts {

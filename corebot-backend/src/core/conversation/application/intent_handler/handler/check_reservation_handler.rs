@@ -3,21 +3,24 @@ use rust_i18n::t;
 use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
-use crate::core::conversation::application::port::outbound::restaurant_queries::ReservationLookupQuery;
-use crate::core::conversation::application::port::outbound::restaurant_reservation_port::RestaurantReservationPort;
+use crate::core::conversation::application::port::outbound::restaurant::reservation_queries::ReservationLookupQuery;
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_reservation_gateway_port::RestaurantReservationGatewayPort;
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
-pub struct CheckReservationIntentHandler<'a, P: RestaurantReservationPort + ?Sized> {
-    reservation_port: &'a P,
+pub struct CheckReservationIntentHandler<'a, P: RestaurantReservationGatewayPort + ?Sized> {
+    reservation_lookup_gateway_port: &'a P,
 }
 
-impl<'a, P: RestaurantReservationPort + ?Sized> CheckReservationIntentHandler<'a, P> {
-    pub fn new(reservation_port: &'a P) -> Self {
-        Self { reservation_port }
+impl<'a, P: RestaurantReservationGatewayPort + ?Sized> CheckReservationIntentHandler<'a, P> {
+    pub fn new(reservation_lookup_port: &'a P) -> Self {
+        Self {
+            reservation_lookup_gateway_port: reservation_lookup_port,
+        }
     }
 }
 
-impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
+#[async_trait::async_trait]
+impl<P: RestaurantReservationGatewayPort + Send + Sync + ?Sized> IntentHandler
     for CheckReservationIntentHandler<'_, P>
 {
     fn intent(&self) -> IntentId {
@@ -31,18 +34,19 @@ impl<P: RestaurantReservationPort + Send + Sync + ?Sized> IntentHandler
         }
     }
 
-    fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
+    async fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
         let reference = self.lookup_entity_value(&input, "reservation_reference");
         let name = self
             .lookup_entity_value(&input, "person")
             .or_else(|| input.conversation.known_customer_name());
         let raw = self
-            .reservation_port
+            .reservation_lookup_gateway_port
             .check_reservation(ReservationLookupQuery {
                 reference: reference.map(str::to_string),
                 name: name.map(str::to_string),
-            });
+            })
+            .await;
 
         let reply = if let Some(payload) = raw.strip_prefix("found:") {
             let parts: Vec<&str> = payload.splitn(5, '|').collect();

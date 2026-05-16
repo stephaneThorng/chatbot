@@ -3,20 +3,23 @@ use rust_i18n::t;
 use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
-use crate::core::conversation::application::port::outbound::restaurant_information_port::RestaurantInformationPort;
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_takeaway_gateway_port::RestaurantTakeawayGatewayPort;
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
-pub struct AskTakeawayDeliveryIntentHandler<'a, P: RestaurantInformationPort + ?Sized> {
-    information_port: &'a P,
+pub struct AskTakeawayDeliveryIntentHandler<'a, P: RestaurantTakeawayGatewayPort + ?Sized> {
+    takeaway_gateway_port: &'a P,
 }
 
-impl<'a, P: RestaurantInformationPort + ?Sized> AskTakeawayDeliveryIntentHandler<'a, P> {
-    pub fn new(information_port: &'a P) -> Self {
-        Self { information_port }
+impl<'a, P: RestaurantTakeawayGatewayPort + ?Sized> AskTakeawayDeliveryIntentHandler<'a, P> {
+    pub fn new(takeaway_port: &'a P) -> Self {
+        Self {
+            takeaway_gateway_port: takeaway_port,
+        }
     }
 }
 
-impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
+#[async_trait::async_trait]
+impl<P: RestaurantTakeawayGatewayPort + Send + Sync + ?Sized> IntentHandler
     for AskTakeawayDeliveryIntentHandler<'_, P>
 {
     fn intent(&self) -> IntentId {
@@ -30,9 +33,9 @@ impl<P: RestaurantInformationPort + Send + Sync + ?Sized> IntentHandler
         }
     }
 
-    fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
+    async fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
-        let raw = self.information_port.get_takeaway_info();
+        let raw = self.takeaway_gateway_port.get_takeaway_info().await;
         let reply = if let Some(payload) = raw.strip_prefix("takeaway:yes|") {
             t!(
                 "intent.ask_takeaway_delivery.available.reply",
