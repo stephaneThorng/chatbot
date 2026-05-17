@@ -86,16 +86,18 @@ fn parse_item_details_reply(raw: &str, lang: &str) -> String {
         .to_string();
     }
     if let Some(payload) = raw.strip_prefix("item_details:") {
-        let parts: Vec<&str> = payload.splitn(4, '|').collect();
+        let parts: Vec<&str> = payload.splitn(5, '|').collect();
         let name = parts.first().copied().unwrap_or("");
         let price = parts.get(1).copied().unwrap_or("");
-        let dietary = parts.get(2).copied().unwrap_or("");
-        let allergens = parts.get(3).copied().unwrap_or("");
+        let ingredients = parts.get(2).copied().unwrap_or("");
+        let dietary = parts.get(3).copied().unwrap_or("");
+        let allergens = parts.get(4).copied().unwrap_or("");
         return t!(
             "intent.ask_menu_item_details.full.reply",
             locale = lang,
             item = name,
             price = price,
+            ingredients = ingredients,
             dietary = dietary,
             allergens = allergens
         )

@@ -72,10 +72,14 @@ fn parse_dietary_reply(raw: &str, lang: &str, _dietary: Option<&str>) -> String 
         .to_string();
     }
     if let Some(req) = raw.strip_prefix("no_dietary:") {
+        let mut parts = req.splitn(2, '|');
+        let requirement = parts.next().unwrap_or("");
+        let options = parts.next().unwrap_or("");
         return t!(
             "intent.ask_menu_dietary.no_results.reply",
             locale = lang,
-            requirement = req
+            requirement = requirement,
+            options = options
         )
         .to_string();
     }

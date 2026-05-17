@@ -253,6 +253,7 @@ fn is_truthy_env_value(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex, RwLock};
 
     use super::*;
@@ -385,16 +386,19 @@ mod tests {
                     fact_type: "takeaway".to_string(),
                     title: None,
                     content: "stub".to_string(),
+                    metadata: BTreeMap::new(),
                 },
                 BusinessFact {
                     fact_type: "accessibility".to_string(),
                     title: None,
                     content: "stub".to_string(),
+                    metadata: BTreeMap::new(),
                 },
                 BusinessFact {
                     fact_type: "entertainment".to_string(),
                     title: None,
                     content: "stub".to_string(),
+                    metadata: BTreeMap::new(),
                 },
             ])
         }
@@ -730,7 +734,10 @@ mod tests {
         let menu_repository = restaurant_repository.clone();
         let reservation_repository = restaurant_repository.clone();
         let availability_repository = restaurant_repository.clone();
-        let restaurant_menu_service = ConversationRestaurantMenuService::new(menu_repository);
+        let restaurant_menu_service = ConversationRestaurantMenuService::new(
+            menu_repository,
+            Arc::new(business_info_repository.clone()),
+        );
         let restaurant_reservation_service = ConversationRestaurantReservationService::new(
             reservation_repository,
             availability_repository,

@@ -208,6 +208,7 @@ fn system_text_i18n_key(key: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
 
     use super::*;
@@ -325,16 +326,19 @@ mod tests {
                     fact_type: "takeaway".to_string(),
                     title: None,
                     content: "Yes".to_string(),
+                    metadata: BTreeMap::new(),
                 },
                 BusinessFact {
                     fact_type: "accessibility".to_string(),
                     title: None,
                     content: "Yes".to_string(),
+                    metadata: BTreeMap::new(),
                 },
                 BusinessFact {
                     fact_type: "entertainment".to_string(),
                     title: None,
                     content: "Live music".to_string(),
+                    metadata: BTreeMap::new(),
                 },
             ])
         }
@@ -537,9 +541,11 @@ mod tests {
         let menu_repository = repository.clone();
         let reservation_repository = repository.clone();
         let availability_repository = repository;
+        let menu_business_info_repository = business_info_repository.clone();
         let business_info_repository = Box::leak(Box::new(business_info_repository));
         let menu_service = Box::leak(Box::new(ConversationRestaurantMenuService::new(
             menu_repository,
+            Arc::new(menu_business_info_repository),
         )));
         let reservation_service =
             Box::leak(Box::new(ConversationRestaurantReservationService::new(

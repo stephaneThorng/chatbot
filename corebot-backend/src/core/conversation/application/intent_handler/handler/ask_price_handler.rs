@@ -62,16 +62,12 @@ where
             )
             .await;
 
-        let reply = if let Some(payload) = raw.strip_prefix("price_results:") {
-            let parts: Vec<&str> = payload.splitn(3, '|').collect();
-            let comp = parts.first().copied().unwrap_or("");
-            let amt = parts.get(1).copied().unwrap_or("");
-            let items = parts.get(2).copied().unwrap_or("");
+        let reply = if let Some(items) = raw.strip_prefix("price_results:") {
             t!(
                 "intent.ask_price.results.reply",
                 locale = lang,
-                comparator = comp,
-                amount = amt,
+                comparator = comparator.unwrap_or(""),
+                amount = amount.unwrap_or(""),
                 items = items
             )
             .to_string()
@@ -86,11 +82,24 @@ where
                 price = price
             )
             .to_string()
-        } else if raw.starts_with("no_price_results:") || raw.starts_with("item_not_found:") {
+        } else if let Some(payload) = raw.strip_prefix("fallback_full_menu:") {
             t!(
-                "intent.ask_price.no_results.reply",
+                "intent.ask_price.fallback_full_menu.reply",
                 locale = lang,
-                item = item.unwrap_or("")
+                items = payload
+            )
+            .to_string()
+        } else if let Some(payload) = raw.strip_prefix("external_menu:") {
+            let mut parts = payload.splitn(3, '|');
+            let content = parts.next().unwrap_or("");
+            let website_url = parts.next().unwrap_or("");
+            let pdf_url = parts.next().unwrap_or("");
+            let links = format_menu_links(lang, website_url, pdf_url);
+            t!(
+                "intent.ask_price.external.reply",
+                locale = lang,
+                content = content,
+                links = links
             )
             .to_string()
         } else if let Some(info) = raw.strip_prefix("price_general:") {
@@ -103,5 +112,30 @@ where
             reply,
             handled_intent: self.intent(),
         }
+    }
+}
+
+fn format_menu_links(lang: &str, website_url: &str, pdf_url: &str) -> String {
+    match (website_url.is_empty(), pdf_url.is_empty()) {
+        (false, false) => t!(
+            "intent.ask_price.external_links.website_and_pdf",
+            locale = lang,
+            website_url = website_url,
+            pdf_url = pdf_url
+        )
+        .to_string(),
+        (false, true) => t!(
+            "intent.ask_price.external_links.website_only",
+            locale = lang,
+            website_url = website_url
+        )
+        .to_string(),
+        (true, false) => t!(
+            "intent.ask_price.external_links.pdf_only",
+            locale = lang,
+            pdf_url = pdf_url
+        )
+        .to_string(),
+        (true, true) => String::new(),
     }
 }

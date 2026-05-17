@@ -108,6 +108,41 @@ fn parse_menu_reply(
         )
         .to_string();
     }
+    if let Some(payload) = raw.strip_prefix("ingredient_results:") {
+        return t!(
+            "intent.ask_menu_general.full_menu.reply",
+            locale = lang,
+            items = payload
+        )
+        .to_string();
+    }
+    if let Some(payload) = raw.strip_prefix("fallback_full_menu:") {
+        return t!(
+            "intent.ask_menu_general.fallback_full_menu.reply",
+            locale = lang,
+            items = payload
+        )
+        .to_string();
+    }
+    if let Some(payload) = raw.strip_prefix("external_menu:") {
+        let mut parts = payload.splitn(3, '|');
+        let content = parts.next().unwrap_or("");
+        let website_url = parts.next().unwrap_or("");
+        let pdf_url = parts.next().unwrap_or("");
+        let links = format_menu_links(lang, website_url, pdf_url);
+        let content_prefix = if content.is_empty() {
+            String::new()
+        } else {
+            format!("{content} ")
+        };
+        return t!(
+            "intent.ask_menu_general.external.reply",
+            locale = lang,
+            content = content_prefix.trim_end(),
+            links = links
+        )
+        .to_string();
+    }
     if raw.starts_with("item_not_found:") {
         return t!(
             "intent.ask_menu_general.item_not_found.reply",
@@ -125,4 +160,29 @@ fn parse_menu_reply(
         .to_string();
     }
     t!("intent.ask_menu_general.reply", locale = lang).to_string()
+}
+
+fn format_menu_links(lang: &str, website_url: &str, pdf_url: &str) -> String {
+    match (website_url.is_empty(), pdf_url.is_empty()) {
+        (false, false) => t!(
+            "intent.ask_menu_general.external_links.website_and_pdf",
+            locale = lang,
+            website_url = website_url,
+            pdf_url = pdf_url
+        )
+        .to_string(),
+        (false, true) => t!(
+            "intent.ask_menu_general.external_links.website_only",
+            locale = lang,
+            website_url = website_url
+        )
+        .to_string(),
+        (true, false) => t!(
+            "intent.ask_menu_general.external_links.pdf_only",
+            locale = lang,
+            pdf_url = pdf_url
+        )
+        .to_string(),
+        (true, true) => String::new(),
+    }
 }

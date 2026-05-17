@@ -141,10 +141,14 @@ fn restaurant_parts(
     let menu_repository = repository.clone();
     let reservation_repository = repository.clone();
     let availability_repository = repository;
+    let menu_business_info_repository = business_info_repository.clone();
     (
         business_id(),
         business_info_repository,
-        ConversationRestaurantMenuService::new(menu_repository),
+        ConversationRestaurantMenuService::new(
+            menu_repository,
+            Arc::new(menu_business_info_repository),
+        ),
         ConversationRestaurantReservationService::new(
             reservation_repository,
             availability_repository,

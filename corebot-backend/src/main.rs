@@ -46,7 +46,10 @@ async fn main() {
     let menu_repository = PostgresMenuRepository::new(pool.clone());
     let reservation_repository = PostgresReservationRepository::new(pool.clone());
     let availability_repository = PostgresAvailabilityRepository::new(pool);
-    let restaurant_menu_service = ConversationRestaurantMenuService::new(menu_repository);
+    let restaurant_menu_service = ConversationRestaurantMenuService::new(
+        menu_repository,
+        Arc::new(business_info_repository.clone()),
+    );
     let restaurant_reservation_service = ConversationRestaurantReservationService::new(
         reservation_repository,
         availability_repository,
