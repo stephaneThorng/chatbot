@@ -1,5 +1,4 @@
 use std::str::FromStr;
-use std::sync::Arc;
 
 use super::conversation_processor::ConversationProcessor;
 use super::dto::conversation_command::{HandleConversationCommand, HandleConversationResult};
@@ -11,58 +10,51 @@ use super::port::inbound::conversation_usecase::HandleConversationUseCase;
 use super::port::outbound::conversation_repository_port::ConversationRepositoryPort;
 use super::port::outbound::language_detector_port::LanguageDetectorPort;
 use super::port::outbound::nlp_engine_gateway_port::NlpEngineGatewayPort;
-use super::port::outbound::restaurant::restaurant_accessibility_gateway_port::RestaurantAccessibilityGatewayPort;
-use super::port::outbound::restaurant::restaurant_contact_gateway_port::RestaurantContactGatewayPort;
-use super::port::outbound::restaurant::restaurant_entertainment_gateway_port::RestaurantEntertainmentGatewayPort;
-use super::port::outbound::restaurant::restaurant_event_gateway_port::RestaurantEventGatewayPort;
-use super::port::outbound::restaurant::restaurant_facilities_gateway_port::RestaurantFacilitiesGatewayPort;
-use super::port::outbound::restaurant::restaurant_location_gateway_port::RestaurantLocationGatewayPort;
-use super::port::outbound::restaurant::restaurant_menu_dietary_gateway_port::RestaurantMenuDietaryGatewayPort;
-use super::port::outbound::restaurant::restaurant_menu_gateway_port::RestaurantMenuGatewayPort;
-use super::port::outbound::restaurant::restaurant_menu_item_details_gateway_port::RestaurantMenuItemDetailsGatewayPort;
-use super::port::outbound::restaurant::restaurant_opening_hours_gateway_port::RestaurantOpeningHoursGatewayPort;
-use super::port::outbound::restaurant::restaurant_payment_methods_gateway_port::RestaurantPaymentMethodsGatewayPort;
-use super::port::outbound::restaurant::restaurant_price_gateway_port::RestaurantPriceGatewayPort;
-use super::port::outbound::restaurant::restaurant_reservation_gateway_port::RestaurantReservationGatewayPort;
-use super::port::outbound::restaurant::restaurant_takeaway_gateway_port::RestaurantTakeawayGatewayPort;
+use super::port::outbound::restaurant::restaurant_availability_repository_port::RestaurantAvailabilityRepositoryPort;
+use super::port::outbound::restaurant::restaurant_business_info_repository_port::RestaurantBusinessInfoRepositoryPort;
+use super::port::outbound::restaurant::restaurant_menu_repository_port::RestaurantMenuRepositoryPort;
+use super::port::outbound::restaurant::restaurant_reservation_repository_port::RestaurantReservationRepositoryPort;
+use super::service::restaurant::{
+    ConversationRestaurantMenuService, ConversationRestaurantReservationService,
+};
 use crate::core::conversation::application::dto::nlu_analysis_result::NluAnalysisResult;
 use crate::core::conversation::domain::conversation::Conversation;
 use crate::core::conversation::domain::conversation_id::ConversationId;
 use crate::core::conversation::domain::domain_type::DomainType;
+use uuid::Uuid;
 
-pub struct HandleConversationService<N, R, L>
+pub struct HandleConversationService<N, CR, L, B, M, RR, A>
 where
     N: NlpEngineGatewayPort,
-    R: ConversationRepositoryPort,
+    CR: ConversationRepositoryPort,
     L: LanguageDetectorPort,
+    B: RestaurantBusinessInfoRepositoryPort,
+    M: RestaurantMenuRepositoryPort,
+    RR: RestaurantReservationRepositoryPort,
+    A: RestaurantAvailabilityRepositoryPort,
 {
     domain: DomainType,
     nlu_engine_gateway: N,
-    conversation_repository: R,
+    conversation_repository: CR,
     language_detector: L,
     processor: ConversationProcessor,
-    opening_hours_port: Arc<dyn RestaurantOpeningHoursGatewayPort>,
-    menu_port: Arc<dyn RestaurantMenuGatewayPort>,
-    menu_dietary_port: Arc<dyn RestaurantMenuDietaryGatewayPort>,
-    menu_item_details_port: Arc<dyn RestaurantMenuItemDetailsGatewayPort>,
-    price_port: Arc<dyn RestaurantPriceGatewayPort>,
-    location_port: Arc<dyn RestaurantLocationGatewayPort>,
-    contact_port: Arc<dyn RestaurantContactGatewayPort>,
-    payment_methods_port: Arc<dyn RestaurantPaymentMethodsGatewayPort>,
-    takeaway_port: Arc<dyn RestaurantTakeawayGatewayPort>,
-    event_port: Arc<dyn RestaurantEventGatewayPort>,
-    facilities_port: Arc<dyn RestaurantFacilitiesGatewayPort>,
-    accessibility_port: Arc<dyn RestaurantAccessibilityGatewayPort>,
-    entertainment_port: Arc<dyn RestaurantEntertainmentGatewayPort>,
-    reservation_port: Arc<dyn RestaurantReservationGatewayPort>,
+    restaurant_business_id: Uuid,
+    restaurant_business_info_repository: B,
+    restaurant_menu_service: ConversationRestaurantMenuService<M>,
+    restaurant_reservation_service: ConversationRestaurantReservationService<RR, A>,
 }
 
 #[async_trait::async_trait]
-impl<N, R, L> HandleConversationUseCase for HandleConversationService<N, R, L>
+impl<N, CR, L, B, M, RR, A> HandleConversationUseCase
+    for HandleConversationService<N, CR, L, B, M, RR, A>
 where
     N: NlpEngineGatewayPort + Send + Sync,
-    R: ConversationRepositoryPort + Send + Sync,
+    CR: ConversationRepositoryPort + Send + Sync,
     L: LanguageDetectorPort + Send + Sync,
+    B: RestaurantBusinessInfoRepositoryPort + Send + Sync,
+    M: RestaurantMenuRepositoryPort + Send + Sync,
+    RR: RestaurantReservationRepositoryPort + Send + Sync,
+    A: RestaurantAvailabilityRepositoryPort + Send + Sync,
 {
     async fn handle_message(&self, command: HandleConversationCommand) -> HandleConversationResult {
         let (conversation, session_id) =
@@ -79,20 +71,9 @@ where
         let restaurant_registry = match conversation.domain {
             DomainType::Restaurant => {
                 RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-                    opening_hours_port: self.opening_hours_port.as_ref(),
-                    menu_port: self.menu_port.as_ref(),
-                    menu_dietary_port: self.menu_dietary_port.as_ref(),
-                    menu_item_details_port: self.menu_item_details_port.as_ref(),
-                    price_port: self.price_port.as_ref(),
-                    location_port: self.location_port.as_ref(),
-                    contact_port: self.contact_port.as_ref(),
-                    payment_methods_port: self.payment_methods_port.as_ref(),
-                    takeaway_port: self.takeaway_port.as_ref(),
-                    event_port: self.event_port.as_ref(),
-                    facilities_port: self.facilities_port.as_ref(),
-                    accessibility_port: self.accessibility_port.as_ref(),
-                    entertainment_port: self.entertainment_port.as_ref(),
-                    reservation_port: self.reservation_port.as_ref(),
+                    business_info_repository: &self.restaurant_business_info_repository,
+                    menu_service: &self.restaurant_menu_service,
+                    reservation_service: &self.restaurant_reservation_service,
                 })
             }
             DomainType::Hotel => IntentHandlerRegistry::new(vec![]),
@@ -118,32 +99,26 @@ where
     }
 }
 
-impl<N, R, L> HandleConversationService<N, R, L>
+impl<N, CR, L, B, M, RR, A> HandleConversationService<N, CR, L, B, M, RR, A>
 where
     N: NlpEngineGatewayPort,
-    R: ConversationRepositoryPort,
+    CR: ConversationRepositoryPort,
     L: LanguageDetectorPort,
+    B: RestaurantBusinessInfoRepositoryPort,
+    M: RestaurantMenuRepositoryPort,
+    RR: RestaurantReservationRepositoryPort,
+    A: RestaurantAvailabilityRepositoryPort,
 {
     pub fn new(
         domain: DomainType,
         processor: ConversationProcessor,
         nlu_engine_gateway: N,
-        conversation_repository: R,
+        conversation_repository: CR,
         language_detector: L,
-        opening_hours_port: Arc<dyn RestaurantOpeningHoursGatewayPort>,
-        menu_port: Arc<dyn RestaurantMenuGatewayPort>,
-        menu_dietary_port: Arc<dyn RestaurantMenuDietaryGatewayPort>,
-        menu_item_details_port: Arc<dyn RestaurantMenuItemDetailsGatewayPort>,
-        price_port: Arc<dyn RestaurantPriceGatewayPort>,
-        location_port: Arc<dyn RestaurantLocationGatewayPort>,
-        contact_port: Arc<dyn RestaurantContactGatewayPort>,
-        payment_methods_port: Arc<dyn RestaurantPaymentMethodsGatewayPort>,
-        takeaway_port: Arc<dyn RestaurantTakeawayGatewayPort>,
-        event_port: Arc<dyn RestaurantEventGatewayPort>,
-        facilities_port: Arc<dyn RestaurantFacilitiesGatewayPort>,
-        accessibility_port: Arc<dyn RestaurantAccessibilityGatewayPort>,
-        entertainment_port: Arc<dyn RestaurantEntertainmentGatewayPort>,
-        reservation_port: Arc<dyn RestaurantReservationGatewayPort>,
+        restaurant_business_id: Uuid,
+        restaurant_business_info_repository: B,
+        restaurant_menu_service: ConversationRestaurantMenuService<M>,
+        restaurant_reservation_service: ConversationRestaurantReservationService<RR, A>,
     ) -> Self {
         Self {
             domain,
@@ -151,20 +126,10 @@ where
             conversation_repository,
             language_detector,
             processor,
-            opening_hours_port,
-            menu_port,
-            menu_dietary_port,
-            menu_item_details_port,
-            price_port,
-            location_port,
-            contact_port,
-            payment_methods_port,
-            takeaway_port,
-            event_port,
-            facilities_port,
-            accessibility_port,
-            entertainment_port,
-            reservation_port,
+            restaurant_business_id,
+            restaurant_business_info_repository,
+            restaurant_menu_service,
+            restaurant_reservation_service,
         }
     }
 
@@ -172,8 +137,12 @@ where
     pub fn handle_message(&self, command: HandleConversationCommand) -> HandleConversationResult
     where
         N: Send + Sync,
-        R: Send + Sync,
+        CR: Send + Sync,
         L: Send + Sync,
+        B: Send + Sync,
+        M: Send + Sync,
+        RR: Send + Sync,
+        A: Send + Sync,
     {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -195,12 +164,17 @@ where
                 return (conversation, conversation_id.to_string());
             }
 
-            let mut conversation = Conversation::with_id(conversation_id, self.domain);
+            let mut conversation = Conversation::with_id_for_business(
+                conversation_id,
+                self.domain,
+                self.restaurant_business_id,
+            );
             conversation.lang = self.language_detector.detect(message);
             return (conversation, conversation_id.to_string());
         }
 
-        let mut conversation = Conversation::new(self.domain);
+        let mut conversation =
+            Conversation::new_for_business(self.domain, self.restaurant_business_id);
         conversation.lang = self.language_detector.detect(message);
         let session_id = conversation.id.to_string();
         (conversation, session_id)
@@ -290,161 +264,282 @@ mod tests {
     };
     use crate::core::conversation::application::port::outbound::language_detector_port::LanguageDetectorPort;
     use crate::core::conversation::application::port::outbound::nlp_engine_gateway_port::NlpEngineGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::business_info_queries::{
-        EventQuery, FacilityQuery, LocationQuery, PaymentMethodQuery,
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_availability_repository_port::RestaurantAvailabilityRepositoryPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_business_info_repository_port::RestaurantBusinessInfoRepositoryPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_repository_port::RestaurantMenuRepositoryPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_reservation_repository_port::RestaurantReservationRepositoryPort;
+    use crate::core::conversation::application::service::restaurant::{
+        ConversationRestaurantMenuService, ConversationRestaurantReservationService,
     };
-    use crate::core::conversation::application::port::outbound::restaurant::menu_queries::{
-        MenuDietaryQuery, MenuItemDetailsQuery, MenuQuery, PriceQuery,
-    };
-    use crate::core::conversation::application::port::outbound::restaurant::reservation_queries::{
-        ReservationCancelFailure, ReservationCancelQuery, ReservationCreateQuery,
-        ReservationFailure, ReservationLookupQuery,
-    };
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_accessibility_gateway_port::RestaurantAccessibilityGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_contact_gateway_port::RestaurantContactGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_entertainment_gateway_port::RestaurantEntertainmentGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_event_gateway_port::RestaurantEventGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_facilities_gateway_port::RestaurantFacilitiesGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_location_gateway_port::RestaurantLocationGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_dietary_gateway_port::RestaurantMenuDietaryGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_item_details_gateway_port::RestaurantMenuItemDetailsGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_gateway_port::RestaurantMenuGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_opening_hours_gateway_port::RestaurantOpeningHoursGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_payment_methods_gateway_port::RestaurantPaymentMethodsGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_price_gateway_port::RestaurantPriceGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_reservation_gateway_port::RestaurantReservationGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_takeaway_gateway_port::RestaurantTakeawayGatewayPort;
     use crate::core::conversation::domain::model::intent::NluTask;
+    use crate::core::conversation::domain::restaurant::model::{
+        BusinessFact, BusinessLocation, ContactChannel, EventSpace, Facility, MenuItem,
+        MenuPriceFilter, OpeningHours, PaymentMethod, Reservation, ReservationDraft,
+        ReservationSettings, RestaurantRepositoryError, TableType,
+    };
+    use chrono::{NaiveDate, NaiveTime, Weekday};
+    use uuid::Uuid;
 
     #[derive(Clone)]
-    struct StubInformationPort {
-        calls: Arc<Mutex<u32>>,
+    struct StubRestaurantRepository {
+        opening_hours_calls: Arc<Mutex<u32>>,
+        reservations: Arc<Mutex<Vec<Reservation>>>,
     }
 
-    impl StubInformationPort {
+    impl StubRestaurantRepository {
         fn new() -> Self {
             Self {
-                calls: Arc::new(Mutex::new(0)),
+                opening_hours_calls: Arc::new(Mutex::new(0)),
+                reservations: Arc::new(Mutex::new(vec![])),
             }
         }
 
-        fn calls(&self) -> u32 {
-            *self.calls.lock().unwrap()
+        fn opening_hours_calls(&self) -> u32 {
+            *self.opening_hours_calls.lock().unwrap()
+        }
+    }
+
+    fn business_id() -> Uuid {
+        Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap()
+    }
+
+    fn opening_hours() -> Vec<OpeningHours> {
+        [
+            Weekday::Mon,
+            Weekday::Tue,
+            Weekday::Wed,
+            Weekday::Thu,
+            Weekday::Fri,
+            Weekday::Sat,
+            Weekday::Sun,
+        ]
+        .into_iter()
+        .map(|day| OpeningHours {
+            day_of_week: day,
+            opens_at: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            closes_at: NaiveTime::from_hms_opt(22, 0, 0).unwrap(),
+            is_closed: false,
+        })
+        .collect()
+    }
+
+    #[async_trait::async_trait]
+    impl RestaurantBusinessInfoRepositoryPort for StubRestaurantRepository {
+        async fn opening_hours(
+            &self,
+            _: Uuid,
+        ) -> Result<Vec<OpeningHours>, RestaurantRepositoryError> {
+            *self.opening_hours_calls.lock().unwrap() += 1;
+            Ok(opening_hours())
+        }
+
+        async fn location(
+            &self,
+            _: Uuid,
+        ) -> Result<Option<BusinessLocation>, RestaurantRepositoryError> {
+            Ok(Some(BusinessLocation {
+                address_line: "12 Rue de la Paix".to_string(),
+                nearby_description: Some("near Central Station".to_string()),
+            }))
+        }
+
+        async fn contact_channels(
+            &self,
+            _: Uuid,
+        ) -> Result<Vec<ContactChannel>, RestaurantRepositoryError> {
+            Ok(vec![
+                ContactChannel {
+                    channel_type: "phone".to_string(),
+                    value: "+33123456789".to_string(),
+                },
+                ContactChannel {
+                    channel_type: "email".to_string(),
+                    value: "test@example.com".to_string(),
+                },
+            ])
+        }
+
+        async fn payment_methods(
+            &self,
+            _: Uuid,
+        ) -> Result<Vec<PaymentMethod>, RestaurantRepositoryError> {
+            Ok(vec![PaymentMethod {
+                method_code: "cash".to_string(),
+            }])
+        }
+
+        async fn facilities(&self, _: Uuid) -> Result<Vec<Facility>, RestaurantRepositoryError> {
+            Ok(vec![Facility {
+                facility_code: "wifi".to_string(),
+                label: "wifi".to_string(),
+            }])
+        }
+
+        async fn facts(
+            &self,
+            _: Uuid,
+            _: &str,
+        ) -> Result<Vec<BusinessFact>, RestaurantRepositoryError> {
+            Ok(vec![
+                BusinessFact {
+                    fact_type: "takeaway".to_string(),
+                    title: None,
+                    content: "stub".to_string(),
+                },
+                BusinessFact {
+                    fact_type: "accessibility".to_string(),
+                    title: None,
+                    content: "stub".to_string(),
+                },
+                BusinessFact {
+                    fact_type: "entertainment".to_string(),
+                    title: None,
+                    content: "stub".to_string(),
+                },
+            ])
+        }
+
+        async fn event_spaces(
+            &self,
+            _: Uuid,
+        ) -> Result<Vec<EventSpace>, RestaurantRepositoryError> {
+            Ok(vec![EventSpace {
+                name: "main room".to_string(),
+                description: Some("stub".to_string()),
+                contact: None,
+            }])
         }
     }
 
     #[async_trait::async_trait]
-    impl RestaurantOpeningHoursGatewayPort for StubInformationPort {
-        async fn get_opening_hours(&self) -> String {
-            *self.calls.lock().unwrap() += 1;
-            "Mon-Sun 9am-10pm".to_string()
+    impl RestaurantMenuRepositoryPort for StubRestaurantRepository {
+        async fn menu_items(
+            &self,
+            _: Uuid,
+            _: &str,
+        ) -> Result<Vec<MenuItem>, RestaurantRepositoryError> {
+            Ok(vec![])
+        }
+
+        async fn menu_items_by_price(
+            &self,
+            _: Uuid,
+            _: &str,
+            _: &MenuPriceFilter,
+        ) -> Result<Vec<MenuItem>, RestaurantRepositoryError> {
+            Ok(vec![])
         }
     }
 
     #[async_trait::async_trait]
-    impl RestaurantMenuGatewayPort for StubInformationPort {
-        async fn find_menu(&self, _: MenuQuery) -> String {
-            "full_menu:".to_string()
+    impl RestaurantReservationRepositoryPort for StubRestaurantRepository {
+        async fn next_reference_index(&self, _: Uuid) -> Result<i64, RestaurantRepositoryError> {
+            Ok(self.reservations.lock().unwrap().len() as i64 + 1)
         }
-    }
 
-    #[async_trait::async_trait]
-    impl RestaurantMenuDietaryGatewayPort for StubInformationPort {
-        async fn find_menu_dietary(&self, _: MenuDietaryQuery) -> String {
-            "dietary_no_filter:".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantMenuItemDetailsGatewayPort for StubInformationPort {
-        async fn find_menu_item_details(&self, _: MenuItemDetailsQuery) -> String {
-            "details_no_filter:".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantLocationGatewayPort for StubInformationPort {
-        async fn find_location(&self, _: LocationQuery) -> String {
-            "address:".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantContactGatewayPort for StubInformationPort {
-        async fn get_contact(&self) -> String {
-            "contact:+33123456789|test@example.com".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantPaymentMethodsGatewayPort for StubInformationPort {
-        async fn find_payment_methods(&self, _: PaymentMethodQuery) -> String {
-            "all_methods:cash".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantPriceGatewayPort for StubInformationPort {
-        async fn find_price(&self, _: PriceQuery) -> String {
-            "price_general:".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantTakeawayGatewayPort for StubInformationPort {
-        async fn get_takeaway_info(&self) -> String {
-            "takeaway:yes|Yes".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantEventGatewayPort for StubInformationPort {
-        async fn find_event_info(&self, _: EventQuery) -> String {
-            "event_info:Yes".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantFacilitiesGatewayPort for StubInformationPort {
-        async fn find_facility_info(&self, _: FacilityQuery) -> String {
-            "all_facilities:wifi".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantAccessibilityGatewayPort for StubInformationPort {
-        async fn get_accessibility_info(&self) -> String {
-            "accessibility:yes|Yes".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantEntertainmentGatewayPort for StubInformationPort {
-        async fn get_entertainment_info(&self) -> String {
-            "entertainment:yes|Live music".to_string()
-        }
-    }
-
-    #[derive(Clone)]
-    struct StubReservationPort;
-
-    #[async_trait::async_trait]
-    impl RestaurantReservationGatewayPort for StubReservationPort {
         async fn create_reservation(
             &self,
-            _: ReservationCreateQuery,
-        ) -> Result<String, ReservationFailure> {
-            Ok("created:REST-NEW123".to_string())
-        }
-        async fn cancel_reservation(
-            &self,
-            _: ReservationCancelQuery,
-        ) -> Result<String, ReservationCancelFailure> {
-            Ok("cancelled:REST-NEW123".to_string())
+            _: Uuid,
+            reservation: ReservationDraft,
+        ) -> Result<Reservation, RestaurantRepositoryError> {
+            let reservation = Reservation {
+                reference: reservation.reference,
+                name: reservation.name,
+                date: reservation.date,
+                time: reservation.time,
+                people_count: reservation.people_count,
+            };
+            self.reservations.lock().unwrap().push(reservation.clone());
+            Ok(reservation)
         }
 
-        async fn check_reservation(&self, _: ReservationLookupQuery) -> String {
-            "no_reference_or_name:".to_string()
+        async fn find_by_reference(
+            &self,
+            _: Uuid,
+            reference: &str,
+        ) -> Result<Option<Reservation>, RestaurantRepositoryError> {
+            Ok(self
+                .reservations
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|reservation| reservation.reference.eq_ignore_ascii_case(reference))
+                .cloned())
+        }
+
+        async fn find_by_name(
+            &self,
+            _: Uuid,
+            name: &str,
+        ) -> Result<Vec<Reservation>, RestaurantRepositoryError> {
+            Ok(self
+                .reservations
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|reservation| reservation.name.eq_ignore_ascii_case(name))
+                .cloned()
+                .collect())
+        }
+
+        async fn cancel_by_reference(
+            &self,
+            _: Uuid,
+            reference: &str,
+        ) -> Result<Option<Reservation>, RestaurantRepositoryError> {
+            let mut reservations = self.reservations.lock().unwrap();
+            let Some(index) = reservations
+                .iter()
+                .position(|reservation| reservation.reference.eq_ignore_ascii_case(reference))
+            else {
+                return Ok(None);
+            };
+            Ok(Some(reservations.remove(index)))
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl RestaurantAvailabilityRepositoryPort for StubRestaurantRepository {
+        async fn reservation_settings(
+            &self,
+            _: Uuid,
+        ) -> Result<ReservationSettings, RestaurantRepositoryError> {
+            Ok(ReservationSettings {
+                slot_minutes: 120,
+                max_lookup_days: 7,
+            })
+        }
+
+        async fn table_types(&self, _: Uuid) -> Result<Vec<TableType>, RestaurantRepositoryError> {
+            Ok(vec![TableType {
+                capacity: 6,
+                count: 2,
+            }])
+        }
+
+        async fn opening_hours(
+            &self,
+            _: Uuid,
+        ) -> Result<Vec<OpeningHours>, RestaurantRepositoryError> {
+            Ok(opening_hours())
+        }
+
+        async fn is_closed_at(
+            &self,
+            _: Uuid,
+            _: NaiveDate,
+            _: NaiveTime,
+            _: u32,
+        ) -> Result<bool, RestaurantRepositoryError> {
+            Ok(false)
+        }
+
+        async fn reservations_near(
+            &self,
+            _: Uuid,
+            _: NaiveDate,
+        ) -> Result<Vec<Reservation>, RestaurantRepositoryError> {
+            Ok(self.reservations.lock().unwrap().clone())
         }
     }
 
@@ -605,52 +700,17 @@ mod tests {
         StubNlpAnalyzer,
         StubConversationRepository,
         StubLanguageDetector,
+        StubRestaurantRepository,
+        StubRestaurantRepository,
+        StubRestaurantRepository,
+        StubRestaurantRepository,
     >;
 
     struct UseCaseParts {
         use_case: TestUseCase,
         repo: StubConversationRepository,
         detector: StubLanguageDetector,
-        information_port: StubInformationPort,
-    }
-
-    fn restaurant_gateways(
-        information_port: StubInformationPort,
-        reservation_port: StubReservationPort,
-    ) -> (
-        Arc<dyn RestaurantOpeningHoursGatewayPort>,
-        Arc<dyn RestaurantMenuGatewayPort>,
-        Arc<dyn RestaurantMenuDietaryGatewayPort>,
-        Arc<dyn RestaurantMenuItemDetailsGatewayPort>,
-        Arc<dyn RestaurantPriceGatewayPort>,
-        Arc<dyn RestaurantLocationGatewayPort>,
-        Arc<dyn RestaurantContactGatewayPort>,
-        Arc<dyn RestaurantPaymentMethodsGatewayPort>,
-        Arc<dyn RestaurantTakeawayGatewayPort>,
-        Arc<dyn RestaurantEventGatewayPort>,
-        Arc<dyn RestaurantFacilitiesGatewayPort>,
-        Arc<dyn RestaurantAccessibilityGatewayPort>,
-        Arc<dyn RestaurantEntertainmentGatewayPort>,
-        Arc<dyn RestaurantReservationGatewayPort>,
-    ) {
-        let information_port = Arc::new(information_port);
-        let reservation_port = Arc::new(reservation_port);
-        (
-            information_port.clone(),
-            information_port.clone(),
-            information_port.clone(),
-            information_port.clone(),
-            information_port.clone(),
-            information_port.clone(),
-            information_port.clone(),
-            information_port.clone(),
-            information_port.clone(),
-            information_port.clone(),
-            information_port.clone(),
-            information_port.clone(),
-            information_port,
-            reservation_port,
-        )
+        restaurant_repository: StubRestaurantRepository,
     }
 
     fn make_use_case(analyzer: StubNlpAnalyzer) -> UseCaseParts {
@@ -664,51 +724,33 @@ mod tests {
     ) -> UseCaseParts {
         let repo = StubConversationRepository::new();
         let detector = StubLanguageDetector::new(lang);
-        let information_port = StubInformationPort::new();
-        let reservation_port = StubReservationPort;
+        let restaurant_repository = StubRestaurantRepository::new();
         let processor = ConversationProcessor::new();
-        let (
-            opening_hours_port,
-            menu_port,
-            menu_dietary_port,
-            menu_item_details_port,
-            price_port,
-            location_port,
-            contact_port,
-            payment_methods_port,
-            takeaway_port,
-            event_port,
-            facilities_port,
-            accessibility_port,
-            entertainment_port,
-            reservation_port,
-        ) = restaurant_gateways(information_port.clone(), reservation_port);
+        let business_info_repository = restaurant_repository.clone();
+        let menu_repository = restaurant_repository.clone();
+        let reservation_repository = restaurant_repository.clone();
+        let availability_repository = restaurant_repository.clone();
+        let restaurant_menu_service = ConversationRestaurantMenuService::new(menu_repository);
+        let restaurant_reservation_service = ConversationRestaurantReservationService::new(
+            reservation_repository,
+            availability_repository,
+        );
         let use_case = HandleConversationService::new(
             domain,
             processor,
             analyzer,
             repo.clone(),
             detector.clone(),
-            opening_hours_port,
-            menu_port,
-            menu_dietary_port,
-            menu_item_details_port,
-            price_port,
-            location_port,
-            contact_port,
-            payment_methods_port,
-            takeaway_port,
-            event_port,
-            facilities_port,
-            accessibility_port,
-            entertainment_port,
-            reservation_port,
+            business_id(),
+            business_info_repository,
+            restaurant_menu_service,
+            restaurant_reservation_service,
         );
         UseCaseParts {
             use_case,
             repo,
             detector,
-            information_port,
+            restaurant_repository,
         }
     }
 
@@ -751,7 +793,7 @@ mod tests {
         let result = parts.use_case.handle_message(make_command("hours", None));
 
         assert_eq!(result.reply, "Mon-Sun 9am-10pm");
-        assert_eq!(parts.information_port.calls(), 1);
+        assert_eq!(parts.restaurant_repository.opening_hours_calls(), 1);
     }
 
     #[test]
@@ -815,7 +857,7 @@ mod tests {
         assert!(start.reply.contains("Do you confirm this reservation?"));
         assert!(confirm.reply.contains("Jean Martin"));
         assert!(confirm.reply.contains("19:00"));
-        assert!(confirm.reply.contains("REST-NEW123"));
+        assert!(confirm.reply.contains("REST-000001"));
         let recorded = analyzer.recorded_tasks();
         assert_eq!(recorded.len(), 2);
         assert!(recorded[0].is_none());

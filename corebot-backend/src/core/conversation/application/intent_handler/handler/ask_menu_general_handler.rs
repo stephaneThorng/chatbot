@@ -6,24 +6,26 @@ use crate::core::conversation::application::intent_handler::intent_handler::{
 use crate::core::conversation::application::port::outbound::restaurant::menu_queries::{
     MenuQuery, PriceFilter,
 };
-use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_gateway_port::RestaurantMenuGatewayPort;
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_repository_port::RestaurantMenuRepositoryPort;
+use crate::core::conversation::application::service::restaurant::{
+    ConversationRestaurantMenuService,
+};
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
-pub struct AskMenuGeneralIntentHandler<'a, P: RestaurantMenuGatewayPort + ?Sized> {
-    menu_gateway_port: &'a P,
+pub struct AskMenuGeneralIntentHandler<'a, M> {
+    menu_service: &'a ConversationRestaurantMenuService<M>,
 }
 
-impl<'a, P: RestaurantMenuGatewayPort + ?Sized> AskMenuGeneralIntentHandler<'a, P> {
-    pub fn new(menu_port: &'a P) -> Self {
-        Self {
-            menu_gateway_port: menu_port,
-        }
+impl<'a, M> AskMenuGeneralIntentHandler<'a, M> {
+    pub fn new(menu_service: &'a ConversationRestaurantMenuService<M>) -> Self {
+        Self { menu_service }
     }
 }
 
 #[async_trait::async_trait]
-impl<P: RestaurantMenuGatewayPort + Send + Sync + ?Sized> IntentHandler
-    for AskMenuGeneralIntentHandler<'_, P>
+impl<M> IntentHandler for AskMenuGeneralIntentHandler<'_, M>
+where
+    M: RestaurantMenuRepositoryPort + Send + Sync,
 {
     fn intent(&self) -> IntentId {
         IntentId::AskMenuGeneral
@@ -43,16 +45,20 @@ impl<P: RestaurantMenuGatewayPort + Send + Sync + ?Sized> IntentHandler
         let amount = self.lookup_entity_value(&input, "price_amount");
 
         let raw = self
-            .menu_gateway_port
-            .find_menu(MenuQuery {
-                price_item: price_item.map(str::to_string),
-                price_filter: comparator
-                    .zip(amount)
-                    .map(|(comparator, amount)| PriceFilter {
-                        comparator: comparator.to_string(),
-                        amount: amount.to_string(),
-                    }),
-            })
+            .menu_service
+            .find_menu(
+                input.conversation.business_id,
+                lang,
+                MenuQuery {
+                    price_item: price_item.map(str::to_string),
+                    price_filter: comparator
+                        .zip(amount)
+                        .map(|(comparator, amount)| PriceFilter {
+                            comparator: comparator.to_string(),
+                            amount: amount.to_string(),
+                        }),
+                },
+            )
             .await;
         let reply = parse_menu_reply(&raw, lang, comparator, amount, price_item);
 

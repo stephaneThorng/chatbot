@@ -3,25 +3,25 @@ use rust_i18n::t;
 use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
-use crate::core::conversation::application::port::outbound::restaurant::business_info_queries::LocationQuery;
-use crate::core::conversation::application::port::outbound::restaurant::restaurant_location_gateway_port::RestaurantLocationGatewayPort;
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_business_info_repository_port::RestaurantBusinessInfoRepositoryPort;
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
-pub struct AskLocationIntentHandler<'a, P: RestaurantLocationGatewayPort + ?Sized> {
-    location_gateway_port: &'a P,
+pub struct AskLocationIntentHandler<'a, B> {
+    business_info_repository: &'a B,
 }
 
-impl<'a, P: RestaurantLocationGatewayPort + ?Sized> AskLocationIntentHandler<'a, P> {
-    pub fn new(location_port: &'a P) -> Self {
+impl<'a, B> AskLocationIntentHandler<'a, B> {
+    pub fn new(business_info_repository: &'a B) -> Self {
         Self {
-            location_gateway_port: location_port,
+            business_info_repository,
         }
     }
 }
 
 #[async_trait::async_trait]
-impl<P: RestaurantLocationGatewayPort + Send + Sync + ?Sized> IntentHandler
-    for AskLocationIntentHandler<'_, P>
+impl<B> IntentHandler for AskLocationIntentHandler<'_, B>
+where
+    B: RestaurantBusinessInfoRepositoryPort + Send + Sync,
 {
     fn intent(&self) -> IntentId {
         IntentId::AskLocation
@@ -37,43 +37,46 @@ impl<P: RestaurantLocationGatewayPort + Send + Sync + ?Sized> IntentHandler
     async fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
         let near = self.lookup_entity_value(&input, "location");
-        let raw = self
-            .location_gateway_port
-            .find_location(LocationQuery {
-                near: near.map(str::to_string),
-            })
-            .await;
-        let reply = if let Some(payload) = raw.strip_prefix("near_confirmed:") {
-            let mut p = payload.splitn(2, '|');
-            let loc = p.next().unwrap_or("");
-            let addr = p.next().unwrap_or("");
-            t!(
-                "intent.ask_location.near_confirmed.reply",
-                locale = lang,
-                location = loc,
-                address = addr
-            )
-            .to_string()
-        } else if let Some(payload) = raw.strip_prefix("near_denied:") {
-            let mut p = payload.splitn(2, '|');
-            let loc = p.next().unwrap_or("");
-            let addr = p.next().unwrap_or("");
-            t!(
-                "intent.ask_location.near_denied.reply",
-                locale = lang,
-                location = loc,
-                address = addr
-            )
-            .to_string()
-        } else if let Some(addr) = raw.strip_prefix("address:") {
-            t!(
-                "intent.ask_location.address.reply",
-                locale = lang,
-                address = addr
-            )
-            .to_string()
-        } else {
-            t!("intent.ask_location.reply", locale = lang).to_string()
+        let reply = match self
+            .business_info_repository
+            .location(input.conversation.business_id)
+            .await
+        {
+            Ok(Some(location)) => {
+                let address = match location.nearby_description {
+                    Some(nearby) if !nearby.is_empty() => {
+                        format!("{} - {}", location.address_line, nearby)
+                    }
+                    _ => location.address_line,
+                };
+                if let Some(near) = near {
+                    if address.to_lowercase().contains(&near.to_lowercase()) {
+                        t!(
+                            "intent.ask_location.near_confirmed.reply",
+                            locale = lang,
+                            location = near,
+                            address = address
+                        )
+                        .to_string()
+                    } else {
+                        t!(
+                            "intent.ask_location.near_denied.reply",
+                            locale = lang,
+                            location = near,
+                            address = address
+                        )
+                        .to_string()
+                    }
+                } else {
+                    t!(
+                        "intent.ask_location.address.reply",
+                        locale = lang,
+                        address = address
+                    )
+                    .to_string()
+                }
+            }
+            _ => t!("intent.ask_location.reply", locale = lang).to_string(),
         };
         StateHandlerResult {
             updated_conversation: input.conversation,

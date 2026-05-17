@@ -8,19 +8,18 @@ use corebot_backend::core::conversation::adapter::inbound::web::routes::conversa
 use corebot_backend::core::conversation::adapter::outbound::in_memory_conversation_repository::InMemoryConversationRepository;
 use corebot_backend::core::conversation::adapter::outbound::langdetect_language_detector::LangdetectLanguageDetector;
 use corebot_backend::core::conversation::adapter::outbound::nlu_engine_gateway::NluEngineGateway;
-use corebot_backend::core::conversation::adapter::outbound::restaurant_business_info_gateway::RestaurantBusinessInfoGateway;
-use corebot_backend::core::conversation::adapter::outbound::restaurant_menu_gateway::RestaurantMenuGateway;
-use corebot_backend::core::conversation::adapter::outbound::restaurant_reservation_gateway::RestaurantReservationGateway;
+use corebot_backend::core::conversation::adapter::outbound::postgres_restaurant::availability::PostgresAvailabilityRepository;
+use corebot_backend::core::conversation::adapter::outbound::postgres_restaurant::business_info::PostgresBusinessInfoRepository;
+use corebot_backend::core::conversation::adapter::outbound::postgres_restaurant::menu::PostgresMenuRepository;
+use corebot_backend::core::conversation::adapter::outbound::postgres_restaurant::reservation::PostgresReservationRepository;
 use corebot_backend::core::conversation::application::conversation_processor::ConversationProcessor;
 use corebot_backend::core::conversation::application::conversation_service::HandleConversationService;
+use corebot_backend::core::conversation::application::service::restaurant::{
+    ConversationRestaurantMenuService, ConversationRestaurantReservationService,
+};
 use corebot_backend::core::conversation::domain::domain_type::DomainType;
 use corebot_backend::core::nlu_engine::adapter::outbound::onnx_nlu_runtime::OnnxNluRuntime;
 use corebot_backend::core::nlu_engine::application::AnalyzeTextService;
-use corebot_backend::core::restaurant::adapter::outbound::postgres_restaurant_repository::availability_repository::PostgresAvailabilityRepository;
-use corebot_backend::core::restaurant::adapter::outbound::postgres_restaurant_repository::business_info_repository::PostgresBusinessInfoRepository;
-use corebot_backend::core::restaurant::adapter::outbound::postgres_restaurant_repository::menu_repository::PostgresMenuRepository;
-use corebot_backend::core::restaurant::adapter::outbound::postgres_restaurant_repository::reservation_repository::PostgresReservationRepository;
-use corebot_backend::core::restaurant::application::database_restaurant_service::DatabaseRestaurantService;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -47,17 +46,11 @@ async fn main() {
     let menu_repository = PostgresMenuRepository::new(pool.clone());
     let reservation_repository = PostgresReservationRepository::new(pool.clone());
     let availability_repository = PostgresAvailabilityRepository::new(pool);
-    let restaurant = DatabaseRestaurantService::new(
-        default_business_id(),
-        "en",
-        business_info_repository,
-        menu_repository,
+    let restaurant_menu_service = ConversationRestaurantMenuService::new(menu_repository);
+    let restaurant_reservation_service = ConversationRestaurantReservationService::new(
         reservation_repository,
         availability_repository,
     );
-    let business_info_gateway = Arc::new(RestaurantBusinessInfoGateway::new(restaurant.clone()));
-    let menu_gateway = Arc::new(RestaurantMenuGateway::new(restaurant.clone()));
-    let reservation_gateway = Arc::new(RestaurantReservationGateway::new(restaurant));
     let processor = ConversationProcessor::new();
 
     let runtime = OnnxNluRuntime::from_env()
@@ -72,20 +65,10 @@ async fn main() {
         analyzer,
         conversation_repository,
         language_detector,
-        business_info_gateway.clone(),
-        menu_gateway.clone(),
-        menu_gateway.clone(),
-        menu_gateway.clone(),
-        menu_gateway,
-        business_info_gateway.clone(),
-        business_info_gateway.clone(),
-        business_info_gateway.clone(),
-        business_info_gateway.clone(),
-        business_info_gateway.clone(),
-        business_info_gateway.clone(),
-        business_info_gateway.clone(),
-        business_info_gateway,
-        reservation_gateway,
+        default_business_id(),
+        business_info_repository,
+        restaurant_menu_service,
+        restaurant_reservation_service,
     ));
     let app = Router::new()
         .merge(conversation_routes_with_use_case(use_case))

@@ -208,149 +208,278 @@ fn system_text_i18n_key(key: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use super::*;
     use crate::core::conversation::application::dto::nlu_analysis_result::NluIntentCandidate;
-    use crate::core::conversation::application::port::outbound::restaurant::business_info_queries::{
-        EventQuery, FacilityQuery, LocationQuery, PaymentMethodQuery,
-    };
-    use crate::core::conversation::application::port::outbound::restaurant::menu_queries::{
-        MenuDietaryQuery, MenuItemDetailsQuery, MenuQuery, PriceQuery,
-    };
-    use crate::core::conversation::application::port::outbound::restaurant::reservation_queries::{
-        ReservationCreateQuery, ReservationFailure, ReservationLookupQuery,
-    };
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_accessibility_gateway_port::RestaurantAccessibilityGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_contact_gateway_port::RestaurantContactGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_entertainment_gateway_port::RestaurantEntertainmentGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_event_gateway_port::RestaurantEventGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_facilities_gateway_port::RestaurantFacilitiesGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_location_gateway_port::RestaurantLocationGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_dietary_gateway_port::RestaurantMenuDietaryGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_item_details_gateway_port::RestaurantMenuItemDetailsGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_gateway_port::RestaurantMenuGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_opening_hours_gateway_port::RestaurantOpeningHoursGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_payment_methods_gateway_port::RestaurantPaymentMethodsGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_price_gateway_port::RestaurantPriceGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::reservation_queries::{ReservationCancelFailure, ReservationCancelQuery};
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_reservation_gateway_port::RestaurantReservationGatewayPort;
-    use crate::core::conversation::application::port::outbound::restaurant::restaurant_takeaway_gateway_port::RestaurantTakeawayGatewayPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_availability_repository_port::RestaurantAvailabilityRepositoryPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_business_info_repository_port::RestaurantBusinessInfoRepositoryPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_repository_port::RestaurantMenuRepositoryPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_reservation_repository_port::RestaurantReservationRepositoryPort;
     use crate::core::conversation::application::intent_handler::restaurant_handler_registry_factory::{
         RestaurantConversationDependencies, RestaurantHandlerRegistryFactory,
     };
+    use crate::core::conversation::application::service::restaurant::{
+        ConversationRestaurantMenuService, ConversationRestaurantReservationService,
+    };
     use crate::core::conversation::domain::model::domain_type::DomainType;
+    use crate::core::conversation::domain::restaurant::model::{
+        BusinessFact, BusinessLocation, ContactChannel, EventSpace, Facility, MenuItem,
+        MenuPriceFilter, OpeningHours, PaymentMethod, Reservation, ReservationDraft,
+        ReservationSettings, RestaurantRepositoryError, TableType,
+    };
+    use chrono::{NaiveDate, NaiveTime, Weekday};
+    use uuid::Uuid;
 
-    struct StubInformationPort;
+    #[derive(Clone)]
+    struct StubRestaurantRepository {
+        reservations: Arc<Mutex<Vec<Reservation>>>,
+    }
+
+    impl StubRestaurantRepository {
+        fn new() -> Self {
+            Self {
+                reservations: Arc::new(Mutex::new(vec![])),
+            }
+        }
+    }
+
+    fn opening_hours() -> Vec<OpeningHours> {
+        [
+            Weekday::Mon,
+            Weekday::Tue,
+            Weekday::Wed,
+            Weekday::Thu,
+            Weekday::Fri,
+            Weekday::Sat,
+            Weekday::Sun,
+        ]
+        .into_iter()
+        .map(|day| OpeningHours {
+            day_of_week: day,
+            opens_at: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            closes_at: NaiveTime::from_hms_opt(22, 0, 0).unwrap(),
+            is_closed: false,
+        })
+        .collect()
+    }
 
     #[async_trait::async_trait]
-    impl RestaurantOpeningHoursGatewayPort for StubInformationPort {
-        async fn get_opening_hours(&self) -> String {
-            "Mon-Sun 9am-10pm".to_string()
+    impl RestaurantBusinessInfoRepositoryPort for StubRestaurantRepository {
+        async fn opening_hours(
+            &self,
+            _: Uuid,
+        ) -> Result<Vec<OpeningHours>, RestaurantRepositoryError> {
+            Ok(opening_hours())
+        }
+
+        async fn location(
+            &self,
+            _: Uuid,
+        ) -> Result<Option<BusinessLocation>, RestaurantRepositoryError> {
+            Ok(Some(BusinessLocation {
+                address_line: "12 Rue de la Paix".to_string(),
+                nearby_description: Some("near Central Station".to_string()),
+            }))
+        }
+
+        async fn contact_channels(
+            &self,
+            _: Uuid,
+        ) -> Result<Vec<ContactChannel>, RestaurantRepositoryError> {
+            Ok(vec![
+                ContactChannel {
+                    channel_type: "phone".to_string(),
+                    value: "+33123456789".to_string(),
+                },
+                ContactChannel {
+                    channel_type: "email".to_string(),
+                    value: "test@example.com".to_string(),
+                },
+            ])
+        }
+
+        async fn payment_methods(
+            &self,
+            _: Uuid,
+        ) -> Result<Vec<PaymentMethod>, RestaurantRepositoryError> {
+            Ok(vec![PaymentMethod {
+                method_code: "cash".to_string(),
+            }])
+        }
+
+        async fn facilities(&self, _: Uuid) -> Result<Vec<Facility>, RestaurantRepositoryError> {
+            Ok(vec![Facility {
+                facility_code: "wifi".to_string(),
+                label: "wifi".to_string(),
+            }])
+        }
+
+        async fn facts(
+            &self,
+            _: Uuid,
+            _: &str,
+        ) -> Result<Vec<BusinessFact>, RestaurantRepositoryError> {
+            Ok(vec![
+                BusinessFact {
+                    fact_type: "takeaway".to_string(),
+                    title: None,
+                    content: "Yes".to_string(),
+                },
+                BusinessFact {
+                    fact_type: "accessibility".to_string(),
+                    title: None,
+                    content: "Yes".to_string(),
+                },
+                BusinessFact {
+                    fact_type: "entertainment".to_string(),
+                    title: None,
+                    content: "Live music".to_string(),
+                },
+            ])
+        }
+
+        async fn event_spaces(
+            &self,
+            _: Uuid,
+        ) -> Result<Vec<EventSpace>, RestaurantRepositoryError> {
+            Ok(vec![EventSpace {
+                name: "main room".to_string(),
+                description: Some("Yes".to_string()),
+                contact: None,
+            }])
         }
     }
 
     #[async_trait::async_trait]
-    impl RestaurantMenuGatewayPort for StubInformationPort {
-        async fn find_menu(&self, _: MenuQuery) -> String {
-            "full_menu:".to_string()
+    impl RestaurantMenuRepositoryPort for StubRestaurantRepository {
+        async fn menu_items(
+            &self,
+            _: Uuid,
+            _: &str,
+        ) -> Result<Vec<MenuItem>, RestaurantRepositoryError> {
+            Ok(vec![])
+        }
+
+        async fn menu_items_by_price(
+            &self,
+            _: Uuid,
+            _: &str,
+            _: &MenuPriceFilter,
+        ) -> Result<Vec<MenuItem>, RestaurantRepositoryError> {
+            Ok(vec![])
         }
     }
 
     #[async_trait::async_trait]
-    impl RestaurantMenuDietaryGatewayPort for StubInformationPort {
-        async fn find_menu_dietary(&self, _: MenuDietaryQuery) -> String {
-            "dietary_no_filter:".to_string()
+    impl RestaurantReservationRepositoryPort for StubRestaurantRepository {
+        async fn next_reference_index(&self, _: Uuid) -> Result<i64, RestaurantRepositoryError> {
+            Ok(self.reservations.lock().unwrap().len() as i64 + 1)
         }
-    }
 
-    #[async_trait::async_trait]
-    impl RestaurantMenuItemDetailsGatewayPort for StubInformationPort {
-        async fn find_menu_item_details(&self, _: MenuItemDetailsQuery) -> String {
-            "details_no_filter:".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantLocationGatewayPort for StubInformationPort {
-        async fn find_location(&self, _: LocationQuery) -> String {
-            "address:".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantContactGatewayPort for StubInformationPort {
-        async fn get_contact(&self) -> String {
-            "contact:+33123456789|test@example.com".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantPaymentMethodsGatewayPort for StubInformationPort {
-        async fn find_payment_methods(&self, _: PaymentMethodQuery) -> String {
-            "all_methods:cash".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantPriceGatewayPort for StubInformationPort {
-        async fn find_price(&self, _: PriceQuery) -> String {
-            "price_general:".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantTakeawayGatewayPort for StubInformationPort {
-        async fn get_takeaway_info(&self) -> String {
-            "takeaway:yes|Yes".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantEventGatewayPort for StubInformationPort {
-        async fn find_event_info(&self, _: EventQuery) -> String {
-            "event_info:Yes".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantFacilitiesGatewayPort for StubInformationPort {
-        async fn find_facility_info(&self, _: FacilityQuery) -> String {
-            "all_facilities:wifi".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantAccessibilityGatewayPort for StubInformationPort {
-        async fn get_accessibility_info(&self) -> String {
-            "accessibility:yes|Yes".to_string()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl RestaurantEntertainmentGatewayPort for StubInformationPort {
-        async fn get_entertainment_info(&self) -> String {
-            "entertainment:yes|Live music".to_string()
-        }
-    }
-
-    struct StubReservationPort;
-
-    #[async_trait::async_trait]
-    impl RestaurantReservationGatewayPort for StubReservationPort {
         async fn create_reservation(
             &self,
-            _: ReservationCreateQuery,
-        ) -> Result<String, ReservationFailure> {
-            Ok("created:REST-NEW123".to_string())
-        }
-        async fn cancel_reservation(
-            &self,
-            _: ReservationCancelQuery,
-        ) -> Result<String, ReservationCancelFailure> {
-            Ok("cancelled:REST-NEW123".to_string())
+            _: Uuid,
+            reservation: ReservationDraft,
+        ) -> Result<Reservation, RestaurantRepositoryError> {
+            let reservation = Reservation {
+                reference: reservation.reference,
+                name: reservation.name,
+                date: reservation.date,
+                time: reservation.time,
+                people_count: reservation.people_count,
+            };
+            self.reservations.lock().unwrap().push(reservation.clone());
+            Ok(reservation)
         }
 
-        async fn check_reservation(&self, _: ReservationLookupQuery) -> String {
-            "no_reference_or_name:".to_string()
+        async fn find_by_reference(
+            &self,
+            _: Uuid,
+            reference: &str,
+        ) -> Result<Option<Reservation>, RestaurantRepositoryError> {
+            Ok(self
+                .reservations
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|reservation| reservation.reference.eq_ignore_ascii_case(reference))
+                .cloned())
+        }
+
+        async fn find_by_name(
+            &self,
+            _: Uuid,
+            name: &str,
+        ) -> Result<Vec<Reservation>, RestaurantRepositoryError> {
+            Ok(self
+                .reservations
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|reservation| reservation.name.eq_ignore_ascii_case(name))
+                .cloned()
+                .collect())
+        }
+
+        async fn cancel_by_reference(
+            &self,
+            _: Uuid,
+            reference: &str,
+        ) -> Result<Option<Reservation>, RestaurantRepositoryError> {
+            let mut reservations = self.reservations.lock().unwrap();
+            let Some(index) = reservations
+                .iter()
+                .position(|reservation| reservation.reference.eq_ignore_ascii_case(reference))
+            else {
+                return Ok(None);
+            };
+            Ok(Some(reservations.remove(index)))
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl RestaurantAvailabilityRepositoryPort for StubRestaurantRepository {
+        async fn reservation_settings(
+            &self,
+            _: Uuid,
+        ) -> Result<ReservationSettings, RestaurantRepositoryError> {
+            Ok(ReservationSettings {
+                slot_minutes: 120,
+                max_lookup_days: 7,
+            })
+        }
+
+        async fn table_types(&self, _: Uuid) -> Result<Vec<TableType>, RestaurantRepositoryError> {
+            Ok(vec![TableType {
+                capacity: 6,
+                count: 2,
+            }])
+        }
+
+        async fn opening_hours(
+            &self,
+            _: Uuid,
+        ) -> Result<Vec<OpeningHours>, RestaurantRepositoryError> {
+            Ok(opening_hours())
+        }
+
+        async fn is_closed_at(
+            &self,
+            _: Uuid,
+            _: NaiveDate,
+            _: NaiveTime,
+            _: u32,
+        ) -> Result<bool, RestaurantRepositoryError> {
+            Ok(false)
+        }
+
+        async fn reservations_near(
+            &self,
+            _: Uuid,
+            _: NaiveDate,
+        ) -> Result<Vec<Reservation>, RestaurantRepositoryError> {
+            Ok(self.reservations.lock().unwrap().clone())
         }
     }
 
@@ -403,23 +532,24 @@ mod tests {
     }
 
     fn registry() -> IntentHandlerRegistry<'static> {
-        static INFORMATION_PORT: StubInformationPort = StubInformationPort;
-        static RESERVATION_PORT: StubReservationPort = StubReservationPort;
+        let repository = StubRestaurantRepository::new();
+        let business_info_repository = repository.clone();
+        let menu_repository = repository.clone();
+        let reservation_repository = repository.clone();
+        let availability_repository = repository;
+        let business_info_repository = Box::leak(Box::new(business_info_repository));
+        let menu_service = Box::leak(Box::new(ConversationRestaurantMenuService::new(
+            menu_repository,
+        )));
+        let reservation_service =
+            Box::leak(Box::new(ConversationRestaurantReservationService::new(
+                reservation_repository,
+                availability_repository,
+            )));
         RestaurantHandlerRegistryFactory::build(RestaurantConversationDependencies {
-            opening_hours_port: &INFORMATION_PORT,
-            menu_port: &INFORMATION_PORT,
-            menu_dietary_port: &INFORMATION_PORT,
-            menu_item_details_port: &INFORMATION_PORT,
-            price_port: &INFORMATION_PORT,
-            location_port: &INFORMATION_PORT,
-            contact_port: &INFORMATION_PORT,
-            payment_methods_port: &INFORMATION_PORT,
-            takeaway_port: &INFORMATION_PORT,
-            event_port: &INFORMATION_PORT,
-            facilities_port: &INFORMATION_PORT,
-            accessibility_port: &INFORMATION_PORT,
-            entertainment_port: &INFORMATION_PORT,
-            reservation_port: &RESERVATION_PORT,
+            business_info_repository,
+            menu_service,
+            reservation_service,
         })
     }
 
@@ -446,10 +576,7 @@ mod tests {
             analysis("ask_menu_item_details", vec![entity("menu_item", "ramen")]),
         );
 
-        assert_eq!(
-            result.reply,
-            "Which menu item would you like details about?"
-        );
+        assert_eq!(result.reply, "I couldn't find that item on our menu.");
         assert!(result.updated_conversation.is_idle());
         assert!(conversation.is_idle());
     }
@@ -553,7 +680,10 @@ mod tests {
             ),
         );
 
-        assert_eq!(result.reply, "Here is our pricing information: .");
+        assert_eq!(
+            result.reply,
+            "I can help with restaurant pricing information."
+        );
         assert!(result.updated_conversation.is_idle());
         assert!(conversation.is_idle());
     }
@@ -660,7 +790,7 @@ mod tests {
             ),
         );
 
-        assert!(confirmed.reply.contains("REST-NEW123"));
+        assert!(confirmed.reply.contains("REST-000001"));
         assert!(confirmed.updated_conversation.is_idle());
     }
 

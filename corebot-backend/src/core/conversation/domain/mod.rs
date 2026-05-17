@@ -1,4 +1,5 @@
 pub mod model;
+pub mod restaurant;
 pub mod service;
 
 pub use model::conversation;

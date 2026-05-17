@@ -1,24 +1,28 @@
 use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
-use crate::core::conversation::application::port::outbound::restaurant::restaurant_opening_hours_gateway_port::RestaurantOpeningHoursGatewayPort;
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_business_info_repository_port::RestaurantBusinessInfoRepositoryPort;
+use crate::core::conversation::application::service::restaurant::{
+    business_info_response_formatter::format_opening_hours,
+};
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
-pub struct OpeningHoursIntentHandler<'a, P: RestaurantOpeningHoursGatewayPort + ?Sized> {
-    opening_hours_gateway_port: &'a P,
+pub struct OpeningHoursIntentHandler<'a, B> {
+    business_info_repository: &'a B,
 }
 
-impl<'a, P: RestaurantOpeningHoursGatewayPort + ?Sized> OpeningHoursIntentHandler<'a, P> {
-    pub fn new(opening_hours_port: &'a P) -> Self {
+impl<'a, B> OpeningHoursIntentHandler<'a, B> {
+    pub fn new(business_info_repository: &'a B) -> Self {
         Self {
-            opening_hours_gateway_port: opening_hours_port,
+            business_info_repository,
         }
     }
 }
 
 #[async_trait::async_trait]
-impl<P: RestaurantOpeningHoursGatewayPort + Send + Sync + ?Sized> IntentHandler
-    for OpeningHoursIntentHandler<'_, P>
+impl<B> IntentHandler for OpeningHoursIntentHandler<'_, B>
+where
+    B: RestaurantBusinessInfoRepositoryPort + Send + Sync,
 {
     fn intent(&self) -> IntentId {
         IntentId::AskOpeningHours
@@ -38,9 +42,15 @@ impl<P: RestaurantOpeningHoursGatewayPort + Send + Sync + ?Sized> IntentHandler
             input.text,
             input.analysis_entities,
         );
+        let reply = self
+            .business_info_repository
+            .opening_hours(input.conversation.business_id)
+            .await
+            .map(|hours| format_opening_hours(&hours))
+            .unwrap_or_else(|_| "hours_unavailable:".to_string());
         StateHandlerResult {
             updated_conversation: input.conversation,
-            reply: self.opening_hours_gateway_port.get_opening_hours().await,
+            reply,
             handled_intent: self.intent(),
         }
     }

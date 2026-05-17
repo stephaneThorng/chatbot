@@ -3,25 +3,31 @@ use rust_i18n::t;
 use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_availability_repository_port::RestaurantAvailabilityRepositoryPort;
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_reservation_repository_port::RestaurantReservationRepositoryPort;
 use crate::core::conversation::application::port::outbound::restaurant::reservation_queries::ReservationLookupQuery;
-use crate::core::conversation::application::port::outbound::restaurant::restaurant_reservation_gateway_port::RestaurantReservationGatewayPort;
+use crate::core::conversation::application::service::restaurant::{
+    ConversationRestaurantReservationService,
+};
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
-pub struct CheckReservationIntentHandler<'a, P: RestaurantReservationGatewayPort + ?Sized> {
-    reservation_lookup_gateway_port: &'a P,
+pub struct CheckReservationIntentHandler<'a, R, A> {
+    reservation_service: &'a ConversationRestaurantReservationService<R, A>,
 }
 
-impl<'a, P: RestaurantReservationGatewayPort + ?Sized> CheckReservationIntentHandler<'a, P> {
-    pub fn new(reservation_lookup_port: &'a P) -> Self {
+impl<'a, R, A> CheckReservationIntentHandler<'a, R, A> {
+    pub fn new(reservation_service: &'a ConversationRestaurantReservationService<R, A>) -> Self {
         Self {
-            reservation_lookup_gateway_port: reservation_lookup_port,
+            reservation_service,
         }
     }
 }
 
 #[async_trait::async_trait]
-impl<P: RestaurantReservationGatewayPort + Send + Sync + ?Sized> IntentHandler
-    for CheckReservationIntentHandler<'_, P>
+impl<R, A> IntentHandler for CheckReservationIntentHandler<'_, R, A>
+where
+    R: RestaurantReservationRepositoryPort + Send + Sync,
+    A: RestaurantAvailabilityRepositoryPort + Send + Sync,
 {
     fn intent(&self) -> IntentId {
         IntentId::CheckReservation
@@ -41,11 +47,14 @@ impl<P: RestaurantReservationGatewayPort + Send + Sync + ?Sized> IntentHandler
             .lookup_entity_value(&input, "person")
             .or_else(|| input.conversation.known_customer_name());
         let raw = self
-            .reservation_lookup_gateway_port
-            .check_reservation(ReservationLookupQuery {
-                reference: reference.map(str::to_string),
-                name: name.map(str::to_string),
-            })
+            .reservation_service
+            .check_reservation(
+                input.conversation.business_id,
+                ReservationLookupQuery {
+                    reference: reference.map(str::to_string),
+                    name: name.map(str::to_string),
+                },
+            )
             .await;
 
         let reply = if let Some(payload) = raw.strip_prefix("found:") {

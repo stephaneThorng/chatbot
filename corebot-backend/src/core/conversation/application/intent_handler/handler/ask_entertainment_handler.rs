@@ -3,24 +3,25 @@ use rust_i18n::t;
 use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
-use crate::core::conversation::application::port::outbound::restaurant::restaurant_entertainment_gateway_port::RestaurantEntertainmentGatewayPort;
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_business_info_repository_port::RestaurantBusinessInfoRepositoryPort;
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
-pub struct AskEntertainmentIntentHandler<'a, P: RestaurantEntertainmentGatewayPort + ?Sized> {
-    entertainment_gateway_port: &'a P,
+pub struct AskEntertainmentIntentHandler<'a, B> {
+    business_info_repository: &'a B,
 }
 
-impl<'a, P: RestaurantEntertainmentGatewayPort + ?Sized> AskEntertainmentIntentHandler<'a, P> {
-    pub fn new(entertainment_port: &'a P) -> Self {
+impl<'a, B> AskEntertainmentIntentHandler<'a, B> {
+    pub fn new(business_info_repository: &'a B) -> Self {
         Self {
-            entertainment_gateway_port: entertainment_port,
+            business_info_repository,
         }
     }
 }
 
 #[async_trait::async_trait]
-impl<P: RestaurantEntertainmentGatewayPort + Send + Sync + ?Sized> IntentHandler
-    for AskEntertainmentIntentHandler<'_, P>
+impl<B> IntentHandler for AskEntertainmentIntentHandler<'_, B>
+where
+    B: RestaurantBusinessInfoRepositoryPort + Send + Sync,
 {
     fn intent(&self) -> IntentId {
         IntentId::AskEntertainment
@@ -35,19 +36,24 @@ impl<P: RestaurantEntertainmentGatewayPort + Send + Sync + ?Sized> IntentHandler
 
     async fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
-        let raw = self
-            .entertainment_gateway_port
-            .get_entertainment_info()
-            .await;
-        let reply = if let Some(info) = raw.strip_prefix("entertainment:yes|") {
-            t!(
-                "intent.ask_entertainment.confirmed.reply",
-                locale = lang,
-                info = info
-            )
-            .to_string()
-        } else {
-            t!("intent.ask_entertainment.reply", locale = lang).to_string()
+        let reply = match self
+            .business_info_repository
+            .facts(input.conversation.business_id, lang)
+            .await
+        {
+            Ok(facts) => facts
+                .iter()
+                .find(|fact| fact.fact_type == "entertainment")
+                .map(|fact| {
+                    t!(
+                        "intent.ask_entertainment.confirmed.reply",
+                        locale = lang,
+                        info = fact.content.as_str()
+                    )
+                    .to_string()
+                })
+                .unwrap_or_else(|| t!("intent.ask_entertainment.reply", locale = lang).to_string()),
+            Err(_) => t!("intent.ask_entertainment.reply", locale = lang).to_string(),
         };
         StateHandlerResult {
             updated_conversation: input.conversation,

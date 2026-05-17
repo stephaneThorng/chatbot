@@ -49,7 +49,9 @@
 - Put requirement validation and transformation in value-type/domain classes or dedicated domain/application services, not in route handlers.
 - Sessions are in-memory for v1 and must not be treated as durable storage.
 - Restaurant business data is persisted in PostgreSQL for the Rust backend.
-- Chatbot-facing restaurant behavior should move toward the `conversation` feature. Client-facing restaurant configuration belongs in a separate `configuration` or `back_office` feature.
+- Chatbot-facing restaurant behavior belongs under the `conversation` feature.
+- Do not recreate a standalone `restaurant` hexagon.
+- Client-facing restaurant configuration belongs in a future `back_office` feature, not in `conversation`.
 
 ## Model Training Boundary
 

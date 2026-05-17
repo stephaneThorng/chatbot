@@ -4,24 +4,26 @@ use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
 use crate::core::conversation::application::port::outbound::restaurant::menu_queries::MenuItemDetailsQuery;
-use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_item_details_gateway_port::RestaurantMenuItemDetailsGatewayPort;
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_repository_port::RestaurantMenuRepositoryPort;
+use crate::core::conversation::application::service::restaurant::{
+    ConversationRestaurantMenuService,
+};
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
 
-pub struct MenuItemDetailsIntentHandler<'a, P: RestaurantMenuItemDetailsGatewayPort + ?Sized> {
-    menu_item_details_gateway_port: &'a P,
+pub struct MenuItemDetailsIntentHandler<'a, M> {
+    menu_service: &'a ConversationRestaurantMenuService<M>,
 }
 
-impl<'a, P: RestaurantMenuItemDetailsGatewayPort + ?Sized> MenuItemDetailsIntentHandler<'a, P> {
-    pub fn new(menu_item_details_port: &'a P) -> Self {
-        Self {
-            menu_item_details_gateway_port: menu_item_details_port,
-        }
+impl<'a, M> MenuItemDetailsIntentHandler<'a, M> {
+    pub fn new(menu_service: &'a ConversationRestaurantMenuService<M>) -> Self {
+        Self { menu_service }
     }
 }
 
 #[async_trait::async_trait]
-impl<P: RestaurantMenuItemDetailsGatewayPort + Send + Sync + ?Sized> IntentHandler
-    for MenuItemDetailsIntentHandler<'_, P>
+impl<M> IntentHandler for MenuItemDetailsIntentHandler<'_, M>
+where
+    M: RestaurantMenuRepositoryPort + Send + Sync,
 {
     fn intent(&self) -> IntentId {
         IntentId::AskMenuItemDetails
@@ -39,11 +41,15 @@ impl<P: RestaurantMenuItemDetailsGatewayPort + Send + Sync + ?Sized> IntentHandl
         let menu_item = self.lookup_entity_value(&input, "menu_item");
         let allergen = self.lookup_entity_value(&input, "allergen");
         let raw = self
-            .menu_item_details_gateway_port
-            .find_menu_item_details(MenuItemDetailsQuery {
-                menu_item: menu_item.map(str::to_string),
-                allergen: allergen.map(str::to_string),
-            })
+            .menu_service
+            .find_menu_item_details(
+                input.conversation.business_id,
+                lang,
+                MenuItemDetailsQuery {
+                    menu_item: menu_item.map(str::to_string),
+                    allergen: allergen.map(str::to_string),
+                },
+            )
             .await;
         let reply = parse_item_details_reply(&raw, lang);
         StateHandlerResult {

@@ -1,10 +1,14 @@
 use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult, WorkflowPostProcessResult,
 };
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_availability_repository_port::RestaurantAvailabilityRepositoryPort;
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_reservation_repository_port::RestaurantReservationRepositoryPort;
 use crate::core::conversation::application::port::outbound::restaurant::reservation_queries::{
     ReservationCancelFailure, ReservationCancelQuery,
 };
-use crate::core::conversation::application::port::outbound::restaurant::restaurant_reservation_gateway_port::RestaurantReservationGatewayPort;
+use crate::core::conversation::application::service::restaurant::{
+    ConversationRestaurantReservationService,
+};
 use crate::core::conversation::application::util::workflow_slot_reader::ReservationCancelSlots;
 use crate::core::conversation::domain::model::conversation::Conversation;
 use crate::core::conversation::domain::model::intent::{
@@ -14,21 +18,23 @@ use crate::core::conversation::domain::model::slot::{
     SlotConfig, SlotConstraint, SlotConstraintEntry, SlotName,
 };
 
-pub struct ReservationCancelIntentHandler<'a, P: RestaurantReservationGatewayPort + ?Sized> {
-    reservation_gateway_port: &'a P,
+pub struct ReservationCancelIntentHandler<'a, R, A> {
+    reservation_service: &'a ConversationRestaurantReservationService<R, A>,
 }
 
-impl<'a, P: RestaurantReservationGatewayPort + ?Sized> ReservationCancelIntentHandler<'a, P> {
-    pub fn new(reservation_port: &'a P) -> Self {
+impl<'a, R, A> ReservationCancelIntentHandler<'a, R, A> {
+    pub fn new(reservation_service: &'a ConversationRestaurantReservationService<R, A>) -> Self {
         Self {
-            reservation_gateway_port: reservation_port,
+            reservation_service,
         }
     }
 }
 
 #[async_trait::async_trait]
-impl<P: RestaurantReservationGatewayPort + Send + Sync + ?Sized> IntentHandler
-    for ReservationCancelIntentHandler<'_, P>
+impl<R, A> IntentHandler for ReservationCancelIntentHandler<'_, R, A>
+where
+    R: RestaurantReservationRepositoryPort + Send + Sync,
+    A: RestaurantAvailabilityRepositoryPort + Send + Sync,
 {
     fn intent(&self) -> IntentId {
         IntentId::ReservationCancel
@@ -116,12 +122,15 @@ impl<P: RestaurantReservationGatewayPort + Send + Sync + ?Sized> IntentHandler
         }
 
         match self
-            .reservation_gateway_port
-            .cancel_reservation(ReservationCancelQuery {
-                reference: slots.reference.clone(),
-                name: slots.name.clone(),
-                date: slots.date,
-            })
+            .reservation_service
+            .cancel_reservation(
+                conversation.business_id,
+                ReservationCancelQuery {
+                    reference: slots.reference.clone(),
+                    name: slots.name.clone(),
+                    date: slots.date,
+                },
+            )
             .await
         {
             Ok(cancelled) => {
@@ -157,37 +166,186 @@ impl<P: RestaurantReservationGatewayPort + Send + Sync + ?Sized> IntentHandler
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::conversation::application::port::outbound::restaurant::reservation_queries::ReservationLookupQuery;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_availability_repository_port::RestaurantAvailabilityRepositoryPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_business_info_repository_port::RestaurantBusinessInfoRepositoryPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_repository_port::RestaurantMenuRepositoryPort;
+    use crate::core::conversation::application::port::outbound::restaurant::restaurant_reservation_repository_port::RestaurantReservationRepositoryPort;
+    use crate::core::conversation::application::service::restaurant::{
+        ConversationRestaurantReservationService,
+    };
     use crate::core::conversation::domain::conversation::Conversation;
     use crate::core::conversation::domain::domain_type::DomainType;
+    use crate::core::conversation::domain::restaurant::model::{
+        BusinessFact, BusinessLocation, ContactChannel, EventSpace, Facility, MenuItem,
+        MenuPriceFilter, OpeningHours, PaymentMethod, Reservation, ReservationDraft,
+        ReservationSettings, RestaurantRepositoryError, TableType,
+    };
     use crate::core::conversation::domain::model::slot::{SlotDataValue, SlotName};
+    use chrono::{NaiveDate, NaiveTime, Weekday};
+    use uuid::Uuid;
 
-    struct StubReservationPort;
+    #[derive(Clone)]
+    struct StubRepository;
 
     #[async_trait::async_trait]
-    impl RestaurantReservationGatewayPort for StubReservationPort {
-        async fn create_reservation(
+    impl RestaurantBusinessInfoRepositoryPort for StubRepository {
+        async fn opening_hours(
             &self,
-            _: crate::core::conversation::application::port::outbound::restaurant::reservation_queries::ReservationCreateQuery,
-        ) -> Result<String, crate::core::conversation::application::port::outbound::restaurant::reservation_queries::ReservationFailure>{
-            Ok("created:REST-NEW123".to_string())
+            _: Uuid,
+        ) -> Result<Vec<OpeningHours>, RestaurantRepositoryError> {
+            Ok(vec![])
         }
-
-        async fn cancel_reservation(
+        async fn location(
             &self,
-            _: ReservationCancelQuery,
-        ) -> Result<String, ReservationCancelFailure> {
-            Ok("cancelled:REST-NEW123".to_string())
+            _: Uuid,
+        ) -> Result<Option<BusinessLocation>, RestaurantRepositoryError> {
+            Ok(None)
         }
-
-        async fn check_reservation(&self, _: ReservationLookupQuery) -> String {
-            "no_reference_or_name:".to_string()
+        async fn contact_channels(
+            &self,
+            _: Uuid,
+        ) -> Result<Vec<ContactChannel>, RestaurantRepositoryError> {
+            Ok(vec![])
+        }
+        async fn payment_methods(
+            &self,
+            _: Uuid,
+        ) -> Result<Vec<PaymentMethod>, RestaurantRepositoryError> {
+            Ok(vec![])
+        }
+        async fn facilities(&self, _: Uuid) -> Result<Vec<Facility>, RestaurantRepositoryError> {
+            Ok(vec![])
+        }
+        async fn facts(
+            &self,
+            _: Uuid,
+            _: &str,
+        ) -> Result<Vec<BusinessFact>, RestaurantRepositoryError> {
+            Ok(vec![])
+        }
+        async fn event_spaces(
+            &self,
+            _: Uuid,
+        ) -> Result<Vec<EventSpace>, RestaurantRepositoryError> {
+            Ok(vec![])
         }
     }
 
-    fn handler() -> ReservationCancelIntentHandler<'static, StubReservationPort> {
-        static STUB_RESERVATION_PORT: StubReservationPort = StubReservationPort;
-        ReservationCancelIntentHandler::new(&STUB_RESERVATION_PORT)
+    #[async_trait::async_trait]
+    impl RestaurantMenuRepositoryPort for StubRepository {
+        async fn menu_items(
+            &self,
+            _: Uuid,
+            _: &str,
+        ) -> Result<Vec<MenuItem>, RestaurantRepositoryError> {
+            Ok(vec![])
+        }
+        async fn menu_items_by_price(
+            &self,
+            _: Uuid,
+            _: &str,
+            _: &MenuPriceFilter,
+        ) -> Result<Vec<MenuItem>, RestaurantRepositoryError> {
+            Ok(vec![])
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl RestaurantReservationRepositoryPort for StubRepository {
+        async fn next_reference_index(&self, _: Uuid) -> Result<i64, RestaurantRepositoryError> {
+            Ok(1)
+        }
+        async fn create_reservation(
+            &self,
+            _: Uuid,
+            _: ReservationDraft,
+        ) -> Result<Reservation, RestaurantRepositoryError> {
+            unreachable!("create_reservation is not used in cancel handler tests")
+        }
+        async fn find_by_reference(
+            &self,
+            _: Uuid,
+            _: &str,
+        ) -> Result<Option<Reservation>, RestaurantRepositoryError> {
+            Ok(None)
+        }
+        async fn find_by_name(
+            &self,
+            _: Uuid,
+            _: &str,
+        ) -> Result<Vec<Reservation>, RestaurantRepositoryError> {
+            Ok(vec![])
+        }
+        async fn cancel_by_reference(
+            &self,
+            _: Uuid,
+            reference: &str,
+        ) -> Result<Option<Reservation>, RestaurantRepositoryError> {
+            Ok(Some(Reservation {
+                reference: reference.to_string(),
+                name: "Alice".to_string(),
+                date: NaiveDate::from_ymd_opt(2099, 6, 12).unwrap(),
+                time: NaiveTime::from_hms_opt(19, 0, 0).unwrap(),
+                people_count: 2,
+            }))
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl RestaurantAvailabilityRepositoryPort for StubRepository {
+        async fn reservation_settings(
+            &self,
+            _: Uuid,
+        ) -> Result<ReservationSettings, RestaurantRepositoryError> {
+            Ok(ReservationSettings {
+                slot_minutes: 120,
+                max_lookup_days: 7,
+            })
+        }
+        async fn table_types(&self, _: Uuid) -> Result<Vec<TableType>, RestaurantRepositoryError> {
+            Ok(vec![TableType {
+                capacity: 4,
+                count: 1,
+            }])
+        }
+        async fn opening_hours(
+            &self,
+            _: Uuid,
+        ) -> Result<Vec<OpeningHours>, RestaurantRepositoryError> {
+            Ok(vec![OpeningHours {
+                day_of_week: Weekday::Fri,
+                opens_at: NaiveTime::from_hms_opt(11, 0, 0).unwrap(),
+                closes_at: NaiveTime::from_hms_opt(23, 0, 0).unwrap(),
+                is_closed: false,
+            }])
+        }
+        async fn is_closed_at(
+            &self,
+            _: Uuid,
+            _: NaiveDate,
+            _: NaiveTime,
+            _: u32,
+        ) -> Result<bool, RestaurantRepositoryError> {
+            Ok(false)
+        }
+        async fn reservations_near(
+            &self,
+            _: Uuid,
+            _: NaiveDate,
+        ) -> Result<Vec<Reservation>, RestaurantRepositoryError> {
+            Ok(vec![])
+        }
+    }
+
+    fn handler() -> ReservationCancelIntentHandler<'static, StubRepository, StubRepository> {
+        let repository = StubRepository;
+        let reservation_repository = repository.clone();
+        let availability_repository = repository;
+        let leaked = Box::leak(Box::new(ConversationRestaurantReservationService::new(
+            reservation_repository,
+            availability_repository,
+        )));
+        ReservationCancelIntentHandler::new(leaked)
     }
 
     fn handle(conversation: Conversation, intent: IntentId, text: &str) -> StateHandlerResult {

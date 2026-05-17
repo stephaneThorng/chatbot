@@ -4,6 +4,7 @@ use crate::core::conversation::domain::model::intent::{IntentConfig, IntentWorkf
 use crate::core::conversation::domain::model::slot::{SlotDataValue, SlotError, SlotName};
 use crate::core::conversation::domain::model::workflow::Workflow;
 use crate::core::conversation::domain::workflow::NextSlot;
+use uuid::Uuid;
 
 /// Conversation session - one user, one domain, one optional workflow.
 ///
@@ -18,6 +19,7 @@ use crate::core::conversation::domain::workflow::NextSlot;
 pub struct Conversation {
     pub id: ConversationId,
     pub domain: DomainType,
+    pub business_id: Uuid,
     pub lang: String,
     known_customer_name: Option<String>,
     last_reservation_reference: Option<String>,
@@ -42,9 +44,14 @@ pub enum StartWorkflowError {
 
 impl Conversation {
     pub fn new(domain: DomainType) -> Self {
+        Self::new_for_business(domain, Uuid::nil())
+    }
+
+    pub fn new_for_business(domain: DomainType, business_id: Uuid) -> Self {
         Self {
             id: ConversationId::new(),
             domain,
+            business_id,
             lang: "en".to_string(),
             known_customer_name: None,
             last_reservation_reference: None,
@@ -53,9 +60,14 @@ impl Conversation {
     }
 
     pub fn with_id(id: ConversationId, domain: DomainType) -> Self {
+        Self::with_id_for_business(id, domain, Uuid::nil())
+    }
+
+    pub fn with_id_for_business(id: ConversationId, domain: DomainType, business_id: Uuid) -> Self {
         Self {
             id,
             domain,
+            business_id,
             lang: "en".to_string(),
             known_customer_name: None,
             last_reservation_reference: None,

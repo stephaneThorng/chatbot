@@ -6,9 +6,6 @@ use serde_json::json;
 
 use corebot_backend::core::conversation::adapter::inbound::web::routes::conversation_routes_with_use_case;
 use corebot_backend::core::conversation::adapter::outbound::in_memory_conversation_repository::InMemoryConversationRepository;
-use corebot_backend::core::conversation::adapter::outbound::restaurant_business_info_gateway::RestaurantBusinessInfoGateway;
-use corebot_backend::core::conversation::adapter::outbound::restaurant_menu_gateway::RestaurantMenuGateway;
-use corebot_backend::core::conversation::adapter::outbound::restaurant_reservation_gateway::RestaurantReservationGateway;
 use corebot_backend::core::conversation::application::conversation_processor::ConversationProcessor;
 use corebot_backend::core::conversation::application::conversation_service::HandleConversationService;
 use corebot_backend::core::conversation::application::dto::nlu_analysis_result::{
@@ -16,115 +13,23 @@ use corebot_backend::core::conversation::application::dto::nlu_analysis_result::
 };
 use corebot_backend::core::conversation::application::port::outbound::language_detector_port::LanguageDetectorPort;
 use corebot_backend::core::conversation::application::port::outbound::nlp_engine_gateway_port::NlpEngineGatewayPort;
-use corebot_backend::core::conversation::domain::domain_type::DomainType;
-use corebot_backend::core::conversation::domain::model::intent::NluTask;
-use corebot_backend::core::conversation::domain::model::slot::SlotName;
-use corebot_backend::core::restaurant::application::database_restaurant_service::DatabaseRestaurantService;
-use corebot_backend::core::restaurant::application::port::inbound::restaurant_availability_usecase::RestaurantAvailabilityUseCase;
-use corebot_backend::core::restaurant::application::port::inbound::restaurant_business_info_usecase::RestaurantBusinessInfoUseCase;
-use corebot_backend::core::restaurant::application::port::inbound::restaurant_menu_usecase::RestaurantMenuUseCase;
-use corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::{
-    EventQuery, FacilityQuery, LocationQuery, MenuDietaryQuery, MenuItemDetailsQuery, MenuQuery,
-    PaymentMethodQuery, PriceQuery, ReservationCancelQuery, ReservationCreateQuery,
-    ReservationLookupQuery,
+use corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_availability_repository_port::RestaurantAvailabilityRepositoryPort;
+use corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_business_info_repository_port::RestaurantBusinessInfoRepositoryPort;
+use corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_menu_repository_port::RestaurantMenuRepositoryPort;
+use corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_reservation_repository_port::RestaurantReservationRepositoryPort;
+use corebot_backend::core::conversation::application::service::restaurant::{
+    ConversationRestaurantMenuService, ConversationRestaurantReservationService,
 };
-use corebot_backend::core::restaurant::application::port::outbound::restaurant_availability_repository_port::RestaurantAvailabilityRepositoryPort;
-use corebot_backend::core::restaurant::application::port::outbound::restaurant_business_info_repository_port::RestaurantBusinessInfoRepositoryPort;
-use corebot_backend::core::restaurant::application::port::outbound::restaurant_menu_repository_port::RestaurantMenuRepositoryPort;
-use corebot_backend::core::restaurant::application::port::outbound::restaurant_reservation_repository_port::RestaurantReservationRepositoryPort;
-use corebot_backend::core::restaurant::application::port::inbound::restaurant_reservation_port::RestaurantReservationUseCase;
-use corebot_backend::core::restaurant::domain::model::{
+use corebot_backend::core::conversation::domain::restaurant::model::{
     BusinessFact, BusinessLocation, ContactChannel, EventSpace, Facility, MenuItem, MenuPriceFilter,
     OpeningHours, PaymentMethod, Reservation, ReservationDraft, ReservationSettings,
     RestaurantRepositoryError, TableType,
 };
+use corebot_backend::core::conversation::domain::domain_type::DomainType;
+use corebot_backend::core::conversation::domain::model::intent::NluTask;
+use corebot_backend::core::conversation::domain::model::slot::SlotName;
 use chrono::{NaiveDate, NaiveTime, Weekday};
 use uuid::Uuid;
-
-#[derive(Clone)]
-struct StubRestaurant;
-
-#[async_trait::async_trait]
-impl RestaurantAvailabilityUseCase for StubRestaurant {
-    async fn get_opening_hours(&self) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult{
-        corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult::new("Mon-Sun 9am-10pm")
-    }
-}
-
-#[async_trait::async_trait]
-impl RestaurantMenuUseCase for StubRestaurant {
-    async fn find_menu(&self, _: MenuQuery) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::MenuSearchResult{
-        corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::MenuSearchResult::new("full_menu:stub")
-    }
-
-    async fn find_menu_dietary(&self, _: MenuDietaryQuery) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::MenuSearchResult{
-        corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::MenuSearchResult::new("dietary_no_filter:")
-    }
-
-    async fn find_menu_item_details(&self, _: MenuItemDetailsQuery) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::MenuItemDetailsResult{
-        corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::MenuItemDetailsResult::new("details_no_filter:")
-    }
-
-    async fn find_price(&self, _: PriceQuery) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::MenuSearchResult{
-        corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::MenuSearchResult::new("price_general:stub")
-    }
-}
-
-#[async_trait::async_trait]
-impl RestaurantBusinessInfoUseCase for StubRestaurant {
-    async fn find_location(&self, _: LocationQuery) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult{
-        corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult::new("address:stub")
-    }
-
-    async fn get_contact(&self) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult{
-        corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult::new("contact:+33123456789|test@example.com")
-    }
-
-    async fn find_payment_methods(&self, _: PaymentMethodQuery) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::PaymentMethodsResult{
-        corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::PaymentMethodsResult::new("all_methods:cash")
-    }
-
-    async fn get_takeaway_info(&self) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult{
-        corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult::new("takeaway:yes|stub")
-    }
-
-    async fn find_event_info(&self, _: EventQuery) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult{
-        corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult::new("event_info:stub")
-    }
-
-    async fn find_facility_info(&self, _: FacilityQuery) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::FacilityResult{
-        corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::FacilityResult::new("all_facilities:wifi")
-    }
-
-    async fn get_accessibility_info(&self) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult{
-        corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult::new("accessibility:yes|stub")
-    }
-
-    async fn get_entertainment_info(&self) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult{
-        corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::RestaurantInfoResult::new("entertainment:yes|stub")
-    }
-}
-
-#[async_trait::async_trait]
-impl RestaurantReservationUseCase for StubRestaurant {
-    async fn create_reservation(
-        &self,
-        _: ReservationCreateQuery,
-    ) -> Result<corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::ReservationCreatedResult, corebot_backend::core::restaurant::domain::model::ReservationError>{
-        Ok(corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::ReservationCreatedResult { reference: "REST-NEW123".to_string() })
-    }
-
-    async fn cancel_reservation(
-        &self,
-        _: ReservationCancelQuery,
-    ) -> Result<corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::ReservationCancelledResult, corebot_backend::core::restaurant::domain::model::ReservationCancelError>{
-        Ok(corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::ReservationCancelledResult { reference: "REST-NEW123".to_string() })
-    }
-
-    async fn check_reservation(&self, _: ReservationLookupQuery) -> corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::ReservationLookupResult{
-        corebot_backend::core::restaurant::application::port::inbound::restaurant_queries::ReservationLookupResult::new("no_reference_or_name:")
-    }
-}
 
 struct StubNlpAnalyzer {
     intent_name: &'static str,
@@ -187,84 +92,6 @@ impl LanguageDetectorPort for StubLanguageDetector {
     }
 }
 
-fn restaurant_gateways<T>(
-    restaurant: T,
-) -> (
-    Arc<
-        dyn corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_opening_hours_gateway_port::RestaurantOpeningHoursGatewayPort,
-    >,
-    Arc<
-        dyn corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_menu_gateway_port::RestaurantMenuGatewayPort,
-    >,
-    Arc<
-        dyn corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_menu_dietary_gateway_port::RestaurantMenuDietaryGatewayPort,
-    >,
-    Arc<
-        dyn corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_menu_item_details_gateway_port::RestaurantMenuItemDetailsGatewayPort,
-    >,
-    Arc<
-        dyn corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_price_gateway_port::RestaurantPriceGatewayPort,
-    >,
-    Arc<
-        dyn corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_location_gateway_port::RestaurantLocationGatewayPort,
-    >,
-    Arc<
-        dyn corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_contact_gateway_port::RestaurantContactGatewayPort,
-    >,
-    Arc<
-        dyn corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_payment_methods_gateway_port::RestaurantPaymentMethodsGatewayPort,
-    >,
-    Arc<
-        dyn corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_takeaway_gateway_port::RestaurantTakeawayGatewayPort,
-    >,
-    Arc<
-        dyn corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_event_gateway_port::RestaurantEventGatewayPort,
-    >,
-    Arc<
-        dyn corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_facilities_gateway_port::RestaurantFacilitiesGatewayPort,
-    >,
-    Arc<
-        dyn corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_accessibility_gateway_port::RestaurantAccessibilityGatewayPort,
-    >,
-    Arc<
-        dyn corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_entertainment_gateway_port::RestaurantEntertainmentGatewayPort,
-    >,
-    Arc<
-        dyn corebot_backend::core::conversation::application::port::outbound::restaurant::restaurant_reservation_gateway_port::RestaurantReservationGatewayPort,
-    >,
-)
-where
-    T: RestaurantAvailabilityUseCase
-        + RestaurantBusinessInfoUseCase
-        + RestaurantMenuUseCase
-        + RestaurantReservationUseCase
-        + Clone
-        + Send
-        + Sync
-        + 'static,
-{
-    let business_info_gateway = Arc::new(RestaurantBusinessInfoGateway::new(restaurant.clone()));
-    let menu_gateway = Arc::new(RestaurantMenuGateway::new(restaurant.clone()));
-    let reservation_gateway = Arc::new(RestaurantReservationGateway::new(restaurant));
-
-    (
-        business_info_gateway.clone(),
-        menu_gateway.clone(),
-        menu_gateway.clone(),
-        menu_gateway.clone(),
-        menu_gateway,
-        business_info_gateway.clone(),
-        business_info_gateway.clone(),
-        business_info_gateway.clone(),
-        business_info_gateway.clone(),
-        business_info_gateway.clone(),
-        business_info_gateway.clone(),
-        business_info_gateway.clone(),
-        business_info_gateway,
-        reservation_gateway,
-    )
-}
-
 #[derive(Clone)]
 struct FakeRepository {
     reservations: Arc<Mutex<Vec<Reservation>>>,
@@ -295,11 +122,34 @@ fn opening_hours() -> Vec<OpeningHours> {
     .into_iter()
     .map(|day| OpeningHours {
         day_of_week: day,
-        opens_at: NaiveTime::from_hms_opt(11, 0, 0).unwrap(),
+        opens_at: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
         closes_at: NaiveTime::from_hms_opt(22, 0, 0).unwrap(),
         is_closed: false,
     })
     .collect()
+}
+
+fn restaurant_parts(
+    repository: FakeRepository,
+) -> (
+    Uuid,
+    FakeRepository,
+    ConversationRestaurantMenuService<FakeRepository>,
+    ConversationRestaurantReservationService<FakeRepository, FakeRepository>,
+) {
+    let business_info_repository = repository.clone();
+    let menu_repository = repository.clone();
+    let reservation_repository = repository.clone();
+    let availability_repository = repository;
+    (
+        business_id(),
+        business_info_repository,
+        ConversationRestaurantMenuService::new(menu_repository),
+        ConversationRestaurantReservationService::new(
+            reservation_repository,
+            availability_repository,
+        ),
+    )
 }
 
 #[async_trait::async_trait]
@@ -479,47 +329,26 @@ impl RestaurantAvailabilityRepositoryPort for FakeRepository {
 }
 
 fn make_server(intent_name: &'static str) -> TestServer {
-    let restaurant = StubRestaurant;
     let processor = ConversationProcessor::new();
     let analyzer = StubNlpAnalyzer { intent_name };
     let repository = InMemoryConversationRepository::new();
     let language_detector = StubLanguageDetector;
     let (
-        opening_hours_port,
-        menu_port,
-        menu_dietary_port,
-        menu_item_details_port,
-        price_port,
-        location_port,
-        contact_port,
-        payment_methods_port,
-        takeaway_port,
-        event_port,
-        facilities_port,
-        accessibility_port,
-        entertainment_port,
-        reservation_port,
-    ) = restaurant_gateways(restaurant);
+        restaurant_context,
+        business_info_repository,
+        restaurant_menu_service,
+        restaurant_reservation_service,
+    ) = restaurant_parts(FakeRepository::new());
     let use_case = Arc::new(HandleConversationService::new(
         DomainType::Restaurant,
         processor,
         analyzer,
         repository,
         language_detector,
-        opening_hours_port,
-        menu_port,
-        menu_dietary_port,
-        menu_item_details_port,
-        price_port,
-        location_port,
-        contact_port,
-        payment_methods_port,
-        takeaway_port,
-        event_port,
-        facilities_port,
-        accessibility_port,
-        entertainment_port,
-        reservation_port,
+        restaurant_context,
+        business_info_repository,
+        restaurant_menu_service,
+        restaurant_reservation_service,
     ));
     TestServer::new(conversation_routes_with_use_case(use_case))
 }
@@ -545,55 +374,26 @@ fn entity(entity_label: &'static str, value: &str) -> NluEntityResult {
 }
 
 fn make_scripted_server(responses: Vec<NluAnalysisResult>) -> TestServer {
-    let repository = FakeRepository::new();
-    let restaurant = DatabaseRestaurantService::new(
-        business_id(),
-        "en",
-        repository.clone(),
-        repository.clone(),
-        repository.clone(),
-        repository,
-    );
+    let (
+        restaurant_context,
+        business_info_repository,
+        restaurant_menu_service,
+        restaurant_reservation_service,
+    ) = restaurant_parts(FakeRepository::new());
     let processor = ConversationProcessor::new();
     let analyzer = ScriptedNlpAnalyzer::new(responses);
     let repository = InMemoryConversationRepository::new();
     let language_detector = StubLanguageDetector;
-    let (
-        opening_hours_port,
-        menu_port,
-        menu_dietary_port,
-        menu_item_details_port,
-        price_port,
-        location_port,
-        contact_port,
-        payment_methods_port,
-        takeaway_port,
-        event_port,
-        facilities_port,
-        accessibility_port,
-        entertainment_port,
-        reservation_port,
-    ) = restaurant_gateways(restaurant);
     let use_case = Arc::new(HandleConversationService::new(
         DomainType::Restaurant,
         processor,
         analyzer,
         repository,
         language_detector,
-        opening_hours_port,
-        menu_port,
-        menu_dietary_port,
-        menu_item_details_port,
-        price_port,
-        location_port,
-        contact_port,
-        payment_methods_port,
-        takeaway_port,
-        event_port,
-        facilities_port,
-        accessibility_port,
-        entertainment_port,
-        reservation_port,
+        restaurant_context,
+        business_info_repository,
+        restaurant_menu_service,
+        restaurant_reservation_service,
     ));
     TestServer::new(conversation_routes_with_use_case(use_case))
 }

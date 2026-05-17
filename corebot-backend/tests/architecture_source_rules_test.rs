@@ -175,3 +175,21 @@ fn application_does_not_mutate_workflow_in_depth() {
         );
     }
 }
+
+#[test]
+fn restaurant_is_not_a_standalone_core_feature() {
+    assert!(
+        !Path::new("src/core/restaurant").exists(),
+        "Restaurant must not return as a standalone hexagon; chatbot restaurant behavior belongs under conversation"
+    );
+
+    for path in collect_rust_files(Path::new("src")) {
+        let source = read_source(&path);
+        assert!(
+            !source.contains("crate::core::restaurant")
+                && !source.contains("corebot_backend::core::restaurant"),
+            "File {} imports the removed restaurant hexagon",
+            path.to_string_lossy()
+        );
+    }
+}

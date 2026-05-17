@@ -23,11 +23,11 @@
 - Adapters depend on application port traits and domain types, never on use case structs directly.
 - Application code may call output ports, but output adapters must not call application use cases or application decoding/orchestration helpers.
 - Cross-feature calls must go through the target feature's public port, not through its adapter or concrete use case.
-- Target ownership is `conversation` for chatbot behavior and `configuration` or `back_office` for client-facing restaurant configuration.
-- The current `restaurant` feature is transitional. Do not add new long-lived conversation-to-restaurant gateway layers unless the change is explicitly part of an incremental migration.
-- Chatbot-facing restaurant reads and reservation workflows should move toward `conversation/application/port/outbound/restaurant` and `conversation/adapter/outbound/postgres_restaurant`.
-- Client-facing CRUD must live in a separate `configuration` or `back_office` feature, not in `conversation`.
-- `configuration` models must expose stable IDs and editable fields. Conversation projections may remain minimal and should not be stretched to serve CRUD forms.
+- Chatbot-facing restaurant behavior belongs under `conversation`.
+- Do not recreate a standalone `restaurant` hexagon or conversation-to-restaurant gateway layer.
+- Chatbot-facing restaurant reads and reservation workflows live under `conversation/application/port/outbound/restaurant`, `conversation/application/service/restaurant`, and `conversation/adapter/outbound/postgres_restaurant`.
+- Client-facing CRUD must live in a future `back_office` feature, not in `conversation`.
+- `back_office` models must expose stable IDs and editable fields. Conversation projections may remain minimal and should not be stretched to serve CRUD forms.
 
 ## Layer Responsibilities
 
@@ -78,7 +78,7 @@
 |---------|------------|---------|
 | File: command/result | `<feature>_command.rs` or `<bounded_context>_command.rs` | `conversation_command.rs` |
 | File: use case trait | `<feature>_usecase.rs` or `<capability>_usecase.rs` | `conversation_usecase.rs`, `restaurant_menu_usecase.rs` |
-| File: application service | `<service_name>.rs` | `conversation_service.rs`, `database_restaurant_service.rs` |
+| File: application service | `<service_name>.rs` | `conversation_service.rs`, `conversation_restaurant_service.rs` |
 | File: port traits | `<capability>_port.rs`, `<entity>_repository_port.rs`, or `<capability>_gateway_port.rs` | `conversation_repository_port.rs`, `restaurant_menu_gateway_port.rs` |
 | File: HTTP DTOs | `<action>_<feature>_dto.rs` | `send_message_dto.rs` |
 | File: mapper | `<action>_<feature>_mapper.rs` | `send_message_mapper.rs` |
@@ -127,7 +127,7 @@ src/core/<feature>/
         `-- <concrete_dependency>.rs
 ```
 
-Current and target chatbot restaurant structure under `conversation`:
+Current chatbot restaurant structure under `conversation`:
 
 ```text
 src/core/conversation/
@@ -150,16 +150,15 @@ src/core/conversation/
 |               |-- business_info_queries.rs
 |               |-- menu_queries.rs
 |               |-- reservation_queries.rs
-|               |-- restaurant_business_info_gateway_port.rs
+|               |-- restaurant_business_info_repository_port.rs
+|               |-- restaurant_opening_hours_gateway_port.rs
 |               |-- restaurant_menu_gateway_port.rs
+|               |-- restaurant_menu_repository_port.rs
 |               `-- restaurant_reservation_gateway_port.rs
 `-- adapter/
     |-- inbound/web/
     `-- outbound/
         |-- nlu_engine_gateway.rs
-        |-- restaurant_business_info_gateway.rs
-        |-- restaurant_menu_gateway.rs
-        |-- restaurant_reservation_gateway.rs
         `-- postgres_restaurant/
             |-- business_info/
             |   |-- business_info_repository.rs
@@ -189,7 +188,7 @@ Rules for this area:
 Target client configuration structure:
 
 ```text
-src/core/configuration/
+src/core/back_office/
 |-- domain/
 |   |-- menu/
 |   |-- business_info/
@@ -210,10 +209,10 @@ src/core/configuration/
 
 Rules for this area:
 
-- `configuration` or `back_office` owns client-facing CRUD and setup screens.
+- `back_office` owns client-facing CRUD and setup screens.
 - Use stable IDs and complete editable records here.
 - Do not reuse conversation reply projections as CRUD view models.
-- Organize configuration code by editable business responsibility rather than by technical layer alone.
+- Organize back-office code by editable business responsibility rather than by technical layer alone.
 
 ## Testing Rules
 
@@ -232,5 +231,5 @@ Rules for this area:
 - The NLU engine owns intent classification and entity extraction when the local ONNX runtime is used.
 - Do not duplicate model inference with keyword classifiers in conversation code.
 - Sessions are in-memory for v1 and must not be treated as durable storage.
-- Restaurant data used by chatbot replies is read through conversation-owned restaurant ports in the target architecture.
-- Restaurant configuration for clients belongs in `configuration` or `back_office`, even when it writes to the same PostgreSQL tables used by conversation.
+- Restaurant data used by chatbot replies is read through conversation-owned restaurant ports.
+- Restaurant configuration for clients belongs in `back_office`, even when it writes to the same PostgreSQL tables used by conversation.
