@@ -67,7 +67,7 @@ impl RestaurantHandlerRegistryFactory {
             Box::new(AskPaymentMethodsIntentHandler::new(
                 business_info_repository,
             )),
-            Box::new(AskPriceIntentHandler::new(menu_service)),
+            Box::new(AskPriceIntentHandler::new(menu_service, business_info_repository)),
             Box::new(AskTakeawayDeliveryIntentHandler::new(
                 business_info_repository,
             )),

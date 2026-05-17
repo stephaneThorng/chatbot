@@ -1,18 +1,8 @@
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PriceFilter {
-    pub comparator: String,
-    pub amount: String,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct MenuQuery {
-    pub price_item: Option<String>,
-    pub price_filter: Option<PriceFilter>,
-}
+use crate::core::conversation::domain::restaurant::model::AmountComparator;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct MenuDietaryQuery {
-    pub dietary_requirement: Option<String>,
+    pub dietary_requirements: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -24,5 +14,15 @@ pub struct MenuItemDetailsQuery {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PriceQuery {
     pub item: Option<String>,
-    pub price_filter: Option<PriceFilter>,
+    pub price_filter: Option<AmountComparator>,
+    pub cheapest_only: bool,
+    pub exclude_item: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MenuQuery {
+    pub price_item: Option<String>,
+    pub price_filter: Option<AmountComparator>,
+    pub cheapest_only: bool,
+    pub exclude_item: bool,
 }

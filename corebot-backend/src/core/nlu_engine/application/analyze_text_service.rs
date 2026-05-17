@@ -105,36 +105,30 @@ fn log_nlu_engine_output(analysis: &NluAnalysis) {
         return;
     }
 
-    let intents = if analysis.intents.is_empty() {
-        "-".to_string()
-    } else {
-        analysis
-            .intents
-            .iter()
-            .map(|intent| format!("{}:{:.3}", intent.name, intent.confidence))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    let entities = if analysis.entities.is_empty() {
-        "-".to_string()
-    } else {
-        analysis
-            .entities
-            .iter()
-            .map(|entity| {
-                format!(
-                    "{:?}={}({}-{})",
-                    entity.entity_type, entity.value, entity.start, entity.end
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
+    let entities = format_engine_entities(analysis);
 
     println!(
-        "[nlu-engine][output] intent={}:{:.3} candidates=[{}] entities=[{}]",
-        analysis.intent.name, analysis.intent.confidence, intents, entities,
+        "[nlu-engine][output] intent={}:{:.3} entities=[{}]",
+        analysis.intent.name, analysis.intent.confidence, entities,
     );
+}
+
+fn format_engine_entities(analysis: &NluAnalysis) -> String {
+    if analysis.entities.is_empty() {
+        return "-".to_string();
+    }
+
+    analysis
+        .entities
+        .iter()
+        .map(|entity| {
+            format!(
+                "{:?}={}({}-{})",
+                entity.entity_type, entity.value, entity.start, entity.end
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[cfg(test)]

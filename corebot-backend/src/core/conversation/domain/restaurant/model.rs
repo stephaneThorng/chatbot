@@ -3,9 +3,13 @@ use std::collections::BTreeMap;
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Weekday};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MenuPriceFilter {
-    pub comparator: String,
-    pub amount: String,
+pub enum AmountComparator {
+    Equal(i32),
+    Above(i32),
+    Under(i32),
+    AtLeast(i32),
+    AtMost(i32),
+    Between(i32, i32),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

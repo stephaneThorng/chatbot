@@ -74,16 +74,16 @@ VALUES = {
         "June 12",
     ],
     "time": [
-        "7pm",
-        "8:30pm",
-        "19:00",
+        "8am",
+        "9am",
+        "10:30am",
         "noon",
-        "6 pm",
-        "7:30 pm",
+        "1 pm",
+        "3:30 pm",
         "midday",
-        "20:30",
-        "9 am",
-        "18:45",
+        "16:30",
+        "5:45 pm",
+        "18:00",
     ],
     "people_count": [
         "1 person",
@@ -100,52 +100,58 @@ VALUES = {
         "10 guests",
     ],
     "menu_item": [
-        "pizza",
-        "salad",
-        "chocolate cake",
-        "fried rice",
-        "vegetarian pasta",
-        "seafood soup",
-        "beef burger",
-        "chicken satay",
-        "vegan curry",
-        "kids pasta",
+        "chicken spring rolls",
+        "green papaya salad",
+        "chicken satay skewers",
+        "nasi goreng special",
+        "yellow tofu curry",
+        "bali wagyu burger",
+        "grilled mahi-mahi",
+        "mango sticky rice",
+        "chocolate lava cake",
+        "homemade kombucha",
+        "bintang radler",
+        "beef",
+        "beer",
+        "alcohol",
+        "children menu",
     ],
     "price_item": [
-        "set menu",
-        "dessert menu",
-        "lunch special",
-        "kids menu",
-        "tasting menu",
-        "breakfast menu",
-        "family menu",
+        "chicken spring rolls",
+        "green papaya salad",
+        "yellow tofu curry",
+        "bali wagyu burger",
+        "mango sticky rice",
+        "homemade kombucha",
+        "bintang radler",
+        "beef",
     ],
     "location": [
-        "downtown",
-        "near the station",
-        "main branch",
-        "terrace",
-        "private room",
-        "city center",
-        "by the river",
+        "Sanur",
+        "Denpasar",
+        "Bali",
+        "Jl. Batur Sari",
+        "Sanur branch",
+        "the cafe in Sanur",
+        "Batur Sari",
     ],
     "phone": [
-        "+33123456789",
-        "01 23 45 67 89",
+        "+628881112222",
+        "+62 888-111-2222",
+        "+62 361 555 0101",
     ],
     "email": [
-        "booking@example.com",
-        "events@example.com",
-        "hello@example.com",
+        "hello@korukulture.example.com",
+        "manager@korukulture.example.com",
+        "booking@korukulture.example.com",
     ],
     "dietary_requirement": [
         "vegan",
-        "vegetarian",
-        "halal",
         "gluten-free",
-        "lactose-free",
+        "gluten free",
         "dairy-free",
         "nut-free",
+        "nuts free",
     ],
     "allergen": [
         "gluten",
@@ -153,58 +159,64 @@ VALUES = {
         "peanuts",
         "dairy",
         "eggs",
-        "shellfish",
+        "fish",
         "soy",
         "sesame",
+        "tree nuts",
+        "crustaceans",
     ],
     "facility": [
         "parking",
         "wifi",
-        "high chairs",
-        "outdoor seating",
-        "outdoor seats",
-        "private room",
         "bike parking",
+        "motorbike parking",
+        "high chairs",
         "baby seat",
+        "outdoor seating",
+        "private room",
+        "ac",
+        "air conditioning",
     ],
     "payment_method": [
         "credit card",
         "cash",
-        "Apple Pay",
-        "Google Pay",
+        "debit card",
+        "GoPay",
+        "Qris",
         "Visa",
         "Mastercard",
-        "contactless",
+        "debit or credit card",
     ],
     "reservation_reference": [
-        "REST-ABC123",
-        "REST-ZX90K2",
-        "REST-2026A1",
-        "REST-7F4K2A",
-        "REST-MN45QP",
-        "REST-9X8Y7Z",
-        "REST-BOOK42",
-        "REST-CXL777",
-        "REST-A1B2C3",
-        "REST-TABLE9",
+        "REST-KORU01",
+        "REST-KORU02",
+        "REST-KORU03",
+        "REST-KORU04",
+        "REST-KORU05",
+        "REST-KORU06",
+        "REST-KORU07",
+        "REST-KORU08",
+        "REST-KORU09",
+        "REST-KORU10",
     ],
     "price_comparator": [
         "under",
         "less than",
         "below",
+        "above",
         "greater than",
         "more than",
         "over",
     ],
     "price_amount": [
-        "20 euros",
-        "$30",
-        "15 euros",
-        "25 dollars",
-        "10 euros",
-        "50 euros",
-        "$45",
-        "35 dollars",
+        "35k idr",
+        "45k idr",
+        "60k idr",
+        "100k idr",
+        "120k idr",
+        "150k idr",
+        "15 eur",
+        "10",
     ],
 }
 
@@ -336,6 +348,8 @@ def reservation_create_row(rng: random.Random, task: str | None) -> dict[str, An
     time = pick(rng, "time")
     people = pick(rng, "people_count")
     people_digits = re.search(r"\d+", people).group(0)
+    adult_count = rng.choice(["1", "2", "3", "4"])
+    child_count = rng.choice(["1", "2"])
 
     if task == "WF_RESERVATION_CREATE":
         templates = [
@@ -367,6 +381,10 @@ def reservation_create_row(rng: random.Random, task: str | None) -> dict[str, An
                     ("time", time),
                 ],
             ),
+            (
+                "{adult_count} adults and {child_count} children",
+                [("people_count", adult_count), ("people_count", child_count)],
+            ),
         ]
     else:
         templates = [
@@ -385,6 +403,8 @@ def reservation_create_row(rng: random.Random, task: str | None) -> dict[str, An
             ("can you book a table for me", []),
             ("i would like to reserve a table", []),
             ("help me book a reservation", []),
+            ("i would like to make another booking", []),
+            ("i need another booking", []),
             ("{person}", [("person", person)]),
             ("for {people}", [("people_count", people_digits)]),
             ("{date}", [("date", date)]),
@@ -437,6 +457,15 @@ def reservation_create_row(rng: random.Random, task: str | None) -> dict[str, An
                 "i want a table for {people} {date} at {time}",
                 [("people_count", people_digits), ("date", date), ("time", time)],
             ),
+            (
+                "{adult_count} adults and {child_count} children {date} at {time}",
+                [
+                    ("people_count", adult_count),
+                    ("people_count", child_count),
+                    ("date", date),
+                    ("time", time),
+                ],
+            ),
         ]
 
     template, entities = rng.choice(templates)
@@ -447,6 +476,8 @@ def reservation_create_row(rng: random.Random, task: str | None) -> dict[str, An
             time=time,
             people=people,
             people_digits=people_digits,
+            adult_count=adult_count,
+            child_count=child_count,
         ),
         "reservation_create",
         entities,
@@ -755,6 +786,9 @@ def informational_row(rng: random.Random, intent: str) -> dict[str, Any]:
     phone = pick(rng, "phone")
     email = pick(rng, "email")
     dietary = pick(rng, "dietary_requirement")
+    second_dietary = pick(rng, "dietary_requirement")
+    if second_dietary == dietary:
+        second_dietary = "nut-free" if dietary != "nut-free" else "gluten-free"
     allergen = pick(rng, "allergen")
     facility = pick(rng, "facility")
     payment = pick(rng, "payment_method")
@@ -829,6 +863,10 @@ def informational_row(rng: random.Random, intent: str) -> dict[str, Any]:
             ("what are your opening hours", []),
             ("what time do you close", []),
             ("are you open {date} at {time}", [("date", date), ("time", time)]),
+            ("are you open right now", []),
+            ("do you have any availability right now", []),
+            ("do you have any availability right now ?", []),
+            ("are you open now", []),
         ],
         "ask_menu_general": [
             ("can you give me the menu", []),
@@ -844,10 +882,21 @@ def informational_row(rng: random.Random, intent: str) -> dict[str, Any]:
             ("what is in the {price_item}", [("price_item", price_item)]),
             ("can i see the {price_item}", [("price_item", price_item)]),
             ("tell me about the {menu_item}", [("menu_item", menu_item)]),
+            ("menu with {menu_item}", [("menu_item", menu_item)]),
+            ("menu without {menu_item}", [("menu_item", menu_item)]),
+            ("show me dishes without {menu_item}", [("menu_item", menu_item)]),
+            ("show me dishes with {menu_item}", [("menu_item", menu_item)]),
+            ("give me menu without {menu_item}", [("menu_item", menu_item)]),
+            ("do you serve {menu_item}", [("menu_item", menu_item)]),
+            ("do you have {menu_item}", [("menu_item", menu_item)]),
             ("do you have meals {condition}", condition_entities),
             ("show me dishes {condition}", condition_entities),
             ("what menu items are {condition}", condition_entities),
             ("show me options {condition}", condition_entities),
+            ("what are the menu {condition}", condition_entities),
+            ("what are the dishes {condition}", condition_entities),
+            ("what are the menu under 15 eur", [("price_comparator", "under"), ("price_amount", "15 eur")]),
+            ("what are the dishes under 10", [("price_comparator", "under"), ("price_amount", "10")]),
         ],
         "ask_menu_dietary": [
             ("do you have {dietary} dishes", [("dietary_requirement", dietary)]),
@@ -864,6 +913,13 @@ def informational_row(rng: random.Random, intent: str) -> dict[str, Any]:
             ("are there any {dietary} meals", [("dietary_requirement", dietary)]),
             ("can you suggest {dietary} dishes", [("dietary_requirement", dietary)]),
             ("what can i eat if i need {dietary} food", [("dietary_requirement", dietary)]),
+            (
+                "do you have {dietary} and {second_dietary} dishes",
+                [
+                    ("dietary_requirement", dietary),
+                    ("dietary_requirement", second_dietary),
+                ],
+            ),
         ],
         "ask_menu_item_details": [
             (
@@ -928,16 +984,24 @@ def informational_row(rng: random.Random, intent: str) -> dict[str, Any]:
         "ask_price": [
             ("how much is the {price_item}", [("price_item", price_item)]),
             ("what is the price of the {menu_item}", [("menu_item", menu_item)]),
+            ("do the price in menu include taxes", []),
             ("what costs {condition}", condition_entities),
             ("do you have dishes {condition}", condition_entities),
             (
                 "is the {menu_item} {condition}",
                 [("menu_item", menu_item), *condition_entities],
             ),
+            ("what is your cheapest dish", []),
+            ("what are your cheapest dishes", []),
+            ("what are the menu under 15 eur", [("price_comparator", "under"), ("price_amount", "15 eur")]),
+            ("what are the dishes under 10", [("price_comparator", "under"), ("price_amount", "10")]),
+            ("show me dishes above 60k idr", [("price_comparator", "above"), ("price_amount", "60k idr")]),
         ],
         "ask_takeaway_delivery": [
             ("do you offer takeaway", []),
             ("do you offer delivery", []),
+            ("can i order a beef and get delivered", []),
+            ("do you deliver to paris", []),
             ("can i order food to go", []),
             ("is takeaway available", []),
             ("can i pick up an order", []),
@@ -994,6 +1058,8 @@ def informational_row(rng: random.Random, intent: str) -> dict[str, Any]:
             ("do you have {facility}", [("facility", facility)]),
             ("is there {facility}", [("facility", facility)]),
             ("do you have parking", [("facility", "parking")]),
+            ("do you have parking ?", [("facility", "parking")]),
+            ("do you have ac in the restaurant", [("facility", "ac")]),
             ("do you have outdoor seats", [("facility", "outdoor seats")]),
             ("is {facility} available", [("facility", facility)]),
             ("do you offer {facility}", [("facility", facility)]),
@@ -1045,6 +1111,7 @@ def informational_row(rng: random.Random, intent: str) -> dict[str, Any]:
             phone=phone,
             email=email,
             dietary=dietary,
+            second_dietary=second_dietary,
             allergen=allergen,
             facility=facility,
             payment=payment,
@@ -1106,11 +1173,68 @@ def mandatory_rows_for(task: str | None, intent: str) -> list[dict[str, Any]]:
             row("for 4 guests", "reservation_create", [("people_count", "4")], task),
             row("for 10 guests", "reservation_create", [("people_count", "10")], task),
             row(
+                "2 adults and 1 child",
+                "reservation_create",
+                [("people_count", "2"), ("people_count", "1")],
+                task,
+            ),
+            row(
                 "tomorrow at 7pm",
                 "reservation_create",
                 [("date", "tomorrow"), ("time", "7pm")],
                 task,
             ),
+        ]
+    if task is None and intent == "reservation_create":
+        return [
+            row("i would like to make another booking", "reservation_create"),
+        ]
+    if task is None and intent == "ask_opening_hours":
+        return [
+            row("do you have any availability right now", "ask_opening_hours"),
+        ]
+    if task is None and intent == "ask_menu_dietary":
+        return [
+            row(
+                "do you have gluten free and nuts free dishes",
+                "ask_menu_dietary",
+                [
+                    ("dietary_requirement", "gluten free"),
+                    ("dietary_requirement", "nuts free"),
+                ],
+            ),
+        ]
+    if task is None and intent == "ask_menu_general":
+        return [
+            row("show me dishes without beef", "ask_menu_general", [("menu_item", "beef")]),
+            row("give me menu without beef", "ask_menu_general", [("menu_item", "beef")]),
+            row("do you serve beer", "ask_menu_general", [("menu_item", "beer")]),
+            row("do you serve alcohol", "ask_menu_general", [("menu_item", "alcohol")]),
+        ]
+    if task is None and intent == "ask_price":
+        return [
+            row("what are your cheapest dishes", "ask_price"),
+            row("do the price in menu include taxes", "ask_price"),
+            row(
+                "what are the menu under 15 eur",
+                "ask_price",
+                [("price_comparator", "under"), ("price_amount", "15 eur")],
+            ),
+            row(
+                "what are the dishes under 10",
+                "ask_price",
+                [("price_comparator", "under"), ("price_amount", "10")],
+            ),
+        ]
+    if task is None and intent == "ask_facilities":
+        return [
+            row("do you have parking ?", "ask_facilities", [("facility", "parking")]),
+            row("do you have ac in the restaurant", "ask_facilities", [("facility", "ac")]),
+        ]
+    if task is None and intent == "ask_takeaway_delivery":
+        return [
+            row("do you deliver to paris", "ask_takeaway_delivery"),
+            row("can i order a beef and get delivered", "ask_takeaway_delivery"),
         ]
     if task == "WF_CHOICE" and intent == "affirmative":
         return [

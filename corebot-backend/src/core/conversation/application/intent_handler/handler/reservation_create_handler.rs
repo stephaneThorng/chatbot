@@ -132,11 +132,13 @@ where
             conversation.clear_workflow_slot(SlotName::Time);
             return WorkflowPostProcessResult::Failed {
                 updated_conversation: conversation,
-                reply: rust_i18n::t!(
-                    "workflow.reservation_create.slot.date.prompt",
-                    locale = lang
-                )
-                .to_string(),
+                reply: vec![
+                    rust_i18n::t!(
+                        "workflow.reservation_create.slot.date.prompt",
+                        locale = lang
+                    )
+                    .to_string(),
+                ],
             };
         };
 
@@ -144,11 +146,13 @@ where
             conversation.clear_workflow_slot(SlotName::Time);
             return WorkflowPostProcessResult::Failed {
                 updated_conversation: conversation,
-                reply: rust_i18n::t!(
-                    "workflow.reservation_create.time_invalid.error",
-                    locale = lang
-                )
-                .to_string(),
+                reply: vec![
+                    rust_i18n::t!(
+                        "workflow.reservation_create.time_invalid.error",
+                        locale = lang
+                    )
+                    .to_string(),
+                ],
             };
         };
 
@@ -174,9 +178,9 @@ where
                 conversation.remember_reservation_reference(reference.clone());
                 WorkflowPostProcessResult::Succeeded {
                     updated_conversation: conversation,
-                    reply: Some(reservation_create_presenter::completion_summary(
+                    reply: Some(vec![reservation_create_presenter::completion_summary(
                         &slots, &reference, lang,
-                    )),
+                    )]),
                 }
             }
             Err(ReservationFailure::RestaurantClosed) => {
@@ -184,8 +188,13 @@ where
                 conversation.clear_workflow_slot(SlotName::Time);
                 WorkflowPostProcessResult::Failed {
                     updated_conversation: conversation,
-                    reply: rust_i18n::t!("workflow.reservation_create.closed.error", locale = lang)
+                    reply: vec![
+                        rust_i18n::t!(
+                            "workflow.reservation_create.closed.error",
+                            locale = lang
+                        )
                         .to_string(),
+                    ],
                 }
             }
             Err(ReservationFailure::NoAvailability { next_slot }) => {
@@ -206,7 +215,7 @@ where
                 };
                 WorkflowPostProcessResult::Failed {
                     updated_conversation: conversation,
-                    reply,
+                    reply: vec![reply],
                 }
             }
         }
@@ -227,8 +236,8 @@ mod tests {
     use crate::core::conversation::domain::conversation::Conversation;
     use crate::core::conversation::domain::domain_type::DomainType;
     use crate::core::conversation::domain::restaurant::model::{
-        BusinessFact, BusinessLocation, ContactChannel, EventSpace, Facility, MenuItem,
-        MenuPriceFilter, OpeningHours, PaymentMethod, Reservation, ReservationDraft,
+        AmountComparator, BusinessFact, BusinessLocation, ContactChannel, EventSpace, Facility,
+        MenuItem, OpeningHours, PaymentMethod, Reservation, ReservationDraft,
         ReservationSettings, RestaurantRepositoryError, TableType,
     };
     use crate::core::conversation::domain::model::slot::{SlotDataValue, SlotName};
@@ -310,7 +319,7 @@ mod tests {
             &self,
             _: Uuid,
             _: &str,
-            _: &MenuPriceFilter,
+            _: &AmountComparator,
         ) -> Result<Vec<MenuItem>, RestaurantRepositoryError> {
             Ok(vec![])
         }
@@ -474,15 +483,15 @@ mod tests {
         })
     }
 
+    fn reply_text(reply: &[String]) -> String {
+        reply.join("\n")
+    }
+
     #[test]
     fn idle_workflow_prompts_for_first_missing_slot() {
         let conversation = Conversation::new(DomainType::Restaurant);
         let result = handle(conversation, IntentId::ReservationCreate, "", vec![]);
-        assert!(
-            result
-                .reply
-                .ends_with("What name should I use for the reservation?")
-        );
+        assert!(reply_text(&result.reply).ends_with("What name should I use for the reservation?"));
         assert!(result.updated_conversation.has_active_workflow());
     }
 
@@ -504,7 +513,7 @@ mod tests {
             workflow.slot_value(SlotName::Name),
             Some(&SlotDataValue::Text("Alice".to_string()))
         );
-        assert!(result.reply.ends_with("For how many people?"));
+        assert!(reply_text(&result.reply).ends_with("For how many people?"));
     }
 
     #[test]
@@ -521,10 +530,10 @@ mod tests {
                 entity("people_count", "4"),
             ],
         );
-        assert!(result.reply.contains("Alice"));
-        assert!(result.reply.contains("19:00"));
-        assert!(result.reply.contains("4 people"));
-        assert!(result.reply.contains("Do you confirm"));
+        assert!(reply_text(&result.reply).contains("Alice"));
+        assert!(reply_text(&result.reply).contains("19:00"));
+        assert!(reply_text(&result.reply).contains("4 people"));
+        assert!(reply_text(&result.reply).contains("Do you confirm"));
     }
 
     #[test]
@@ -551,9 +560,9 @@ mod tests {
             workflow.slot_value(SlotName::People),
             Some(&SlotDataValue::Number(10))
         );
-        assert!(result.reply.contains("10 people"));
-        assert!(result.reply.contains("19:00"));
-        assert!(result.reply.contains("Do you confirm"));
+        assert!(reply_text(&result.reply).contains("10 people"));
+        assert!(reply_text(&result.reply).contains("19:00"));
+        assert!(reply_text(&result.reply).contains("Do you confirm"));
     }
 
     #[test]
@@ -580,9 +589,9 @@ mod tests {
             workflow.slot_value(SlotName::People),
             Some(&SlotDataValue::Number(6))
         );
-        assert!(result.reply.contains("6 people"));
-        assert!(result.reply.contains("19:00"));
-        assert!(result.reply.contains("Do you confirm"));
+        assert!(reply_text(&result.reply).contains("6 people"));
+        assert!(reply_text(&result.reply).contains("19:00"));
+        assert!(reply_text(&result.reply).contains("Do you confirm"));
     }
 
     #[test]
@@ -600,7 +609,7 @@ mod tests {
         )
         .updated_conversation;
         let result = handle(conversation, IntentId::Negative, "", vec![]);
-        assert_eq!(result.reply, "Okay. What would you like to change?");
+        assert_eq!(reply_text(&result.reply), "Okay. What would you like to change?");
         assert!(result.updated_conversation.has_active_workflow());
     }
 
@@ -624,7 +633,7 @@ mod tests {
             "",
             vec![entity("people_count", "5")],
         );
-        assert!(result.reply.contains("Do you confirm"));
+        assert!(reply_text(&result.reply).contains("Do you confirm"));
         let workflow = result.updated_conversation.active_workflow().unwrap();
         assert_eq!(
             workflow.slot_value(SlotName::People),
@@ -647,7 +656,7 @@ mod tests {
         )
         .updated_conversation;
         let result = handle(conversation, IntentId::Affirmative, "", vec![]);
-        assert!(result.reply.contains("REST-000001"));
+        assert!(reply_text(&result.reply).contains("REST-000001"));
         assert!(result.updated_conversation.is_idle());
         assert_eq!(
             result.updated_conversation.known_customer_name(),
@@ -668,10 +677,7 @@ mod tests {
             "",
             vec![entity("person", "Alice"), entity("date", "2000-01-01")],
         );
-        assert_eq!(
-            result.reply,
-            "That date is in the past. Please provide a future date."
-        );
+        assert_eq!(reply_text(&result.reply), "That date is in the past. Please provide a future date.");
         assert!(result.updated_conversation.has_active_workflow());
         assert!(
             result
@@ -697,7 +703,7 @@ mod tests {
                 entity("people_count", "50"),
             ],
         );
-        assert!(!result.reply.contains("Do you confirm"));
+        assert!(!reply_text(&result.reply).contains("Do you confirm"));
         assert!(result.updated_conversation.has_active_workflow());
     }
 
@@ -724,7 +730,7 @@ mod tests {
                 analysis_entities: &[],
             },
         );
-        assert!(result.reply.contains("21:00"));
+        assert!(reply_text(&result.reply).contains("21:00"));
         assert!(result.updated_conversation.has_active_workflow());
         let wf = result.updated_conversation.active_workflow().unwrap();
         assert!(wf.slot_value(SlotName::Date).is_none());
@@ -756,9 +762,9 @@ mod tests {
         );
 
         assert!(
-            result.reply.contains("closed")
-                || result.reply.contains("opening hours")
-                || result.reply.contains("horaires")
+            reply_text(&result.reply).contains("closed")
+                || reply_text(&result.reply).contains("opening hours")
+                || reply_text(&result.reply).contains("horaires")
         );
         assert!(result.updated_conversation.has_active_workflow());
         let wf = result.updated_conversation.active_workflow().unwrap();

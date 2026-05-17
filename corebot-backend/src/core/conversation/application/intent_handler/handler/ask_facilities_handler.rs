@@ -38,14 +38,17 @@ where
 
     async fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
-        let facility = self.lookup_entity_value(&input, "facility");
+        let facility = self
+            .lookup_entity_value(&input, "facility")
+            .map(str::to_string);
         let reply = match self
             .business_info_repository
             .facilities(input.conversation.business_id)
             .await
         {
             Ok(facilities) => {
-                if let Some(facility) = facility {
+                let requested = facility.or_else(|| infer_facility_from_text(input.text, &facilities));
+                if let Some(facility) = requested.as_deref() {
                     if facilities
                         .iter()
                         .any(|candidate| facility_matches(&candidate.label, facility))
@@ -68,11 +71,12 @@ where
                     t!(
                         "intent.ask_facilities.all.reply",
                         locale = lang,
-                        facilities = facilities
-                            .iter()
-                            .map(|facility| facility.label.clone())
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                        facilities = format_bullet_list(
+                            &facilities
+                                .iter()
+                                .map(|facility| facility.label.clone())
+                                .collect::<Vec<_>>()
+                        )
                     )
                     .to_string()
                 }
@@ -81,8 +85,38 @@ where
         };
         StateHandlerResult {
             updated_conversation: input.conversation,
-            reply,
+            reply: vec![reply],
             handled_intent: self.intent(),
         }
     }
+}
+
+fn infer_facility_from_text(
+    text: &str,
+    facilities: &[crate::core::conversation::domain::restaurant::model::Facility],
+) -> Option<String> {
+    let normalized = text.to_lowercase();
+    if normalized.contains("parking") {
+        return Some("parking".to_string());
+    }
+    if normalized.contains(" air conditioning")
+        || normalized.starts_with("ac ")
+        || normalized.ends_with(" ac")
+        || normalized.contains(" ac ")
+    {
+        return Some("ac".to_string());
+    }
+
+    facilities
+        .iter()
+        .find(|facility| normalized.contains(&facility.label.to_lowercase()))
+        .map(|facility| facility.label.clone())
+}
+
+fn format_bullet_list(values: &[String]) -> String {
+    values
+        .iter()
+        .map(|value| format!("- {value}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }

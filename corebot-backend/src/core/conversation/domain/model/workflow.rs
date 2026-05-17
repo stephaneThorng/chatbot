@@ -88,6 +88,10 @@ impl Workflow {
         self.confirmed = true;
     }
 
+    pub fn reopen_confirmation(&mut self) {
+        self.confirmed = false;
+    }
+
     /// Remove a slot value (used to clear an invalid slot after a constraint violation).
     pub fn clear_slot(&mut self, slot_name: SlotName) {
         self.slot_bag.remove(slot_name);

@@ -9,5 +9,5 @@ pub struct SendMessageRequest {
 #[derive(Debug, Serialize)]
 pub struct SendMessageResponse {
     pub session_id: String,
-    pub reply: String,
+    pub reply: Vec<String>,
 }

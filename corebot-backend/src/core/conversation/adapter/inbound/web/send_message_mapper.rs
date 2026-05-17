@@ -50,10 +50,10 @@ mod tests {
     fn result_maps_to_response() {
         let result = HandleConversationResult {
             session_id: "sess-42".to_string(),
-            reply: "Hello!".to_string(),
+            reply: vec!["Hello!".to_string()],
         };
         let response: SendMessageResponse = result.into();
         assert_eq!(response.session_id, "sess-42");
-        assert_eq!(response.reply, "Hello!");
+        assert_eq!(response.reply, vec!["Hello!".to_string()]);
     }
 }

@@ -33,7 +33,7 @@ impl IntentHandler for StaticReplyIntentHandler {
         let reply = t!(self.reply_key, locale = input.conversation.lang.as_str()).to_string();
         StateHandlerResult {
             updated_conversation: input.conversation,
-            reply,
+            reply: vec![reply],
             handled_intent: self.intent(),
         }
     }

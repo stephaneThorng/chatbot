@@ -50,7 +50,7 @@ where
             .unwrap_or_else(|_| "hours_unavailable:".to_string());
         StateHandlerResult {
             updated_conversation: input.conversation,
-            reply,
+            reply: vec![reply],
             handled_intent: self.intent(),
         }
     }

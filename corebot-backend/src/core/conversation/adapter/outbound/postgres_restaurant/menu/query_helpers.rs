@@ -87,12 +87,13 @@ pub(crate) async fn hydrate_menu_items(
         .collect())
 }
 
-pub(crate) fn parse_price_amount(amount: &str) -> Option<i32> {
-    amount
-        .replace("euros", "")
-        .replace("dollars", "")
-        .replace('$', "")
-        .trim()
-        .parse::<i32>()
-        .ok()
+#[cfg(test)]
+mod tests {
+    use crate::core::conversation::domain::restaurant::model::AmountComparator;
+
+    #[test]
+    fn amount_comparator_between_is_orderable() {
+        let comparator = AmountComparator::Between(10, 20);
+        assert_eq!(comparator, AmountComparator::Between(10, 20));
+    }
 }

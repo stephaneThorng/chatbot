@@ -21,6 +21,7 @@ use crate::core::conversation::application::dto::nlu_analysis_result::NluAnalysi
 use crate::core::conversation::domain::conversation::Conversation;
 use crate::core::conversation::domain::conversation_id::ConversationId;
 use crate::core::conversation::domain::domain_type::DomainType;
+use rust_i18n::t;
 use uuid::Uuid;
 
 pub struct HandleConversationService<N, CR, L, B, M, RR, A>
@@ -57,7 +58,7 @@ where
     A: RestaurantAvailabilityRepositoryPort + Send + Sync,
 {
     async fn handle_message(&self, command: HandleConversationCommand) -> HandleConversationResult {
-        let (conversation, session_id) =
+        let (conversation, session_id, is_new_session) =
             self.load_or_create_conversation(command.session_id.as_deref(), &command.message);
         let analysis = self.nlu_engine_gateway.analyze(
             &command.message,
@@ -78,6 +79,7 @@ where
             }
             DomainType::Hotel => IntentHandlerRegistry::new(vec![]),
         };
+        let welcome_lang = conversation.lang.clone();
         let process_result = self
             .processor
             .process_async(
@@ -92,9 +94,17 @@ where
             .conversation_repository
             .save(&process_result.updated_conversation);
 
+        let mut reply = process_result.reply;
+        if is_new_session {
+            reply.insert(
+                0,
+                t!("system.welcome", locale = welcome_lang.as_str()).to_string(),
+            );
+        }
+
         HandleConversationResult {
             session_id,
-            reply: process_result.reply,
+            reply,
         }
     }
 }
@@ -157,11 +167,11 @@ where
         &self,
         session_id: Option<&str>,
         message: &str,
-    ) -> (Conversation, String) {
+    ) -> (Conversation, String, bool) {
         let parsed_id = session_id.and_then(|id| ConversationId::from_str(id).ok());
         if let Some(conversation_id) = parsed_id {
             if let Ok(Some(conversation)) = self.conversation_repository.load(&conversation_id) {
-                return (conversation, conversation_id.to_string());
+                return (conversation, conversation_id.to_string(), false);
             }
 
             let mut conversation = Conversation::with_id_for_business(
@@ -170,14 +180,14 @@ where
                 self.restaurant_business_id,
             );
             conversation.lang = self.language_detector.detect(message);
-            return (conversation, conversation_id.to_string());
+            return (conversation, conversation_id.to_string(), true);
         }
 
         let mut conversation =
             Conversation::new_for_business(self.domain, self.restaurant_business_id);
         conversation.lang = self.language_detector.detect(message);
         let session_id = conversation.id.to_string();
-        (conversation, session_id)
+        (conversation, session_id, true)
     }
 
     fn log_nlu_analysis(
@@ -199,16 +209,6 @@ where
             .detect_slot_hint()
             .map(|value| value.as_str().to_string())
             .unwrap_or_else(|| "-".to_string());
-        let intents = if analysis.intent_candidates.is_empty() {
-            "-".to_string()
-        } else {
-            analysis
-                .intent_candidates
-                .iter()
-                .map(|intent| format!("{}:{:.3}", intent.name, intent.confidence))
-                .collect::<Vec<_>>()
-                .join(", ")
-        };
         let entities = if analysis.entities.is_empty() {
             "-".to_string()
         } else {
@@ -221,14 +221,13 @@ where
         };
 
         println!(
-            "[nlu] session={session_id} domain={} lang={} task={} slot={} text={message:?} intent={}:{:.3} candidates=[{}] entities=[{}]",
+            "[nlu] session={session_id} domain={} lang={} task={} slot={} text={message:?} intent={}:{:.3} entities=[{}]",
             conversation.domain.as_str(),
             conversation.lang,
             task,
             slot,
             analysis.intent_name,
             analysis.intent_confidence,
-            intents,
             entities,
         );
     }
@@ -274,8 +273,8 @@ mod tests {
     };
     use crate::core::conversation::domain::model::intent::NluTask;
     use crate::core::conversation::domain::restaurant::model::{
-        BusinessFact, BusinessLocation, ContactChannel, EventSpace, Facility, MenuItem,
-        MenuPriceFilter, OpeningHours, PaymentMethod, Reservation, ReservationDraft,
+        AmountComparator, BusinessFact, BusinessLocation, ContactChannel, EventSpace, Facility,
+        MenuItem, OpeningHours, PaymentMethod, Reservation, ReservationDraft,
         ReservationSettings, RestaurantRepositoryError, TableType,
     };
     use chrono::{NaiveDate, NaiveTime, Weekday};
@@ -429,7 +428,7 @@ mod tests {
             &self,
             _: Uuid,
             _: &str,
-            _: &MenuPriceFilter,
+            _: &AmountComparator,
         ) -> Result<Vec<MenuItem>, RestaurantRepositoryError> {
             Ok(vec![])
         }
@@ -768,6 +767,10 @@ mod tests {
         }
     }
 
+    fn reply_text(reply: &[String]) -> String {
+        reply.join("\n")
+    }
+
     #[test]
     fn handle_message_reuses_provided_session_id() {
         let session_id = ConversationId::new().to_string();
@@ -799,7 +802,13 @@ mod tests {
 
         let result = parts.use_case.handle_message(make_command("hours", None));
 
-        assert_eq!(result.reply, "Mon-Sun 9am-10pm");
+        assert_eq!(
+            result.reply,
+            vec![
+                "Hello. I can help with reservations, menu questions, prices, and restaurant information.".to_string(),
+                "Mon-Sun 9am-10pm".to_string()
+            ]
+        );
         assert_eq!(parts.restaurant_repository.opening_hours_calls(), 1);
     }
 
@@ -823,11 +832,11 @@ mod tests {
             .use_case
             .handle_message(make_command("for 4 people", Some(&start.session_id)));
 
-        assert!(start.reply.ends_with("For how many people?"));
-        assert!(next.reply.contains("Jean Martin"));
-        assert!(next.reply.contains("19:00"));
-        assert!(next.reply.contains("4 people"));
-        assert!(next.reply.contains("Do you confirm this reservation?"));
+        assert!(reply_text(&start.reply).ends_with("For how many people?"));
+        assert!(reply_text(&next.reply).contains("Jean Martin"));
+        assert!(reply_text(&next.reply).contains("19:00"));
+        assert!(reply_text(&next.reply).contains("4 people"));
+        assert!(reply_text(&next.reply).contains("Do you confirm this reservation?"));
         let recorded = analyzer.recorded_tasks();
         assert_eq!(recorded.len(), 2);
         assert!(recorded[0].is_none());
@@ -859,17 +868,65 @@ mod tests {
             .use_case
             .handle_message(make_command("yes", Some(&start.session_id)));
 
-        assert!(start.reply.contains("Jean Martin"));
-        assert!(start.reply.contains("19:00"));
-        assert!(start.reply.contains("Do you confirm this reservation?"));
-        assert!(confirm.reply.contains("Jean Martin"));
-        assert!(confirm.reply.contains("19:00"));
-        assert!(confirm.reply.contains("REST-000001"));
+        assert!(reply_text(&start.reply).contains("Jean Martin"));
+        assert!(reply_text(&start.reply).contains("19:00"));
+        assert!(reply_text(&start.reply).contains("Do you confirm this reservation?"));
+        assert!(reply_text(&confirm.reply).contains("Jean Martin"));
+        assert!(reply_text(&confirm.reply).contains("19:00"));
+        assert!(reply_text(&confirm.reply).contains("REST-000001"));
         let recorded = analyzer.recorded_tasks();
         assert_eq!(recorded.len(), 2);
         assert!(recorded[0].is_none());
         assert_eq!(recorded[1], Some("WF_CHOICE".to_string()));
         assert_eq!(analyzer.recorded_slots(), vec![None, None]);
+    }
+
+    #[test]
+    fn failed_confirmation_reopens_choice_task_after_slots_are_refilled() {
+        let analyzer = StubNlpAnalyzer::new(vec![
+            analysis(
+                "reservation_create",
+                vec![
+                    entity("person", "Jean Martin"),
+                    entity("date", "2099-06-12"),
+                    entity("time", "11pm"),
+                    entity("people_count", "4"),
+                ],
+            ),
+            analysis("affirmative", vec![]),
+            analysis(
+                "reservation_create",
+                vec![entity("date", "2099-06-12"), entity("time", "7pm")],
+            ),
+            analysis("affirmative", vec![]),
+        ]);
+        let parts = make_use_case(analyzer.clone());
+
+        let start = parts.use_case.handle_message(make_command("book", None));
+        let failed_confirm = parts
+            .use_case
+            .handle_message(make_command("yes", Some(&start.session_id)));
+        let refill = parts
+            .use_case
+            .handle_message(make_command("2099-06-12 7pm", Some(&start.session_id)));
+        let success = parts
+            .use_case
+            .handle_message(make_command("yes", Some(&start.session_id)));
+
+        assert!(reply_text(&start.reply).contains("Do you confirm this reservation?"));
+        assert!(reply_text(&failed_confirm.reply).contains("closed"));
+        assert!(reply_text(&refill.reply).contains("Do you confirm this reservation?"));
+        assert!(reply_text(&success.reply).contains("REST-000001"));
+
+        assert_eq!(
+            analyzer.recorded_tasks(),
+            vec![
+                None,
+                Some("WF_CHOICE".to_string()),
+                Some("WF_RESERVATION_CREATE".to_string()),
+                Some("WF_CHOICE".to_string()),
+            ]
+        );
     }
 
     #[test]
@@ -885,7 +942,7 @@ mod tests {
             .use_case
             .handle_message(make_command("cancel", Some(&start.session_id)));
 
-        assert_eq!(cancel.reply, "Okay, I cancelled the current workflow.");
+        assert_eq!(reply_text(&cancel.reply), "Okay, I cancelled the current workflow.");
     }
 
     #[test]
@@ -904,7 +961,7 @@ mod tests {
             .use_case
             .handle_message(make_command("Halo, saya mau pesan meja", None));
 
-        assert!(result.reply.ends_with("Untuk berapa orang?"));
+        assert!(reply_text(&result.reply).ends_with("Untuk berapa orang?"));
         assert_eq!(analyzer.recorded_langs(), vec!["id".to_string()]);
     }
 
@@ -915,7 +972,7 @@ mod tests {
 
         let result = parts.use_case.handle_message(make_command("hello", None));
 
-        assert_eq!(result.reply, "Detected intent: greeting");
+        assert_eq!(reply_text(&result.reply), "Hello. I can help with reservations, menu questions, prices, and restaurant information.\nDetected intent: greeting");
         assert_eq!(analyzer.recorded_domains(), vec!["hotel".to_string()]);
     }
 

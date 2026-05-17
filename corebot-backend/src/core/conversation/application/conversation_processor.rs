@@ -150,7 +150,7 @@ impl ConversationProcessor {
             );
             return StateHandlerResult {
                 updated_conversation: conversation,
-                reply,
+                reply: vec![reply],
                 handled_intent: intent,
             };
         }
@@ -162,7 +162,7 @@ impl ConversationProcessor {
         );
         StateHandlerResult {
             updated_conversation: conversation,
-            reply,
+            reply: vec![reply],
             handled_intent: intent,
         }
     }
@@ -225,8 +225,8 @@ mod tests {
     };
     use crate::core::conversation::domain::model::domain_type::DomainType;
     use crate::core::conversation::domain::restaurant::model::{
-        BusinessFact, BusinessLocation, ContactChannel, EventSpace, Facility, MenuItem,
-        MenuPriceFilter, OpeningHours, PaymentMethod, Reservation, ReservationDraft,
+        AmountComparator, BusinessFact, BusinessLocation, ContactChannel, EventSpace, Facility,
+        MenuItem, OpeningHours, PaymentMethod, Reservation, ReservationDraft,
         ReservationSettings, RestaurantRepositoryError, TableType,
     };
     use chrono::{NaiveDate, NaiveTime, Weekday};
@@ -369,7 +369,7 @@ mod tests {
             &self,
             _: Uuid,
             _: &str,
-            _: &MenuPriceFilter,
+            _: &AmountComparator,
         ) -> Result<Vec<MenuItem>, RestaurantRepositoryError> {
             Ok(vec![])
         }
@@ -570,6 +570,10 @@ mod tests {
         }
     }
 
+    fn reply_text(reply: &[String]) -> String {
+        reply.join("\n")
+    }
+
     #[test]
     fn informational_intent_with_ner_returns_handler_reply_and_stays_idle() {
         let conversation = Conversation::new(DomainType::Restaurant);
@@ -582,7 +586,7 @@ mod tests {
             analysis("ask_menu_item_details", vec![entity("menu_item", "ramen")]),
         );
 
-        assert_eq!(result.reply, "I couldn't find that item on our menu.");
+        assert_eq!(reply_text(&result.reply), "I couldn't find that item on our menu.");
         assert!(result.updated_conversation.is_idle());
         assert!(conversation.is_idle());
     }
@@ -599,10 +603,7 @@ mod tests {
             analysis("ask_menu_item_details", vec![]),
         );
 
-        assert_eq!(
-            result.reply,
-            "Which menu item would you like details about?"
-        );
+        assert_eq!(reply_text(&result.reply), "Which menu item would you like details about?");
         assert!(result.updated_conversation.is_idle());
         assert!(conversation.is_idle());
     }
@@ -619,11 +620,7 @@ mod tests {
             analysis("reservation_create", vec![]),
         );
 
-        assert!(
-            result
-                .reply
-                .ends_with("What name should I use for the reservation?")
-        );
+        assert!(reply_text(&result.reply).ends_with("What name should I use for the reservation?"));
         assert!(result.updated_conversation.has_active_workflow());
         assert!(conversation.is_idle());
     }
@@ -640,7 +637,10 @@ mod tests {
             analysis("reservation_cancel", vec![]),
         );
 
-        assert_eq!(result.reply, "What is the reservation reference?");
+        assert_eq!(
+            reply_text(&result.reply),
+            "I understand you want to cancel a reservation. I will ask you for some details to find the reservation. If you want to abort at any time, just say 'cancel'.\nWhat is the reservation reference?"
+        );
         assert!(result.updated_conversation.has_active_workflow());
         assert!(conversation.is_idle());
     }
@@ -661,8 +661,8 @@ mod tests {
         );
 
         assert_eq!(
-            result.reply,
-            "I have the cancellation details. Do you confirm the cancellation?"
+            reply_text(&result.reply),
+            "I recorded: reference 'ABC123'.\nI have the cancellation details. Do you confirm the cancellation?"
         );
         assert!(result.updated_conversation.has_active_workflow());
         assert!(conversation.is_idle());
@@ -686,10 +686,7 @@ mod tests {
             ),
         );
 
-        assert_eq!(
-            result.reply,
-            "I can help with restaurant pricing information."
-        );
+        assert_eq!(reply_text(&result.reply), "I can help with restaurant pricing information.");
         assert!(result.updated_conversation.is_idle());
         assert!(conversation.is_idle());
     }
@@ -721,8 +718,8 @@ mod tests {
             );
 
             assert!(
-                !result.reply.starts_with("Detected intent:"),
-                "intent {intent} should be handled, not echoed; got: {}",
+                !reply_text(&result.reply).starts_with("Detected intent:"),
+                "intent {intent} should be handled, not echoed; got: {:?}",
                 result.reply
             );
             assert!(result.updated_conversation.is_idle());
@@ -748,7 +745,10 @@ mod tests {
             analysis("ask_opening_hours", vec![]),
         );
 
-        assert_eq!(reply.reply, "What name should I use for the reservation?");
+        assert_eq!(
+            reply_text(&reply.reply),
+            "I didn't understand your answer.\nWhat name should I use for the reservation?"
+        );
         assert!(reply.updated_conversation.has_active_workflow());
         assert!(conversation.is_idle());
     }
@@ -796,7 +796,7 @@ mod tests {
             ),
         );
 
-        assert!(confirmed.reply.contains("REST-000001"));
+        assert!(reply_text(&confirmed.reply).contains("REST-000001"));
         assert!(confirmed.updated_conversation.is_idle());
     }
 
@@ -839,7 +839,7 @@ mod tests {
             ),
         );
 
-        assert_eq!(rejected.reply, "Okay. What would you like to change?");
+        assert_eq!(reply_text(&rejected.reply), "Okay. What would you like to change?");
         assert!(rejected.updated_conversation.has_active_workflow());
     }
 
@@ -884,8 +884,8 @@ mod tests {
         );
 
         assert_eq!(
-            pending.reply,
-            "I have the reservation details: Alice, Friday June 12 2099 at 19:00, for 4 people. Do you confirm this reservation?"
+            reply_text(&pending.reply),
+            "I didn't understand your answer.\nI have the reservation details: Alice, Friday June 12 2099 at 19:00, for 4 people. Do you confirm this reservation?"
         );
         assert!(pending.updated_conversation.has_active_workflow());
     }
@@ -902,7 +902,7 @@ mod tests {
             analysis("not_in_catalog", vec![]),
         );
 
-        assert_eq!(result.reply, "Detected intent: not_in_catalog");
+        assert_eq!(reply_text(&result.reply), "Detected intent: not_in_catalog");
         assert!(result.updated_conversation.is_idle());
         assert!(conversation.is_idle());
     }
@@ -919,7 +919,7 @@ mod tests {
             analysis_with_confidence("ask_menu_dietary", 0.199, vec![]),
         );
 
-        assert_eq!(result.reply, "I did not understand that request.");
+        assert_eq!(reply_text(&result.reply), "I did not understand that request.");
         assert_eq!(
             result.handled_intent,
             IntentId::Unknown("unknown".to_string())

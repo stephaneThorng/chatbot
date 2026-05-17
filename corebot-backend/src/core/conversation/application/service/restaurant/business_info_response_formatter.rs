@@ -36,9 +36,13 @@ pub(crate) fn facility_matches(candidate: &str, requested: &str) -> bool {
             .to_lowercase()
             .replace("seats", "seating")
             .replace("seat", "seating")
+            .replace("air conditioning", "ac")
             .replace('-', " ")
     }
     let candidate = normalize(candidate);
     let requested = normalize(requested);
-    candidate.contains(&requested) || requested.contains(&candidate)
+    candidate.contains(&requested)
+        || requested.contains(&candidate)
+        || (requested == "parking" && candidate.contains("parking"))
+        || (requested == "ac" && candidate.contains("ac"))
 }

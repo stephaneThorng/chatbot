@@ -3,29 +3,37 @@ use rust_i18n::t;
 use crate::core::conversation::application::intent_handler::intent_handler::{
     IntentHandler, IntentHandlerInput, StateHandlerResult,
 };
-use crate::core::conversation::application::port::outbound::restaurant::menu_queries::{
-    PriceFilter, PriceQuery,
-};
+use crate::core::conversation::application::port::outbound::restaurant::menu_queries::PriceQuery;
+use crate::core::conversation::application::port::outbound::restaurant::restaurant_business_info_repository_port::RestaurantBusinessInfoRepositoryPort;
 use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_repository_port::RestaurantMenuRepositoryPort;
 use crate::core::conversation::application::service::restaurant::{
     ConversationRestaurantMenuService,
 };
 use crate::core::conversation::domain::model::intent::{IntentConfig, IntentId, IntentWorkflow};
+use crate::core::conversation::domain::restaurant::model::AmountComparator;
 
-pub struct AskPriceIntentHandler<'a, M> {
+pub struct AskPriceIntentHandler<'a, M, B> {
     menu_service: &'a ConversationRestaurantMenuService<M>,
+    business_info_repository: &'a B,
 }
 
-impl<'a, M> AskPriceIntentHandler<'a, M> {
-    pub fn new(menu_service: &'a ConversationRestaurantMenuService<M>) -> Self {
-        Self { menu_service }
+impl<'a, M, B> AskPriceIntentHandler<'a, M, B> {
+    pub fn new(
+        menu_service: &'a ConversationRestaurantMenuService<M>,
+        business_info_repository: &'a B,
+    ) -> Self {
+        Self {
+            menu_service,
+            business_info_repository,
+        }
     }
 }
 
 #[async_trait::async_trait]
-impl<M> IntentHandler for AskPriceIntentHandler<'_, M>
+impl<M, B> IntentHandler for AskPriceIntentHandler<'_, M, B>
 where
     M: RestaurantMenuRepositoryPort + Send + Sync,
+    B: RestaurantBusinessInfoRepositoryPort + Send + Sync,
 {
     fn intent(&self) -> IntentId {
         IntentId::AskPrice
@@ -40,11 +48,39 @@ where
 
     async fn handle(&self, input: IntentHandlerInput<'_>) -> StateHandlerResult {
         let lang = input.conversation.lang.as_str();
+        if mentions_taxes(input.text) {
+            let reply = match self
+                .business_info_repository
+                .facts(input.conversation.business_id, lang)
+                .await
+            {
+                Ok(facts) => facts
+                    .iter()
+                    .find(|fact| fact.fact_type == "taxes")
+                    .map(|fact| {
+                        t!(
+                            "intent.ask_price.taxes.reply",
+                            locale = lang,
+                            info = fact.content.as_str()
+                        )
+                        .to_string()
+                    })
+                    .unwrap_or_else(|| t!("intent.ask_price.reply", locale = lang).to_string()),
+                Err(_) => t!("intent.ask_price.reply", locale = lang).to_string(),
+            };
+            return StateHandlerResult {
+                updated_conversation: input.conversation,
+                reply: vec![reply],
+                handled_intent: self.intent(),
+            };
+        }
+
         let price_item = self.lookup_entity_value(&input, "price_item");
         let menu_item = self.lookup_entity_value(&input, "menu_item");
         let comparator = self.lookup_entity_value(&input, "price_comparator");
         let amount = self.lookup_entity_value(&input, "price_amount");
         let item = price_item.or(menu_item);
+        let cheapest_only = mentions_cheapest(input.text);
         let raw = self
             .menu_service
             .find_price(
@@ -52,12 +88,11 @@ where
                 lang,
                 PriceQuery {
                     item: item.map(str::to_string),
-                    price_filter: comparator
-                        .zip(amount)
-                        .map(|(comparator, amount)| PriceFilter {
-                            comparator: comparator.to_string(),
-                            amount: amount.to_string(),
-                        }),
+                    price_filter: comparator.zip(amount).and_then(|(comparator, amount)| {
+                        parse_amount_comparator(comparator, amount)
+                    }),
+                    cheapest_only,
+                    exclude_item: item.is_some_and(|value| mentions_exclusion(input.text, value)),
                 },
             )
             .await;
@@ -109,10 +144,27 @@ where
         };
         StateHandlerResult {
             updated_conversation: input.conversation,
-            reply,
+            reply: vec![reply],
             handled_intent: self.intent(),
         }
     }
+}
+
+fn mentions_cheapest(text: &str) -> bool {
+    let normalized = text.to_lowercase();
+    normalized.contains("cheapest") || normalized.contains("lowest price")
+}
+
+fn mentions_exclusion(text: &str, item: &str) -> bool {
+    let normalized_text = text.to_lowercase();
+    let normalized_item = item.to_lowercase();
+    normalized_text.contains(&format!("without {normalized_item}"))
+        || normalized_text.contains(&format!("no {normalized_item}"))
+}
+
+fn mentions_taxes(text: &str) -> bool {
+    let normalized = text.to_lowercase();
+    normalized.contains("tax") || normalized.contains("taxes") || normalized.contains("service charge")
 }
 
 fn format_menu_links(lang: &str, website_url: &str, pdf_url: &str) -> String {
@@ -138,4 +190,39 @@ fn format_menu_links(lang: &str, website_url: &str, pdf_url: &str) -> String {
         .to_string(),
         (true, true) => String::new(),
     }
+}
+
+fn parse_amount_comparator(comparator: &str, amount: &str) -> Option<AmountComparator> {
+    let normalized = comparator.trim().to_lowercase();
+    let amount = parse_amount(amount)?;
+
+    match normalized.as_str() {
+        "under" | "less than" | "below" => Some(AmountComparator::Under(amount)),
+        "greater than" | "more than" | "over" | "above" => Some(AmountComparator::Above(amount)),
+        "at least" | "minimum" | "min" | "from" => Some(AmountComparator::AtLeast(amount)),
+        "at most" | "maximum" | "max" | "up to" => Some(AmountComparator::AtMost(amount)),
+        "equal" | "equals" | "exactly" => Some(AmountComparator::Equal(amount)),
+        _ => None,
+    }
+}
+
+fn parse_amount(amount: &str) -> Option<i32> {
+    let normalized = amount.trim().to_lowercase();
+    let compact = normalized
+        .replace("euros", "")
+        .replace("euro", "")
+        .replace("eur", "")
+        .replace("dollars", "")
+        .replace("dollar", "")
+        .replace("usd", "")
+        .replace("idr", "")
+        .replace('$', "")
+        .trim()
+        .to_string();
+
+    if let Some(value) = compact.strip_suffix('k') {
+        return value.trim().parse::<i32>().ok().map(|number| number * 1_000);
+    }
+
+    compact.parse::<i32>().ok()
 }

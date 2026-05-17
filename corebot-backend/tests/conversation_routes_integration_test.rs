@@ -21,8 +21,8 @@ use corebot_backend::core::conversation::application::service::restaurant::{
     ConversationRestaurantMenuService, ConversationRestaurantReservationService,
 };
 use corebot_backend::core::conversation::domain::restaurant::model::{
-    BusinessFact, BusinessLocation, ContactChannel, EventSpace, Facility, MenuItem, MenuPriceFilter,
-    OpeningHours, PaymentMethod, Reservation, ReservationDraft, ReservationSettings,
+    AmountComparator, BusinessFact, BusinessLocation, ContactChannel, EventSpace, Facility,
+    MenuItem, OpeningHours, PaymentMethod, Reservation, ReservationDraft, ReservationSettings,
     RestaurantRepositoryError, TableType,
 };
 use corebot_backend::core::conversation::domain::domain_type::DomainType;
@@ -217,10 +217,19 @@ impl RestaurantMenuRepositoryPort for FakeRepository {
         &self,
         _: Uuid,
         _: &str,
-        _: &MenuPriceFilter,
+        _: &AmountComparator,
     ) -> Result<Vec<MenuItem>, RestaurantRepositoryError> {
         Ok(vec![])
     }
+}
+
+fn reply_text(value: &serde_json::Value) -> String {
+    value.as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|entry| entry.as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[async_trait::async_trait]
@@ -418,7 +427,13 @@ async fn post_send_message_returns_200_with_session_id() {
             .as_str()
             .is_some_and(|value| !value.is_empty())
     );
-    assert_eq!(body["reply"], "Mon-Sun 9am-10pm");
+    assert_eq!(
+        body["reply"],
+        json!([
+            "Hello. I can help with reservations, menu questions, prices, and restaurant information.",
+            "Mon-Sun 9am-10pm"
+        ])
+    );
 }
 
 #[tokio::test]
@@ -482,7 +497,10 @@ async fn multi_turn_reservation_flow_returns_summary_reference_and_supports_chec
     let session_id = hello["session_id"].as_str().unwrap().to_string();
     assert_eq!(
         hello["reply"],
-        "Hello! How can I help with the restaurant today?"
+        json!([
+            "Hello. I can help with reservations, menu questions, prices, and restaurant information.",
+            "Hello! How can I help with the restaurant today?"
+        ])
     );
 
     let start = server
@@ -491,33 +509,34 @@ async fn multi_turn_reservation_flow_returns_summary_reference_and_supports_chec
         .await
         .json::<serde_json::Value>();
     // starting_message is prepended — just verify the slot prompt is included
-    assert!(
-        start["reply"]
-            .as_str()
-            .unwrap()
-            .contains("What name should I use for the reservation?")
-    );
+    assert!(reply_text(&start["reply"]).contains("What name should I use for the reservation?"));
 
     let name = server
         .post("/api/v1/conversation/send_message")
         .json(&json!({ "message": "Stephane", "session_id": session_id.clone() }))
         .await
         .json::<serde_json::Value>();
-    assert_eq!(name["reply"], "What date would you like?");
+    assert_eq!(
+        name["reply"],
+        json!(["I recorded: name 'Stephane'.", "What date would you like?"])
+    );
 
     let date_time = server
         .post("/api/v1/conversation/send_message")
         .json(&json!({ "message": "tomorrow at 7pm", "session_id": session_id.clone() }))
         .await
         .json::<serde_json::Value>();
-    assert_eq!(date_time["reply"], "For how many people?");
+    assert_eq!(
+        date_time["reply"],
+        json!(["I recorded: date 'May 18 2026', time '19:00'.", "For how many people?"])
+    );
 
     let people = server
         .post("/api/v1/conversation/send_message")
         .json(&json!({ "message": "4", "session_id": session_id.clone() }))
         .await
         .json::<serde_json::Value>();
-    let people_reply = people["reply"].as_str().unwrap();
+    let people_reply = reply_text(&people["reply"]);
     assert!(people_reply.contains("Stephane"));
     assert!(people_reply.contains("19:00"));
     assert!(people_reply.contains("4 people"));
@@ -528,7 +547,7 @@ async fn multi_turn_reservation_flow_returns_summary_reference_and_supports_chec
         .json(&json!({ "message": "yes", "session_id": session_id.clone() }))
         .await
         .json::<serde_json::Value>();
-    let confirmation_reply = confirm["reply"].as_str().unwrap();
+    let confirmation_reply = reply_text(&confirm["reply"]);
     assert!(confirmation_reply.contains("Your reservation is confirmed for Stephane"));
     assert!(confirmation_reply.contains("19:00"));
     assert!(confirmation_reply.contains("4 people"));
@@ -539,7 +558,7 @@ async fn multi_turn_reservation_flow_returns_summary_reference_and_supports_chec
         .json(&json!({ "message": "look up my booking", "session_id": session_id.clone() }))
         .await
         .json::<serde_json::Value>();
-    let check_reply = check["reply"].as_str().unwrap();
+    let check_reply = reply_text(&check["reply"]);
     assert!(check_reply.contains("I found these reservations under Stephane:"));
     assert!(check_reply.contains("REST-00000B"));
 
@@ -548,10 +567,5 @@ async fn multi_turn_reservation_flow_returns_summary_reference_and_supports_chec
         .json(&json!({ "message": "where are you localized", "session_id": session_id }))
         .await
         .json::<serde_json::Value>();
-    assert!(
-        location["reply"]
-            .as_str()
-            .unwrap()
-            .contains("12 Rue de la Paix")
-    );
+    assert!(reply_text(&location["reply"]).contains("12 Rue de la Paix"));
 }

@@ -8,11 +8,9 @@ use crate::core::conversation::application::service::restaurant::ConversationRes
 use crate::core::conversation::domain::restaurant::model::{BusinessFact, MenuItem};
 
 use super::menu_response_formatter::{
-    contains_text, filter_by_ingredient, find_exact_item, find_item, format_item_refs,
-    format_items, price_euros,
+    contains_text, filter_by_ingredient, filter_without_ingredient, find_exact_item, find_item,
+    format_item_refs, format_items, format_price, matches_dietary_requirement,
 };
-use super::query_mapper::map_price_filter;
-
 const MENU_REFERENCE_FACT_TYPE: &str = "menu_reference";
 
 impl<M> ConversationRestaurantMenuService<M>
@@ -20,10 +18,20 @@ where
     M: RestaurantMenuRepositoryPort + Send + Sync,
 {
     pub async fn find_menu(&self, business_id: Uuid, locale: &str, query: MenuQuery) -> String {
+        if query.cheapest_only {
+            let Ok(items) = self.menu_repository.menu_items(business_id, locale).await else {
+                return self.external_menu_reference(business_id, locale).await;
+            };
+            if let Some(item) = cheapest_item(&items) {
+                return format!("item_found:{}|{}", item.name, format_price(item.price_cents, &item.currency));
+            }
+            return self.menu_fallback(business_id, locale, Some(&items)).await;
+        }
+
         if let Some(filter) = query.price_filter {
             let Ok(items) = self
                 .menu_repository
-                .menu_items_by_price(business_id, locale, &map_price_filter(filter))
+                .menu_items_by_price(business_id, locale, &filter)
                 .await
             else {
                 return self.menu_fallback(business_id, locale, None).await;
@@ -43,14 +51,23 @@ where
                 return format!(
                     "item_found:{}|{}|{}",
                     item.name,
-                    price_euros(item.price_cents),
+                    format_price(item.price_cents, &item.currency),
                     item.allergens.join(",")
                 );
             }
 
-            let ingredient_matches = filter_by_ingredient(&items, &item_name);
+            let ingredient_matches = if query.exclude_item {
+                filter_without_ingredient(&items, &item_name)
+            } else {
+                filter_by_ingredient(&items, &item_name)
+            };
             if !ingredient_matches.is_empty() {
-                return format!("ingredient_results:{}", format_item_refs(&ingredient_matches));
+                let prefix = if query.exclude_item {
+                    "ingredient_exclusion_results:"
+                } else {
+                    "ingredient_results:"
+                };
+                return format!("{prefix}{}", format_item_refs(&ingredient_matches));
             }
 
             return self.menu_fallback(business_id, locale, Some(&items)).await;
@@ -69,20 +86,25 @@ where
             return "dietary_no_filter:".to_string();
         };
 
-        if let Some(requirement) = query.dietary_requirement {
+        if !query.dietary_requirements.is_empty() {
             let matches = items
                 .iter()
-                .filter(|item| contains_text(&item.dietary, &requirement))
+                .filter(|item| {
+                    query.dietary_requirements.iter().any(|requirement| {
+                        matches_dietary_requirement(item, requirement)
+                    })
+                })
                 .map(|item| item.name.clone())
                 .collect::<Vec<_>>();
+            let requested = join_requirements(&query.dietary_requirements);
             if matches.is_empty() {
                 return format!(
                     "no_dietary:{}|{}",
-                    requirement,
+                    requested,
                     available_dietary_options(&items)
                 );
             }
-            return format!("dietary_results:{}|{}", requirement, matches.join(", "));
+            return format!("dietary_results:{}|{}", requested, matches.join(", "));
         }
 
         format!("dietary_no_filter:{}", available_dietary_options(&items))
@@ -113,7 +135,7 @@ where
                     return format!(
                         "item_details:{}|{}|{}|{}|{}",
                         item.name,
-                        price_euros(item.price_cents),
+                        format_price(item.price_cents, &item.currency),
                         if item.ingredients.is_empty() {
                             "none".to_string()
                         } else {
@@ -149,10 +171,20 @@ where
     }
 
     pub async fn find_price(&self, business_id: Uuid, locale: &str, query: PriceQuery) -> String {
+        if query.cheapest_only {
+            let Ok(items) = self.menu_repository.menu_items(business_id, locale).await else {
+                return self.external_menu_reference(business_id, locale).await;
+            };
+            if let Some(item) = cheapest_item(&items) {
+                return format!("item_price:{}|{}", item.name, format_price(item.price_cents, &item.currency));
+            }
+            return self.menu_fallback(business_id, locale, Some(&items)).await;
+        }
+
         if let Some(filter) = query.price_filter.clone() {
             let Ok(items) = self
                 .menu_repository
-                .menu_items_by_price(business_id, locale, &map_price_filter(filter))
+                .menu_items_by_price(business_id, locale, &filter)
                 .await
             else {
                 return self.menu_fallback(business_id, locale, None).await;
@@ -171,10 +203,18 @@ where
 
         if let Some(item_name) = query.item {
             if let Some(item) = find_exact_item(&items, &item_name) {
-                return format!("item_price:{}|{}", item.name, price_euros(item.price_cents));
+                return format!(
+                    "item_price:{}|{}",
+                    item.name,
+                    format_price(item.price_cents, &item.currency)
+                );
             }
 
-            let ingredient_matches = filter_by_ingredient(&items, &item_name);
+            let ingredient_matches = if query.exclude_item {
+                filter_without_ingredient(&items, &item_name)
+            } else {
+                filter_by_ingredient(&items, &item_name)
+            };
             if !ingredient_matches.is_empty() {
                 return format!("price_results:{}", format_item_refs(&ingredient_matches));
             }
@@ -241,6 +281,18 @@ fn available_dietary_options(items: &[MenuItem]) -> String {
     dietary.join(", ")
 }
 
+fn cheapest_item(items: &[MenuItem]) -> Option<&MenuItem> {
+    items.iter().min_by(|left, right| {
+        left.price_cents
+            .cmp(&right.price_cents)
+            .then_with(|| left.name.cmp(&right.name))
+    })
+}
+
+fn join_requirements(requirements: &[String]) -> String {
+    requirements.join(" or ")
+}
+
 fn menu_reference(facts: &[BusinessFact]) -> Option<&BusinessFact> {
     facts.iter().find(|fact| {
         fact.fact_type == MENU_REFERENCE_FACT_TYPE
@@ -258,7 +310,7 @@ mod tests {
     use super::*;
     use crate::core::conversation::application::port::outbound::restaurant::restaurant_business_info_repository_port::RestaurantBusinessInfoRepositoryPort;
     use crate::core::conversation::domain::restaurant::model::{
-        BusinessLocation, ContactChannel, EventSpace, Facility, MenuPriceFilter, OpeningHours,
+        AmountComparator, BusinessLocation, ContactChannel, EventSpace, Facility, OpeningHours,
         PaymentMethod, RestaurantRepositoryError,
     };
 
@@ -290,7 +342,7 @@ mod tests {
             &self,
             _: Uuid,
             _: &str,
-            _: &MenuPriceFilter,
+            _: &AmountComparator,
         ) -> Result<Vec<MenuItem>, RestaurantRepositoryError> {
             if self.price_error {
                 Err(RestaurantRepositoryError {
@@ -391,7 +443,7 @@ mod tests {
                 business_id(),
                 "en",
                 MenuDietaryQuery {
-                    dietary_requirement: Some("Free_GlUten".to_string()),
+                    dietary_requirements: vec!["Free_GlUten".to_string()],
                 },
             )
             .await;
@@ -412,12 +464,12 @@ mod tests {
                 business_id(),
                 "en",
                 MenuDietaryQuery {
-                    dietary_requirement: Some("nut free".to_string()),
+                    dietary_requirements: vec!["nut free".to_string()],
                 },
             )
             .await;
 
-        assert_eq!(raw, "no_dietary:nut free|gluten-free, vegan");
+        assert_eq!(raw, "dietary_results:nut free|salad");
     }
 
     #[tokio::test]
@@ -438,11 +490,98 @@ mod tests {
                 MenuQuery {
                     price_item: Some("beef".to_string()),
                     price_filter: None,
+                    cheapest_only: false,
+                    exclude_item: false,
                 },
             )
             .await;
 
-        assert_eq!(raw, "ingredient_results:beef burger (EUR 14)");
+        assert_eq!(raw, "ingredient_results:- beef burger (EUR 14)");
+    }
+
+    #[tokio::test]
+    async fn menu_lookup_can_exclude_ingredient() {
+        let service = menu_service(
+            vec![
+                menu_item("bali wagyu burger", &["beef", "bun"], &[], 12000),
+                menu_item("yellow tofu curry", &["tofu", "curry"], &["vegan"], 6000),
+            ],
+            vec![],
+            vec![],
+        );
+
+        let raw = service
+            .find_menu(
+                business_id(),
+                "en",
+                MenuQuery {
+                    price_item: Some("beef".to_string()),
+                    price_filter: None,
+                    cheapest_only: false,
+                    exclude_item: true,
+                },
+            )
+            .await;
+
+        assert_eq!(raw, "ingredient_exclusion_results:- yellow tofu curry (EUR 60)");
+    }
+
+    #[tokio::test]
+    async fn dietary_lookup_uses_or_semantics() {
+        let service = menu_service(
+            vec![
+                menu_item("green papaya salad", &["papaya"], &["gluten-free"], 3500),
+                menu_item("chocolate lava cake", &["chocolate"], &[], 5500),
+            ],
+            vec![],
+            vec![],
+        );
+
+        let raw = service
+            .find_menu_dietary(
+                business_id(),
+                "en",
+                MenuDietaryQuery {
+                    dietary_requirements: vec![
+                        "gluten free".to_string(),
+                        "nuts free".to_string(),
+                    ],
+                },
+            )
+            .await;
+
+        assert_eq!(
+            raw,
+            "dietary_results:gluten free or nuts free|green papaya salad, chocolate lava cake"
+        );
+    }
+
+    #[tokio::test]
+    async fn cheapest_price_lookup_returns_single_item() {
+        let service = menu_service(
+            vec![
+                menu_item("mango sticky rice", &["mango"], &["vegan"], 4500),
+                menu_item("green papaya salad", &["papaya"], &["vegan"], 3500),
+                menu_item("homemade kombucha", &["tea"], &["vegan"], 3500),
+            ],
+            vec![],
+            vec![],
+        );
+
+        let raw = service
+            .find_price(
+                business_id(),
+                "en",
+                PriceQuery {
+                    item: None,
+                    price_filter: None,
+                    cheapest_only: true,
+                    exclude_item: false,
+                },
+            )
+            .await;
+
+        assert_eq!(raw, "item_price:green papaya salad|EUR 35");
     }
 
     #[tokio::test]
@@ -474,6 +613,8 @@ mod tests {
                 MenuQuery {
                     price_item: Some("beef".to_string()),
                     price_filter: None,
+                    cheapest_only: false,
+                    exclude_item: false,
                 },
             )
             .await;
@@ -499,11 +640,13 @@ mod tests {
                 PriceQuery {
                     item: Some("beef".to_string()),
                     price_filter: None,
+                    cheapest_only: false,
+                    exclude_item: false,
                 },
             )
             .await;
 
-        assert_eq!(raw, "fallback_full_menu:salad (EUR 8)");
+        assert_eq!(raw, "fallback_full_menu:- salad (EUR 8)");
     }
 
     #[tokio::test]
@@ -532,7 +675,7 @@ mod tests {
 
         assert_eq!(
             raw,
-            "item_details:pizza|12|pizza dough, cheese, tomato|vegetarian|none"
+            "item_details:pizza|EUR 12|pizza dough, cheese, tomato|vegetarian|none"
         );
     }
 }

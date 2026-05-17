@@ -21,18 +21,18 @@ pub struct IntentHandlerInput<'a> {
 /// Immediate result produced by an intent handler.
 pub struct StateHandlerResult {
     pub updated_conversation: Conversation,
-    pub reply: String,
+    pub reply: Vec<String>,
     pub handled_intent: IntentId,
 }
 
 pub enum WorkflowPostProcessResult {
     Succeeded {
         updated_conversation: Conversation,
-        reply: Option<String>,
+        reply: Option<Vec<String>>,
     },
     Failed {
         updated_conversation: Conversation,
-        reply: String,
+        reply: Vec<String>,
     },
 }
 
@@ -69,22 +69,26 @@ pub trait IntentHandler: Send + Sync {
                 Err(result) => return result,
             };
 
-        let (next_conversation, updated_any_slot) =
+        let (next_conversation, applied_updates) =
             match self.collect_workflow_updates(&input, workflow_cfg, updated_conversation) {
                 Ok(state) => state,
                 Err(result) => return result,
             };
         updated_conversation = next_conversation;
-
         if !self.is_ready_for_confirmation(&updated_conversation) {
-            return self.build_collection_reply(workflow_cfg, updated_conversation, just_started);
+            return self.build_collection_reply(
+                workflow_cfg,
+                updated_conversation,
+                just_started,
+                &applied_updates,
+            );
         }
 
         self.build_confirmation_reply(
             workflow_cfg,
             input.analysis_intent,
             updated_conversation,
-            updated_any_slot,
+            &applied_updates,
         )
         .await
     }
@@ -106,11 +110,13 @@ pub trait IntentHandler: Send + Sync {
         if input.analysis_intent == &IntentId::Cancel {
             updated_conversation = updated_conversation.into_cancelled_workflow();
             return Err(StateHandlerResult {
-                reply: t!(
-                    "system.workflow_cancelled",
-                    locale = updated_conversation.lang.as_str()
-                )
-                .to_string(),
+                reply: vec![
+                    t!(
+                        "system.workflow_cancelled",
+                        locale = updated_conversation.lang.as_str()
+                    )
+                    .to_string(),
+                ],
                 updated_conversation,
                 handled_intent: self.intent(),
             });
@@ -124,7 +130,7 @@ pub trait IntentHandler: Send + Sync {
         input: &IntentHandlerInput<'_>,
         workflow_cfg: &WorkflowConfig,
         conversation: Conversation,
-    ) -> Result<(Conversation, bool), StateHandlerResult> {
+    ) -> Result<(Conversation, Vec<SlotUpdate>), StateHandlerResult> {
         let extracted_updates =
             self.extract_slot_updates(&conversation, input.text, input.analysis_entities);
         let update_result = self.apply_slot_updates(conversation, extracted_updates);
@@ -132,11 +138,11 @@ pub trait IntentHandler: Send + Sync {
 
         if let Some(invalid_slot) = update_result.invalid_slot {
             return Err(StateHandlerResult {
-                reply: self.slot_prompt(
+                reply: vec![self.slot_prompt(
                     workflow_cfg,
                     invalid_slot,
                     updated_conversation.lang.as_str(),
-                ),
+                )],
                 updated_conversation,
                 handled_intent: self.intent(),
             });
@@ -145,12 +151,12 @@ pub trait IntentHandler: Send + Sync {
         if let Some(reply) = self.validate_constraints(workflow_cfg, &mut updated_conversation) {
             return Err(StateHandlerResult {
                 updated_conversation,
-                reply,
+                reply: vec![reply],
                 handled_intent: self.intent(),
             });
         }
 
-        Ok((updated_conversation, update_result.updated_any_slot))
+        Ok((updated_conversation, update_result.applied_updates))
     }
 
     fn is_ready_for_confirmation(&self, conversation: &Conversation) -> bool {
@@ -164,16 +170,28 @@ pub trait IntentHandler: Send + Sync {
         workflow_cfg: &WorkflowConfig,
         updated_conversation: Conversation,
         just_started: bool,
+        applied_updates: &[SlotUpdate],
     ) -> StateHandlerResult {
         let slot_prompt = self.next_slot_prompt(&updated_conversation, workflow_cfg);
         let reply = if just_started {
-            self.starting_reply(
+            vec![self.starting_reply(
                 workflow_cfg,
                 updated_conversation.lang.as_str(),
                 &slot_prompt,
-            )
+            )]
+        } else if applied_updates.is_empty() {
+            vec![
+                self.workflow_misunderstanding_reply(updated_conversation.lang.as_str()),
+                slot_prompt,
+            ]
         } else {
-            slot_prompt
+            vec![
+                self.workflow_acknowledgement_reply(
+                    updated_conversation.lang.as_str(),
+                    applied_updates,
+                ),
+                slot_prompt,
+            ]
         };
 
         StateHandlerResult {
@@ -188,20 +206,34 @@ pub trait IntentHandler: Send + Sync {
         workflow_cfg: &WorkflowConfig,
         analysis_intent: &IntentId,
         updated_conversation: Conversation,
-        updated_any_slot: bool,
+        applied_updates: &[SlotUpdate],
     ) -> StateHandlerResult {
+        let updated_any_slot = !applied_updates.is_empty();
         match analysis_intent {
             IntentId::Affirmative if !updated_any_slot => {
                 self.confirm_workflow(workflow_cfg, updated_conversation)
                     .await
             }
             IntentId::Negative if !updated_any_slot => StateHandlerResult {
-                reply: self.negative_prompt(updated_conversation.lang.as_str()),
+                reply: vec![self.negative_prompt(updated_conversation.lang.as_str())],
                 updated_conversation,
                 handled_intent: self.intent(),
             },
             _ => StateHandlerResult {
-                reply: self.confirmation_prompt(workflow_cfg, &updated_conversation),
+                reply: if updated_any_slot {
+                    vec![
+                        self.workflow_acknowledgement_reply(
+                            updated_conversation.lang.as_str(),
+                            applied_updates,
+                        ),
+                        self.confirmation_prompt(workflow_cfg, &updated_conversation),
+                    ]
+                } else {
+                    vec![
+                        self.workflow_misunderstanding_reply(updated_conversation.lang.as_str()),
+                        self.confirmation_prompt(workflow_cfg, &updated_conversation),
+                    ]
+                },
                 updated_conversation,
                 handled_intent: self.intent(),
             },
@@ -224,8 +256,9 @@ pub trait IntentHandler: Send + Sync {
                 let lang = updated_conversation.lang.clone();
                 updated_conversation = updated_conversation.into_completed_workflow();
                 StateHandlerResult {
-                    reply: reply
-                        .unwrap_or_else(|| self.completion_reply(workflow_cfg, lang.as_str())),
+                    reply: reply.unwrap_or_else(|| {
+                        vec![self.completion_reply(workflow_cfg, lang.as_str())]
+                    }),
                     updated_conversation,
                     handled_intent: self.intent(),
                 }
@@ -234,7 +267,7 @@ pub trait IntentHandler: Send + Sync {
                 updated_conversation,
                 reply,
             } => StateHandlerResult {
-                updated_conversation,
+                updated_conversation: updated_conversation.into_reopened_workflow(),
                 reply,
                 handled_intent: self.intent(),
             },
@@ -425,15 +458,30 @@ pub trait IntentHandler: Send + Sync {
         let mut updates = vec![];
 
         if workflow.is_ready_for_confirmation() {
-            for entity in entities {
-                for slot_cfg in workflow.slot_definitions() {
-                    if !slot_cfg
-                        .name
-                        .entity_type_labels()
-                        .contains(&entity.entity_label.as_str())
+            for slot_cfg in workflow.slot_definitions() {
+                let matching_entities = entities
+                    .iter()
+                    .filter(|entity| {
+                        slot_cfg
+                            .name
+                            .entity_type_labels()
+                            .contains(&entity.entity_label.as_str())
+                    })
+                    .collect::<Vec<_>>();
+
+                if slot_cfg.name == SlotName::People && matching_entities.len() > 1 {
+                    if let Some(value) =
+                        self.sum_numeric_entities(&matching_entities, conversation.lang.as_str())
                     {
-                        continue;
+                        updates.push(SlotUpdate {
+                            slot_name: slot_cfg.name,
+                            value: SlotDataValue::Number(value),
+                        });
                     }
+                    continue;
+                }
+
+                for entity in matching_entities {
                     let Some(slot_value) = self.slot_value_from_name(
                         slot_cfg.name,
                         entity.value.as_str(),
@@ -449,24 +497,37 @@ pub trait IntentHandler: Send + Sync {
             }
         } else {
             for slot_cfg in workflow.slot_definitions() {
-                let matched_update = entities.iter().find_map(|entity| {
-                    if !slot_cfg
-                        .name
-                        .entity_type_labels()
-                        .contains(&entity.entity_label.as_str())
-                    {
-                        return None;
-                    }
-                    self.slot_value_from_name(
-                        slot_cfg.name,
-                        entity.value.as_str(),
-                        conversation.lang.as_str(),
-                    )
-                    .map(|value| SlotUpdate {
-                        slot_name: slot_cfg.name,
-                        value,
+                let matching_entities = entities
+                    .iter()
+                    .filter(|entity| {
+                        slot_cfg
+                            .name
+                            .entity_type_labels()
+                            .contains(&entity.entity_label.as_str())
                     })
-                });
+                    .collect::<Vec<_>>();
+
+                let matched_update = if slot_cfg.name == SlotName::People
+                    && matching_entities.len() > 1
+                {
+                    self.sum_numeric_entities(&matching_entities, conversation.lang.as_str())
+                        .map(|value| SlotUpdate {
+                            slot_name: slot_cfg.name,
+                            value: SlotDataValue::Number(value),
+                        })
+                } else {
+                    matching_entities.into_iter().find_map(|entity| {
+                        self.slot_value_from_name(
+                            slot_cfg.name,
+                            entity.value.as_str(),
+                            conversation.lang.as_str(),
+                        )
+                        .map(|value| SlotUpdate {
+                            slot_name: slot_cfg.name,
+                            value,
+                        })
+                    })
+                };
 
                 if let Some(update) = matched_update {
                     updates.push(update);
@@ -499,23 +560,60 @@ pub trait IntentHandler: Send + Sync {
         extracted_updates: SlotUpdateResult,
     ) -> SlotUpdateApplicationResult {
         let mut updated_conversation = conversation;
-        let mut updated_any_slot = false;
+        let mut applied_updates = vec![];
         let mut invalid_slot = None;
 
         for update in extracted_updates.updates {
             if let Err(error) =
-                updated_conversation.set_workflow_slot(update.slot_name, update.value)
+                updated_conversation.set_workflow_slot(update.slot_name, update.value.clone())
             {
                 invalid_slot = Some(error.slot);
                 break;
             }
-            updated_any_slot = true;
+            applied_updates.push(update);
         }
 
         SlotUpdateApplicationResult {
             updated_conversation,
-            updated_any_slot,
+            applied_updates,
             invalid_slot,
+        }
+    }
+
+    fn workflow_misunderstanding_reply(&self, lang: &str) -> String {
+        t!("system.workflow_not_understood", locale = lang).to_string()
+    }
+
+    fn workflow_acknowledgement_reply(&self, lang: &str, updates: &[SlotUpdate]) -> String {
+        let values = updates
+            .iter()
+            .map(|update| {
+                format!(
+                    "{} '{}'",
+                    update.slot_name.as_str(),
+                    self.format_slot_value(&update.value, lang)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        t!(
+            "system.workflow_slot_acknowledged",
+            locale = lang,
+            values = values
+        )
+        .to_string()
+    }
+
+    fn format_slot_value(&self, value: &SlotDataValue, lang: &str) -> String {
+        match value {
+            SlotDataValue::Text(text) => text.clone(),
+            SlotDataValue::Date(date) => date
+                .format(if lang == "id" { "%d %B %Y" } else { "%B %d %Y" })
+                .to_string(),
+            SlotDataValue::Time(time) => time.format("%H:%M").to_string(),
+            SlotDataValue::Number(number) => number.to_string(),
+            SlotDataValue::Boolean(flag) => flag.to_string(),
         }
     }
 
@@ -541,6 +639,19 @@ pub trait IntentHandler: Send + Sync {
         }
         None
     }
+
+    fn sum_numeric_entities(&self, entities: &[&NluEntityResult], lang: &str) -> Option<u32> {
+        let mut total = 0_u32;
+        for entity in entities {
+            let SlotDataValue::Number(value) =
+                SlotDataValue::from_text(SlotDataType::Number, entity.value.as_str(), lang)?
+            else {
+                return None;
+            };
+            total = total.checked_add(value)?;
+        }
+        Some(total)
+    }
 }
 
 pub struct SlotUpdateResult {
@@ -549,7 +660,7 @@ pub struct SlotUpdateResult {
 
 pub struct SlotUpdateApplicationResult {
     pub updated_conversation: Conversation,
-    pub updated_any_slot: bool,
+    pub applied_updates: Vec<SlotUpdate>,
     pub invalid_slot: Option<SlotName>,
 }
 
@@ -611,7 +722,7 @@ mod tests {
         async fn handle(&self, _input: IntentHandlerInput<'_>) -> StateHandlerResult {
             StateHandlerResult {
                 updated_conversation: Conversation::new(DomainType::Restaurant),
-                reply: "handled".to_string(),
+                reply: vec!["handled".to_string()],
                 handled_intent: self.intent(),
             }
         }
@@ -800,6 +911,41 @@ mod tests {
         assert_eq!(
             workflow.slot_value(SlotName::People),
             Some(&SlotDataValue::Number(6))
+        );
+    }
+
+    #[test]
+    fn workflow_multiple_people_entities_are_summed() {
+        let conversation = Conversation::new(DomainType::Restaurant)
+            .into_started_workflow(&workflow_handler().config())
+            .unwrap()
+            .into_workflow_slot(SlotName::Name, SlotDataValue::Text("Alice".to_string()))
+            .unwrap()
+            .into_workflow_slot(
+                SlotName::Date,
+                SlotDataValue::Date(resolve_date("tomorrow").unwrap()),
+            )
+            .unwrap()
+            .into_workflow_slot(
+                SlotName::Time,
+                SlotDataValue::Time(NaiveTime::from_hms_opt(19, 0, 0).unwrap()),
+            )
+            .unwrap();
+
+        let result = workflow_handler().handle_blocking(IntentHandlerInput {
+            conversation,
+            analysis_intent: &IntentId::ReservationCreate,
+            text: "2 adults and 1 child",
+            analysis_entities: &[
+                workflow_entity("people_count", "2"),
+                workflow_entity("people_count", "1"),
+            ],
+        });
+
+        let workflow = result.updated_conversation.active_workflow().unwrap();
+        assert_eq!(
+            workflow.slot_value(SlotName::People),
+            Some(&SlotDataValue::Number(3))
         );
     }
 }

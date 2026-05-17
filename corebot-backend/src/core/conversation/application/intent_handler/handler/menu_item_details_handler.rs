@@ -54,7 +54,7 @@ where
         let reply = parse_item_details_reply(&raw, lang);
         StateHandlerResult {
             updated_conversation: input.conversation,
-            reply,
+            reply: vec![reply],
             handled_intent: self.intent(),
         }
     }

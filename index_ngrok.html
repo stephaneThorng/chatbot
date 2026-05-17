@@ -264,7 +264,8 @@
           const data = await response.json();
           sessionId = data.session_id;
           updateSessionLabel();
-          appendMessage("bot", data.reply);
+          const replies = Array.isArray(data.reply) ? data.reply : [data.reply];
+          replies.forEach((reply) => appendMessage("bot", reply));
         } catch (error) {
           appendMessage(
             "error",

@@ -108,6 +108,13 @@ impl Conversation {
         self
     }
 
+    pub fn into_reopened_workflow(mut self) -> Conversation {
+        if let ConversationState::Workflow(ref mut wf) = self.state {
+            wf.reopen_confirmation();
+        }
+        self
+    }
+
     pub fn into_workflow_slot(
         mut self,
         slot_name: SlotName,

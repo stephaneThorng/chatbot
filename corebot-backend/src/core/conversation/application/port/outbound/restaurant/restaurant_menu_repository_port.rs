@@ -2,7 +2,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::core::conversation::domain::restaurant::model::{
-    MenuItem, MenuPriceFilter, RestaurantRepositoryError,
+    AmountComparator, MenuItem, RestaurantRepositoryError,
 };
 
 #[async_trait::async_trait]
@@ -16,7 +16,7 @@ pub trait RestaurantMenuRepositoryPort {
         &self,
         business_id: Uuid,
         locale: &str,
-        filter: &MenuPriceFilter,
+        filter: &AmountComparator,
     ) -> Result<Vec<MenuItem>, RestaurantRepositoryError>;
 }
 
@@ -37,7 +37,7 @@ where
         &self,
         business_id: Uuid,
         locale: &str,
-        filter: &MenuPriceFilter,
+        filter: &AmountComparator,
     ) -> Result<Vec<MenuItem>, RestaurantRepositoryError> {
         self.as_ref()
             .menu_items_by_price(business_id, locale, filter)

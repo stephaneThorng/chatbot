@@ -43,11 +43,12 @@ where
             .await
         {
             Ok(methods) => {
-                let all = methods
-                    .iter()
-                    .map(|payment_method| payment_method.method_code.clone())
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let all = format_bullet_list(
+                    &methods
+                        .iter()
+                        .map(|payment_method| payment_method.method_code.clone())
+                        .collect::<Vec<_>>(),
+                );
                 if let Some(method) = method {
                     if methods.iter().any(|candidate| {
                         candidate
@@ -84,8 +85,16 @@ where
         };
         StateHandlerResult {
             updated_conversation: input.conversation,
-            reply,
+            reply: vec![reply],
             handled_intent: self.intent(),
         }
     }
+}
+
+fn format_bullet_list(values: &[String]) -> String {
+    values
+        .iter()
+        .map(|value| format!("- {value}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }

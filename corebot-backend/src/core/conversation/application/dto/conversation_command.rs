@@ -7,5 +7,5 @@ pub struct HandleConversationCommand {
 #[derive(Debug)]
 pub struct HandleConversationResult {
     pub session_id: String,
-    pub reply: String,
+    pub reply: Vec<String>,
 }

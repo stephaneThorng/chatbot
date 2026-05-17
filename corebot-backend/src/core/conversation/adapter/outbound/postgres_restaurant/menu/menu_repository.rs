@@ -3,11 +3,11 @@ use uuid::Uuid;
 
 use crate::core::conversation::application::port::outbound::restaurant::restaurant_menu_repository_port::RestaurantMenuRepositoryPort;
 use crate::core::conversation::domain::restaurant::model::{
-    MenuItem, MenuPriceFilter, RestaurantRepositoryError,
+    AmountComparator, MenuItem, RestaurantRepositoryError,
 };
 
 use super::models::MenuItemRow;
-use super::query_helpers::{hydrate_menu_items, parse_price_amount, repository_error};
+use super::query_helpers::{hydrate_menu_items, repository_error};
 
 #[derive(Clone)]
 pub struct PostgresMenuRepository {
@@ -53,27 +53,31 @@ impl RestaurantMenuRepositoryPort for PostgresMenuRepository {
         &self,
         business_id: Uuid,
         locale: &str,
-        filter: &MenuPriceFilter,
+        filter: &AmountComparator,
     ) -> Result<Vec<MenuItem>, RestaurantRepositoryError> {
-        let Some(threshold) = parse_price_amount(&filter.amount) else {
-            return Ok(vec![]);
+        let rows = match filter {
+            AmountComparator::Equal(amount) => self.fetch_by_equal(business_id, locale, *amount).await?,
+            AmountComparator::Above(amount) => self.fetch_by_ordering(business_id, locale, ">", *amount).await?,
+            AmountComparator::Under(amount) => self.fetch_by_ordering(business_id, locale, "<", *amount).await?,
+            AmountComparator::AtLeast(amount) => self.fetch_by_ordering(business_id, locale, ">=", *amount).await?,
+            AmountComparator::AtMost(amount) => self.fetch_by_ordering(business_id, locale, "<=", *amount).await?,
+            AmountComparator::Between(min, max) => {
+                self.fetch_by_between(business_id, locale, *min, *max).await?
+            }
         };
 
-        let comparator = filter.comparator.to_lowercase();
-        let operator = if matches!(comparator.as_str(), "under" | "less than" | "below")
-            || comparator.starts_with("di bawah")
-            || comparator.starts_with("kurang")
-        {
-            "<"
-        } else if matches!(comparator.as_str(), "greater than" | "more than" | "over")
-            || comparator.starts_with("lebih")
-            || comparator.starts_with("di atas")
-        {
-            ">"
-        } else {
-            return Ok(vec![]);
-        };
+        hydrate_menu_items(&self.pool, rows).await
+    }
+}
 
+impl PostgresMenuRepository {
+    async fn fetch_by_ordering(
+        &self,
+        business_id: Uuid,
+        locale: &str,
+        operator: &str,
+        amount: i32,
+    ) -> Result<Vec<MenuItemRow>, RestaurantRepositoryError> {
         let sql = format!(
             r#"
             select mi.id, coalesce(requested.name, fallback.name) as name,
@@ -88,14 +92,69 @@ impl RestaurantMenuRepositoryPort for PostgresMenuRepository {
             "#
         );
 
-        let rows = sqlx::query_as::<_, MenuItemRow>(&sql)
+        sqlx::query_as::<_, MenuItemRow>(&sql)
             .bind(business_id)
             .bind(locale)
-            .bind(threshold * 100)
+            .bind(amount * 100)
             .fetch_all(&self.pool)
             .await
-            .map_err(repository_error)?;
+            .map_err(repository_error)
+    }
 
-        hydrate_menu_items(&self.pool, rows).await
+    async fn fetch_by_equal(
+        &self,
+        business_id: Uuid,
+        locale: &str,
+        amount: i32,
+    ) -> Result<Vec<MenuItemRow>, RestaurantRepositoryError> {
+        sqlx::query_as::<_, MenuItemRow>(
+            r#"
+            select mi.id, coalesce(requested.name, fallback.name) as name,
+                   mi.price_cents, mi.currency
+            from menu_items mi
+            left join menu_item_translations requested
+                on requested.menu_item_id = mi.id and requested.locale = $2
+            left join menu_item_translations fallback
+                on fallback.menu_item_id = mi.id and fallback.locale = 'en'
+            where mi.business_id = $1 and mi.active and mi.price_cents = $3
+            order by mi.price_cents, coalesce(requested.name, fallback.name)
+            "#,
+        )
+        .bind(business_id)
+        .bind(locale)
+        .bind(amount * 100)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(repository_error)
+    }
+
+    async fn fetch_by_between(
+        &self,
+        business_id: Uuid,
+        locale: &str,
+        min: i32,
+        max: i32,
+    ) -> Result<Vec<MenuItemRow>, RestaurantRepositoryError> {
+        let (min, max) = if min <= max { (min, max) } else { (max, min) };
+        sqlx::query_as::<_, MenuItemRow>(
+            r#"
+            select mi.id, coalesce(requested.name, fallback.name) as name,
+                   mi.price_cents, mi.currency
+            from menu_items mi
+            left join menu_item_translations requested
+                on requested.menu_item_id = mi.id and requested.locale = $2
+            left join menu_item_translations fallback
+                on fallback.menu_item_id = mi.id and fallback.locale = 'en'
+            where mi.business_id = $1 and mi.active and mi.price_cents between $3 and $4
+            order by mi.price_cents, coalesce(requested.name, fallback.name)
+            "#,
+        )
+        .bind(business_id)
+        .bind(locale)
+        .bind(min * 100)
+        .bind(max * 100)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(repository_error)
     }
 }

@@ -65,7 +65,7 @@ where
                         constraints: vec![SlotConstraintEntry::new(SlotConstraint::FutureDate)],
                     },
                 ],
-                starting_message: None,
+                starting_message: Some(i18n_key("workflow.reservation_cancel.starting.message")),
                 confirmation_prompt: Some(i18n_key(
                     "workflow.reservation_cancel.confirmation.prompt",
                 )),
@@ -113,11 +113,13 @@ where
             conversation.clear_workflow_slot(SlotName::Reference);
             return WorkflowPostProcessResult::Failed {
                 updated_conversation: conversation,
-                reply: rust_i18n::t!(
-                    "workflow.reservation_cancel.slot.reference.prompt",
-                    locale = lang
-                )
-                .to_string(),
+                reply: vec![
+                    rust_i18n::t!(
+                        "workflow.reservation_cancel.slot.reference.prompt",
+                        locale = lang
+                    )
+                    .to_string(),
+                ],
             };
         }
 
@@ -151,12 +153,14 @@ where
                 conversation.clear_workflow_slot(SlotName::Reference);
                 WorkflowPostProcessResult::Failed {
                     updated_conversation: conversation,
-                    reply: rust_i18n::t!(
-                        "intent.check_reservation.not_found.reply",
-                        locale = lang,
-                        reference = slots.reference
-                    )
-                    .to_string(),
+                    reply: vec![
+                        rust_i18n::t!(
+                            "intent.check_reservation.not_found.reply",
+                            locale = lang,
+                            reference = slots.reference
+                        )
+                        .to_string(),
+                    ],
                 }
             }
         }
@@ -176,8 +180,8 @@ mod tests {
     use crate::core::conversation::domain::conversation::Conversation;
     use crate::core::conversation::domain::domain_type::DomainType;
     use crate::core::conversation::domain::restaurant::model::{
-        BusinessFact, BusinessLocation, ContactChannel, EventSpace, Facility, MenuItem,
-        MenuPriceFilter, OpeningHours, PaymentMethod, Reservation, ReservationDraft,
+        AmountComparator, BusinessFact, BusinessLocation, ContactChannel, EventSpace, Facility,
+        MenuItem, OpeningHours, PaymentMethod, Reservation, ReservationDraft,
         ReservationSettings, RestaurantRepositoryError, TableType,
     };
     use crate::core::conversation::domain::model::slot::{SlotDataValue, SlotName};
@@ -244,7 +248,7 @@ mod tests {
             &self,
             _: Uuid,
             _: &str,
-            _: &MenuPriceFilter,
+            _: &AmountComparator,
         ) -> Result<Vec<MenuItem>, RestaurantRepositoryError> {
             Ok(vec![])
         }
@@ -374,7 +378,10 @@ mod tests {
 
         let result = handle(conversation, IntentId::Affirmative, "");
 
-        assert_eq!(result.reply, "Your reservation cancellation is confirmed.");
+        assert_eq!(
+            result.reply,
+            vec!["Your reservation cancellation is confirmed.".to_string()]
+        );
         assert!(result.updated_conversation.is_idle());
         assert_eq!(
             result.updated_conversation.last_reservation_reference(),
